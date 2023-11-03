@@ -47,6 +47,7 @@ def main(argv):
     kmin, kmax = np.min(tr['k']), np.max(tr['k'])
 
     r_list=ra[np.logical_and(ra<=rmax, ra>=rmin)]
+    ar, Hr, Omr, Dr, fr, vr, wr = interp_growth(r_list)
 
     #which=argv[2]
     if argv[ell_start-1] == 'debug':
@@ -156,7 +157,8 @@ def main(argv):
     else:
         if which=='all':
             if argv[ell_start-1] == 'bl':
-                which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v'] 
+                which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v',\
+                        'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p'] #RG2
             else:
                 which_list=['F2', 'G2']
         else:
@@ -206,7 +208,7 @@ def main(argv):
                         for ell in range(2, 128):
 
                             try: 
-                                bl=spherical_bispectrum(wh, lt, ell, ell, ell, ra, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW)
+                                bl=spherical_bispectrum(wh, lt, ell, ell, ell, ra, a, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW)
                                 fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, bl))
                             except IndexError:
                                 print(' fail')
@@ -217,7 +219,7 @@ def main(argv):
                     else:     
                         for ell_ind in range(ell_start, len(argv)):
                             ell = [int(c) for c in argv[ell_ind].split(',')]
-                            bl=spherical_bispectrum(wh, lt, ell[0], ell[1], ell[2], ra, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW)
+                            bl=spherical_bispectrum(wh, lt, ell[0], ell[1], ell[2], ra, a, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW)
                             fich.write('{} {} {} {:.16e} \n'.format(ell[0], ell[1], ell[2], bl))
                     fich.close
     return 0

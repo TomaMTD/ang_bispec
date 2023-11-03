@@ -10,7 +10,7 @@ from lincosmo import *
 def sum_qterm_and_linear_term(which, lterm, ell, ra=0, Ha=0, f=0, D=0, a=0):
     if which in ['d2p', 'd0p']:
         stuff=2./3./omega_m/H0**2
-        if which=='d2p': which=='d2v'
+        if which=='d2p': which='d2v'
 
     else:
         stuff=1.
@@ -19,7 +19,7 @@ def sum_qterm_and_linear_term(which, lterm, ell, ra=0, Ha=0, f=0, D=0, a=0):
     if not isinstance(lterm, list):
         if lterm=='all':
             lterm=['density', 'rsd']
-            print(' ONLY DENSITY AND RSD AS LINEAR TERM')
+            #print(' ONLY DENSITY AND RSD AS LINEAR TERM')
         else:
             lterm=[lterm]
 
@@ -39,20 +39,20 @@ def sum_qterm_and_linear_term(which, lterm, ell, ra=0, Ha=0, f=0, D=0, a=0):
         Cl2_chi=sum_qterm_and_linear_term('F2', lterm, ell)
         Cl2_chi[:,1]=sum_qterm_and_linear_term('F2', lterm, ell)[:,2]
 
-    elif which=='dotd':
+    elif which=='dod':
         Cl2_chi=sum_qterm_and_linear_term('F2', lterm, ell)
         ff=np.interp(Cl2_chi[:,0], ra, f)
         HH=np.interp(Cl2_chi[:,0], ra, Ha)
         Cl2_chi[:,1]=HH*np.interp(Cl2_chi[:,0], ra, D) * \
-                        (ff * Cl2_chi[:,1] + 3.*(ff*np.interp(r_list, ra, dotH_(1./a-1.))+\
-                        HH**2*(3./2.*np.interp(r_list, ra, Om_(1./a-1.))-ff))*Cl2_chi[:,2])
+                        (ff * Cl2_chi[:,1] + 3.*(ff*np.interp(Cl2_chi[:,0], ra, dotH_(1./a-1.))+\
+                        HH**2*(3./2.*np.interp(Cl2_chi[:,0], ra, Om_(1./a-1.))-ff))*Cl2_chi[:,2])
 
     else:
-        if which=='d2v':
+        if which[:2]=='d2':
             qlist=[1, 2, 3]
-        elif which in ['d1v', 'd1d']: 
+        elif which[:2]=='d1':
             qlist=[1, 2]
-        elif which=='d3v': 
+        elif which[:2]=='d3': 
             qlist=[1, 2, 3, 4]
         else: 
             print('{} not recognised'.format(which))
@@ -469,7 +469,7 @@ def final_integrand(r, which, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl3n2_chi=0,\
 
 ################################################################################ spherical bispectrum
 
-def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, ra, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW):
+def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, ra, a, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW):
 
     Dr=np.interp(r_list, ra, D)
     fr=np.interp(r_list, ra, f)
@@ -517,14 +517,16 @@ def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, ra, D, Ha, Oma, f
         else:
             if which in ['d2vd0d', 'd1vd1d']:
                 A0_tab = Dr**2*fr*W(r_list, r0, ddr, normW)
+            elif which in ['d1vd2v']:
+                A0_tab = np.interp(r_list, ra, Ha) * Dr**2*fr**2*W(r_list, r0, ddr, normW)
             else: 
                 A0_tab = Dr**2*fr**2*W(r_list, r0, ddr, normW)
 
-            Cl2_1_chi = sum_qterm_and_linear_term(which[:3], lterm, ell2, ra, Ha, f)
-            Cl3_1_chi = sum_qterm_and_linear_term(which[:3], lterm, ell3, ra, Ha, f)
+            Cl2_1_chi = sum_qterm_and_linear_term(which[:3], lterm, ell2, ra, Ha, f, D, a)
+            Cl3_1_chi = sum_qterm_and_linear_term(which[:3], lterm, ell3, ra, Ha, f, D, a)
 
-            Cl2_2_chi = sum_qterm_and_linear_term(which[3:], lterm, ell2, ra, Ha, f)
-            Cl3_2_chi = sum_qterm_and_linear_term(which[3:], lterm, ell3, ra, Ha, f)
+            Cl2_2_chi = sum_qterm_and_linear_term(which[3:], lterm, ell2, ra, Ha, f, D, a)
+            Cl3_2_chi = sum_qterm_and_linear_term(which[3:], lterm, ell3, ra, Ha, f, D, a)
 
             val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
                                      args=(which, Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi, r_list, A0_tab),\
@@ -533,10 +535,10 @@ def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, ra, D, Ha, Oma, f
     return val[0]*8./np.pi**2
 
 
-def spherical_bispectrum(which, lterm, ell1, ell2, ell3, ra, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW):
-    return   spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, ra, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW)\
-            +spherical_bispectrum_perm1(which, lterm, ell2, ell1, ell3, ra, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW)\
-            +spherical_bispectrum_perm1(which, lterm, ell3, ell2, ell1, ra, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW)
+def spherical_bispectrum(which, lterm, ell1, ell2, ell3, ra, a, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW):
+    return   spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, ra, a, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW)\
+            +spherical_bispectrum_perm1(which, lterm, ell2, ell1, ell3, ra, a, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW)\
+            +spherical_bispectrum_perm1(which, lterm, ell3, ell2, ell1, ra, a, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW)
 
 
 

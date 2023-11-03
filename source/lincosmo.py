@@ -42,8 +42,8 @@ def solvr(Y, t):
 def growth_fct():
     print('computing growth')
 
-    if os.path.isfile('growth.txt') and not force:
-        apy, ra, Ha, Oma, Dpy, fpy, vpy, wpy = np.loadtxt('growth.txt').T
+    if os.path.isfile(output_dir+'growth.txt') and not force:
+        apy, ra, Ha, Oma, Dpy, fpy, vpy, wpy = np.loadtxt(output_dir+'growth.txt').T
     else:
         a0=1e-10
         z0=1./a0-1.
@@ -78,10 +78,19 @@ def growth_fct():
             Oma[ind]=Om_(zi)
 
         
-        np.savetxt('growth.txt', np.vstack([apy, ra, Ha, Oma, Dpy, fpy, vpy, wpy]).T, header='a r H Om D f v w')
+        np.savetxt(output_dir+'growth.txt', np.vstack([apy, ra, Ha, Oma, Dpy, fpy, vpy, wpy]).T, header='a r H Om D f v w')
     return apy[::-1], ra[::-1], Ha[::-1], Oma[::-1], Dpy[::-1], fpy[::-1], vpy[::-1], wpy[::-1]
 
-
+def interp_growth(r_list):
+    a, ra, Ha, Oma, D, f, v, w = growth_fct()
+    return np.interp(r_list, ra, a),\
+           np.interp(r_list, ra, Ha),\
+           np.interp(r_list, ra, Oma),\
+           np.interp(r_list, ra, D),\
+           np.interp(r_list, ra, f),\
+           np.interp(r_list, ra, v),\
+           np.interp(r_list, ra, w),\
+           np.interp(r_list, ra, dotH_(1./a-1.))
 
 ############################################################################# power spectrum
 def trans(z, gauge):
