@@ -87,7 +87,6 @@ def get_all_Cln(which, qterm, lterm, chi_list, ell, r_list, y, y1, rmin, rmax, N
     else:
         res[:,0]=chi_list
 
-    print(rmin, rmax)
     a=time.time()
     for ind, chi in enumerate(chi_list):
         if ind%1==0: 
