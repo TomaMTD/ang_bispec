@@ -29,7 +29,7 @@ def dist_integrand(z):
 
 def get_distance(z):
     val, err = cubature.cubature(dist_integrand, ndim=1, fdim=1, xmin=[0], xmax=[z],
-            relerr=1e-9, maxEval=0, abserr=0, vectorized=True)
+            relerr=1e-10, maxEval=0, abserr=0, vectorized=True)
     return val
 
 ############################################################################ growth factors
@@ -57,7 +57,7 @@ def growth_fct():
         tmax =1e4# 1./H_(0)
         
         t_list = np.logspace(np.log10(t0), np.log10(tmax), 100000) #np.linspace(t0, tmax, 10000)
-        asol = integrate.odeint(solvr, [a0, D0, Dprime0, F0, Fprime0], t_list)
+        asol = integrate.odeint(solvr, [a0, D0, Dprime0, F0, Fprime0], t_list, rtol=1e-10)
         
         apy = asol[:,0]
         Dpy = asol[:,1]
@@ -81,16 +81,23 @@ def growth_fct():
         np.savetxt(output_dir+'growth.txt', np.vstack([apy, ra, Ha, Oma, Dpy, fpy, vpy, wpy]).T, header='a r H Om D f v w')
     return apy[::-1], ra[::-1], Ha[::-1], Oma[::-1], Dpy[::-1], fpy[::-1], vpy[::-1], wpy[::-1]
 
-def interp_growth(r_list):
+def interp_growth(r0, ddr, normW, rmin, rmax):
     a, ra, Ha, Oma, D, f, v, w = growth_fct()
-    return np.interp(r_list, ra, a),\
-           np.interp(r_list, ra, Ha),\
-           np.interp(r_list, ra, Oma),\
-           np.interp(r_list, ra, D),\
-           np.interp(r_list, ra, f),\
-           np.interp(r_list, ra, v),\
-           np.interp(r_list, ra, w),\
-           np.interp(r_list, ra, dotH_(1./a-1.))
+    r_list=ra[np.logical_and(ra<=rmax, ra>=rmin)]
+    Wr = W(r_list, r0, ddr, normW)
+    dHr = np.interp(r_list, ra, dotH_(1./a-1.))
+    Hr = np.interp(r_list, ra, Ha)
+    return {'r_list': r_list,\
+            'ar'    : np.interp(r_list, ra, a),\
+            'Hr'    : Hr,\
+            'Omr'   : np.interp(r_list, ra, Oma),\
+            'Dr'    : np.interp(r_list, ra, D),\
+            'fr'    : np.interp(r_list, ra, f),\
+            'vr'    : np.interp(r_list, ra, v),\
+            'wr'    : np.interp(r_list, ra, w),\
+            'dHr'   : dHr,\
+            'Wr'    : Wr,\
+            'mathcalR': dHr/Hr**2+2./Hr/r_list}
 
 ############################################################################# power spectrum
 def trans(z, gauge):
@@ -99,19 +106,28 @@ def trans(z, gauge):
     clss = Class()
     clss.set({'gauge': gauge, 'h': h,'omega_b': omega_b*h**2, 'omega_cdm': omega_cdm*h**2,
         'output':'dTk,vTk','z_pk': 10, 'A_s': A_s , 'n_s': n_s,
-             'k_per_decade_for_pk' : 50,
-             'k_per_decade_for_bao' : 50,
-#              "transfer_neglect_delta_k_S_t0" : 100, #0.17,
-#              "transfer_neglect_delta_k_S_t1" : 100, #0.05,
-#              "transfer_neglect_delta_k_S_t2" : 100, #0.17,
-#              "transfer_neglect_delta_k_S_e" : 100, #0.13,
-#              'compute damping scale' : 'yes',
+             'k_per_decade_for_pk' :  100,
+             'k_per_decade_for_bao' : 100,
+#              "transfer_neglect_delta_k_S_t0" :0.17,
+#              "transfer_neglect_delta_k_S_t1" :0.05,
+#              "transfer_neglect_delta_k_S_t2" :0.17,
+#              "transfer_neglect_delta_k_S_e" : 0.13,
+
+#'tol_background_integration' : 1.e-15 ,
+#'tol_thermo_integration' : 1.e-15,
+'tol_perturbations_integration' : 1.e-10,
+#'reionization_optical_depth_tol' : 1.e-15,
+#'l_logstep' : 1.08, 
+#'l_linstep' : 25,
+#'perturbations_sampling_stepsize': 0.01,
+#delta_l_max = 800
+              'compute damping scale' : 'yes',
              'P_k_max_h/Mpc' : 20,
-# 'k_min_tau0':0.002,
-# 'k_max_tau0_over_l_max':3.,
-'k_step_sub':0.015,
-'k_step_super':0.0001,
-'k_step_super_reduction':0.1
+#'k_min_tau0':20,
+#'k_max_tau0_over_l_max':3.,
+#'k_step_sub':0.015,
+#'k_step_super':0.0001,
+#'k_step_super_reduction':0.1
              })
     clss.compute()
 
@@ -138,6 +154,7 @@ def trans(z, gauge):
         tr['t_m'] =  (omega_cdm*tr['t_cdm'] + omega_b*tr['t_b'])/(omega_b+omega_cdm)
         tr['v_m'] = -tr['t_m']/tr['k']**2/h
 
+    np.save(output_dir+'class_transfer', tr)
     return tr
 
 def primordial(k):

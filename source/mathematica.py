@@ -1,7 +1,8 @@
 import numpy as np
 from numba import njit
-
+import sympy as sp
 from param import *
+
 
 ############################################################################# window fct
 @njit
@@ -10,6 +11,193 @@ def W(x, z0, Dz, normW=1):
     res=(0.5+0.5*np.tanh( (x-(z0-Dz/2))/bb))*(0.5+0.5*np.tanh( (-x+(z0+Dz/2))/bb))
     return res/normW
 
+# sp.diff((0.5+0.5*sp.tanh( (x-(z0-Dz/2))/bb))*(0.5+0.5*sp.tanh( (-x+(z0+Dz/2))/bb)) , x, 1)
+@njit
+def d1W_(x, z0, Dz, normW=1):
+    res = -0.5*(1 - np.tanh((Dz/2 - x + z0)/bb)**2)*(0.5*np.tanh((Dz/2 + x - z0)/bb) + 0.5)/bb +\
+            0.5*(1 - np.tanh((Dz/2 + x - z0)/bb)**2)*(0.5*np.tanh((Dz/2 - x + z0)/bb) + 0.5)/bb
+
+    return res/normW
+
+@njit
+def d2W_(x, z0, Dz, normW=1):
+    res = 0.5*((np.tanh((Dz/2 - x + z0)/bb) + 1)*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1)*np.tanh((Dz/2 + x - z0)/bb) \
+            + (np.tanh((Dz/2 - x + z0)/bb)**2 - 1)*(np.tanh((Dz/2 + x - z0)/bb) + 1)*np.tanh((Dz/2 - x + z0)/bb) \
+            - (np.tanh((Dz/2 - x + z0)/bb)**2 - 1)*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1))/bb**2
+    return res/normW
+
+@njit
+def d3W_(x, z0, Dz, normW=1):
+    res = (-0.5*(np.tanh((Dz/2 - x + z0)/bb) + 1)*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1)*(3.0*np.tanh((Dz/2 + x - z0)/bb)**2 - 1.0) \
+            + 0.5*(np.tanh((Dz/2 - x + z0)/bb)**2 - 1)*(3.0*np.tanh((Dz/2 - x + z0)/bb)**2 - 1.0)*(np.tanh((Dz/2 + x - z0)/bb) + 1) \
+            - 1.5*(np.tanh((Dz/2 - x + z0)/bb)**2 - 1)*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1)*np.tanh((Dz/2 - x + z0)/bb) \
+            + 1.5*(np.tanh((Dz/2 - x + z0)/bb)**2 - 1)*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1)*np.tanh((Dz/2 + x - z0)/bb))/bb**3
+    return res/normW
+
+@njit
+def d4W_(x, z0, Dz, normW=1):
+    res = (0.5*(np.tanh((Dz/2 - x + z0)/bb) + 1)*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1)*(12.0*np.tanh((Dz/2 + x - z0)/bb)**2 - 8.0)*np.tanh((Dz/2 + x - z0)/bb) \
+            - 2.0*(np.tanh((Dz/2 - x + z0)/bb)**2 - 1)*(3.0*np.tanh((Dz/2 - x + z0)/bb)**2 - 1.0)*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1) \
+            + 0.5*(np.tanh((Dz/2 - x + z0)/bb)**2 - 1)*(12.0*np.tanh((Dz/2 - x + z0)/bb)**2 - 8.0)*(np.tanh((Dz/2 + x - z0)/bb) + 1)*np.tanh((Dz/2 - x + z0)/bb) \
+            - 2.0*(np.tanh((Dz/2 - x + z0)/bb)**2 - 1)*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1)*(3.0*np.tanh((Dz/2 + x - z0)/bb)**2 - 1.0) \
+            + 6.0*(np.tanh((Dz/2 - x + z0)/bb)**2 - 1)*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1)*np.tanh((Dz/2 - x + z0)/bb)*np.tanh((Dz/2 + x - z0)/bb))/bb**4
+    return res/normW
+
+@njit
+def d5W_(x, z0, Dz, normW=1):
+    res = (-0.5*(np.tanh((Dz/2 - x + z0)/bb) + 1)*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1)*(8.0*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1)**2 \
+            + 44.0*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1)*np.tanh((Dz/2 + x - z0)/bb)**2 + 8.0*np.tanh((Dz/2 + x - z0)/bb)**4) \
+            + 10.0*(np.tanh((Dz/2 - x + z0)/bb)**2 - 1)*(3.0*np.tanh((Dz/2 - x + z0)/bb)**2 - 1.0)*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1)*np.tanh((Dz/2 + x - z0)/bb) \
+            - 2.5*(np.tanh((Dz/2 - x + z0)/bb)**2 - 1)*(12.0*np.tanh((Dz/2 - x + z0)/bb)**2 - 8.0)*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1)*np.tanh((Dz/2 - x + z0)/bb) \
+            + 0.5*(np.tanh((Dz/2 - x + z0)/bb)**2 - 1)*(np.tanh((Dz/2 + x - z0)/bb) + 1)*(8.0*(np.tanh((Dz/2 - x + z0)/bb)**2 - 1)**2 \
+            + 44.0*(np.tanh((Dz/2 - x + z0)/bb)**2 - 1)*np.tanh((Dz/2 - x + z0)/bb)**2 + 8.0*np.tanh((Dz/2 - x + z0)/bb)**4) \
+            - 10.0*(np.tanh((Dz/2 - x + z0)/bb)**2 - 1)*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1)*(3.0*np.tanh((Dz/2 + x - z0)/bb)**2 - 1.0)*np.tanh((Dz/2 - x + z0)/bb) \
+            + 2.5*(np.tanh((Dz/2 - x + z0)/bb)**2 - 1)*(np.tanh((Dz/2 + x - z0)/bb)**2 - 1)*(12.0*np.tanh((Dz/2 + x - z0)/bb)**2 - 8.0)*np.tanh((Dz/2 + x - z0)/bb))/bb**5
+    return res/normW
+
+#sp.diff(x**3*sp.diff(D*f*W , x, 2), x, 3)
+def mathcalB(which, lterm, qterm, time_dict, z0, Dz, normW):
+
+    sp.init_printing(pretty_print=False)
+    def display_no_args(expr):
+        functions = expr.atoms(sp.Function)
+        reps = {}
+    
+        for fun in functions:
+            reps[fun] = sp.Symbol(fun.name)
+    
+        return(expr.subs(reps))
+    
+    def substitute(expr):
+        expr = expr.subs(sp.diff(D, x, 5), d5D)
+        expr = expr.subs(sp.diff(D, x, 4), d4D)
+        expr = expr.subs(sp.diff(D, x, 3), d3D)
+        expr = expr.subs(sp.diff(D, x, 2), d2D)
+        expr = expr.subs(sp.diff(D, x, 1), d1D)
+        
+        expr = expr.subs(sp.diff(f, x, 5), d5f)
+        expr = expr.subs(sp.diff(f, x, 4), d4f)
+        expr = expr.subs(sp.diff(f, x, 3), d3f)
+        expr = expr.subs(sp.diff(f, x, 2), d2f)
+        expr = expr.subs(sp.diff(f, x, 1), d1f)
+        
+        expr = expr.subs(sp.diff(W, x, 5), d5W)
+        expr = expr.subs(sp.diff(W, x, 4), d4W)
+        expr = expr.subs(sp.diff(W, x, 3), d3W)
+        expr = expr.subs(sp.diff(W, x, 2), d2W)
+        expr = expr.subs(sp.diff(W, x, 1), d1W)
+
+        expr = expr.subs(sp.diff(H, x, 4), d4H)
+        expr = expr.subs(sp.diff(H, x, 3), d3H)
+        expr = expr.subs(sp.diff(H, x, 2), d2H)
+        expr = expr.subs(sp.diff(H, x, 1), d1H)
+ 
+        expr = expr.subs(sp.diff(R, x, 4), d4R)
+        expr = expr.subs(sp.diff(R, x, 3), d3R)
+        expr = expr.subs(sp.diff(R, x, 2), d2R)
+        expr = expr.subs(sp.diff(R, x, 1), d1R)
+
+        expr = expr.subs(sp.diff(a, x, 3), d3a)
+        expr = expr.subs(sp.diff(a, x, 2), d2a)
+        expr = expr.subs(sp.diff(a, x, 1), d1a)
+        
+        return display_no_args(expr)
+
+    time_dict['d1f'] = np.gradient(time_dict['fr'], time_dict['r_list'] , edge_order=2)
+    time_dict['d2f'] = np.gradient(time_dict['d1f'], time_dict['r_list'], edge_order=2)
+    time_dict['d3f'] = np.gradient(time_dict['d2f'], time_dict['r_list'], edge_order=2)
+    time_dict['d4f'] = np.gradient(time_dict['d3f'], time_dict['r_list'], edge_order=2)
+    time_dict['d5f'] = np.gradient(time_dict['d4f'], time_dict['r_list'], edge_order=2)
+
+    time_dict['d1D'] = np.gradient(time_dict['Dr'], time_dict['r_list'] , edge_order=2)
+    time_dict['d2D'] = np.gradient(time_dict['d1D'], time_dict['r_list'], edge_order=2)
+    time_dict['d3D'] = np.gradient(time_dict['d2D'], time_dict['r_list'], edge_order=2)
+    time_dict['d4D'] = np.gradient(time_dict['d3D'], time_dict['r_list'], edge_order=2)
+    time_dict['d5D'] = np.gradient(time_dict['d4D'], time_dict['r_list'], edge_order=2)
+
+    time_dict['d1R'] = np.gradient(time_dict['mathcalR'], time_dict['r_list'] , edge_order=2)
+    time_dict['d2R'] = np.gradient(time_dict['d1R'], time_dict['r_list'], edge_order=2)
+    time_dict['d3R'] = np.gradient(time_dict['d2R'], time_dict['r_list'], edge_order=2)
+    time_dict['d4R'] = np.gradient(time_dict['d3R'], time_dict['r_list'], edge_order=2)
+
+    time_dict['d1H'] = np.gradient(time_dict['Hr'], time_dict['r_list'] , edge_order=2)
+    time_dict['d2H'] = np.gradient(time_dict['d1H'], time_dict['r_list'], edge_order=2)
+    time_dict['d3H'] = np.gradient(time_dict['d2H'], time_dict['r_list'], edge_order=2)
+    time_dict['d4H'] = np.gradient(time_dict['d3H'], time_dict['r_list'], edge_order=2)
+
+    time_dict['d1a'] = np.gradient(time_dict['ar'], time_dict['r_list'] , edge_order=2)
+    time_dict['d2a'] = np.gradient(time_dict['d1a'], time_dict['r_list'], edge_order=2)
+    time_dict['d3a'] = np.gradient(time_dict['d2a'], time_dict['r_list'], edge_order=2)
+
+
+    time_dict['d1W'] = d1W_(time_dict['r_list'], z0, Dz, normW)
+    time_dict['d2W'] = d2W_(time_dict['r_list'], z0, Dz, normW)
+    time_dict['d3W'] = d3W_(time_dict['r_list'], z0, Dz, normW)
+    time_dict['d4W'] = d4W_(time_dict['r_list'], z0, Dz, normW)
+    time_dict['d5W'] = d5W_(time_dict['r_list'], z0, Dz, normW)
+
+    x = sp.symbols("time_dict['r_list']")
+    W = sp.Function("time_dict['Wr']")(x)
+    f = sp.Function("time_dict['fr']")(x)
+    D = sp.Function("time_dict['Dr']")(x)
+    R = sp.Function("time_dict['mathcalR']")(x)
+    a = sp.Function("time_dict['ar']")(x)
+    H = sp.Function("time_dict['Hr']")(x)
+    
+    d1D = sp.Function("time_dict['d1D']")(x)
+    d2D = sp.Function("time_dict['d2D']")(x)
+    d3D = sp.Function("time_dict['d3D']")(x)
+    d4D = sp.Function("time_dict['d4D']")(x)
+    d5D = sp.Function("time_dict['d5D']")(x)
+    
+    d1W = sp.Function("time_dict['d1W']")(x)
+    d2W = sp.Function("time_dict['d2W']")(x)
+    d3W = sp.Function("time_dict['d3W']")(x)
+    d4W = sp.Function("time_dict['d4W']")(x)
+    d5W = sp.Function("time_dict['d5W']")(x)
+    
+    d1f = sp.Function("time_dict['d1f']")(x)
+    d2f = sp.Function("time_dict['d2f']")(x)
+    d3f = sp.Function("time_dict['d3f']")(x)
+    d4f = sp.Function("time_dict['d4f']")(x)
+    d5f = sp.Function("time_dict['d5f']")(x)
+
+    d1H = sp.Function("time_dict['d1H']")(x)
+    d2H = sp.Function("time_dict['d2H']")(x)
+    d3H = sp.Function("time_dict['d3H']")(x)
+    d4H = sp.Function("time_dict['d4H']")(x)
+    
+    d1R = sp.Function("time_dict['d1R']")(x)
+    d2R = sp.Function("time_dict['d2R']")(x)
+    d3R = sp.Function("time_dict['d3R']")(x)
+    d4R = sp.Function("time_dict['d4R']")(x)
+
+    d1a = sp.Function("time_dict['d1a']")(x)
+    d2a = sp.Function("time_dict['d2a']")(x)
+    d3a = sp.Function("time_dict['d3a']")(x)
+
+    if lterm=='density':
+        B = W*D
+    elif lterm=='rsd':
+        B = -sp.diff(D*f*W , x, 2)
+    elif lterm=='pot':
+        B=W*D*((1.-R)/a+3*f*H**2)
+    elif lterm=='doppler':
+        B = sp.diff(H*D*W*f*R , x, 1)
+    else:
+        print('no code')
+
+    if qterm==4:
+        expr = sp.diff(x**3*B, x, 3)
+    elif qterm==3:
+        expr = sp.diff(x**2*B, x, 2)
+    elif qterm==2:
+        expr = sp.diff(x**1*B, x, 1)
+    else:
+        expr = B
+
+    return eval(str(substitute(expr)))
+    
 
 @njit
 def tmin_fct(ell, nu_p):

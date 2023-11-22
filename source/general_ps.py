@@ -42,7 +42,6 @@ def theintegrand_sum_quadratic(rvar, chi, ell, n, r_list, f_of_rp, N, kmax, kmin
 
     return res
 
-
 def get_Cl_sum(integrand, chi, ell, n, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b):
     print('  n={}'.format(n))
     if n==2:
@@ -52,8 +51,8 @@ def get_Cl_sum(integrand, chi, ell, n, r_list, y, y1, rmin, rmax, N, kmax, kmin,
         f_of_rp=y
 
     val, err = cubature.cubature(integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
-                                     args=(chi, ell, n, r_list, f_of_rp, N, kmax, kmin, kpow, b), \
-                                     relerr=relerr, maxEval=1e5, abserr=0, vectorized=True)
+                         args=(chi, ell, n, r_list, f_of_rp, N, kmax, kmin, kpow, b), \
+                                     relerr=relerr, maxEval=1e6, abserr=0, vectorized=True)
     return val/4./np.pi
 
 def get_all_Cln(which, qterm, lterm, chi_list, ell, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b):
@@ -66,7 +65,7 @@ def get_all_Cln(which, qterm, lterm, chi_list, ell, r_list, y, y1, rmin, rmax, N
     else:
         stuff2=1.
 
-    if which=='FG2':
+    if which in ['FG2', 'F2', 'G2']:
         res=np.zeros((len(chi_list), 4))
         cl_name = output_dir+'Cln_{}_ell{}.txt'.format(lterm, int(ell))
         integrand=theintegrand_sum
@@ -78,7 +77,7 @@ def get_all_Cln(which, qterm, lterm, chi_list, ell, r_list, y, y1, rmin, rmax, N
         else:
             res=np.zeros((len(chi_list), 2))
             cl_name = output_dir+'Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qterm, lterm, int(ell))
-            integrand=theintegrand_sum
+            integrand=theintegrand_sum 
 
     print(' ') 
     print('integration {}'.format(cl_name)) 
@@ -88,23 +87,24 @@ def get_all_Cln(which, qterm, lterm, chi_list, ell, r_list, y, y1, rmin, rmax, N
     else:
         res[:,0]=chi_list
 
+    print(rmin, rmax)
     a=time.time()
     for ind, chi in enumerate(chi_list):
         if ind%1==0: 
             print('  {}/{} chi={:.2f}, time {:.2f}'.format(ind, len(chi_list), chi, time.time()-a))
 
-        if res[ind,1]!=0: 
+        if res[ind,1]!=0 and not force: 
             print('     already computed -> jump')
             continue
         res[ind,1]=stuff2*get_Cl_sum(integrand, chi, ell, 0, r_list, y, None, rmin, rmax, N, kmax, kmin, kpow, b)
 
-        if which=='FG2':
-            if res[ind,2]!=0: 
+        if which in ['FG2', 'F2', 'G2']:
+            if res[ind,2]!=0 and not force: 
                 print('     already computed -> jump')
                 continue
             res[ind,2]=stuff2*get_Cl_sum(integrand, chi, ell, -2, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b)
 
-            if res[ind,3]!=0: 
+            if res[ind,3]!=0 and not force: 
                 print('     already computed -> jump')
                 continue
             res[ind,3]=stuff2*get_Cl_sum(integrand, chi, ell, 2, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b)
@@ -117,28 +117,12 @@ def get_all_Cln(which, qterm, lterm, chi_list, ell, r_list, y, y1, rmin, rmax, N
 
 
 
-#def Cl_driver():
-#         y[:,:,ind]=get_cp_of_r(r_list, tr['k'], Pk, gauge, lt, which, qt, False, ra, a, Ha, D, f, r0, ddr, normW, b_list[ind])
-#         np.save('cp_of_r', y)
-#
-#         for ell in np.float64(argv[ell_start:]):
-#             if len(qterm_list)==1:
-#                 y1=mathcalD(r_list, y[:,:,ind], ell)
-#                 get_all_Cln(which, qt, lt, chi_list, ell, r_list, y[:,:,0], y1, rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list[0])
-#             elif compute_all_separate:
-#                 y1=mathcalD(r_list, y[:,:,ind], ell)
-#                 get_all_Cln(which, qt, lt, chi_list, ell, r_list, y[:,:,ind], y1, rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list[ind])
-#             else:
-#                 compute_all=True
-#
-#     if compute_all:
-#                for ell in np.float64(argv[ell_start:]):
-#                    get_all_Cln(which, qterm, lt, chi_list, ell, r_list, y, 0, rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list)
-
-
+# debug
 def plot_integrand(ell, n, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b):
+    #rvar_list=np.loadtxt('qterms4_L10_r3200.dat')[:,0] #np.linspace(rmin, rmax, 403)
     rvar_list=np.linspace(rmin, rmax, 1000)
-    chi = (rmin+rmax)/2.
+    chi =  3200 
+    print(ell, n, chi)
     a=time.time()
     res = theintegrand_sum(rvar_list[:,None], chi, ell, n, r_list, y, N, kmax, kmin, kpow, b)
     np.savetxt('integrand.txt', np.array([rvar_list, res]).T)

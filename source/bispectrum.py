@@ -164,15 +164,15 @@ def f4_nm(r, which, Dr, fr, vr, wr, Omr, Hr):
 
 ############################################################################# integral over chi
 #@njit
-def A0_chi(r, which, Dr, fr, vr, wr, Omr, Hr, r0, ddr, normW):
+def A0_chi(r, which, Dr, fr, vr, wr, Omr, Hr, Wr):
     if which=='F2':
-        return f0_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2*W(r, r0, ddr, normW)
+        return f0_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2* Wr #W(r, r0, ddr, normW)
     else:
         return 0
 
 #@njit
-def A2_chi(r, which, ell, Dr, fr, vr, wr, Omr, Hr, r0, ddr, normW):
-    y=f2_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2*W(r, r0, ddr, normW)
+def A2_chi(r, which, ell, Dr, fr, vr, wr, Omr, Hr, Wr):
+    y=f2_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2*Wr #(r, r0, ddr, normW)
     #y=-9./14.*fr*Dr**2*W(r, r0, ddr, normW)
 
     if which == 'F2':
@@ -182,8 +182,8 @@ def A2_chi(r, which, ell, Dr, fr, vr, wr, Omr, Hr, r0, ddr, normW):
     return out
 
 #@njit
-def A4_chi(r, which, ell, Dr, fr, vr, wr, Omr, Hr, r0, ddr, normW):
-    y=f4_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2*W(r, r0, ddr, normW)
+def A4_chi(r, which, ell, Dr, fr, vr, wr, Omr, Hr, Wr):
+    y=f4_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2*Wr #(r, r0, ddr, normW)
     #y=fr*Dr**2*W(r, r0, ddr, normW)
 
     if which == 'F2':
@@ -214,17 +214,17 @@ def fm4_nm(r, which, Dr, fr, vr, wr, Omr, Hr):
     return res*Hr**4
 
 @njit
-def integrand_Am_F2(r, chi, ell, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl3_p2, ra, D, f, v, w, Oma, Ha, r0, ddr, normW):
+def integrand_Am_F2(r, chi, ell, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl3_p2, r_list, Dr, fr, vr, wr, Omr, Hr, r0, ddr, normW):
     t_list=r[:,0]/chi
     Am4=np.zeros(len(t_list), dtype=np.float64)
     Am2=np.zeros(len(t_list), dtype=np.float64)
     
-    Dr=np.interp(r[:,0], ra, D)
-    fr=np.interp(r[:,0], ra, f)
-    vr=np.interp(r[:,0], ra, v)
-    wr=np.interp(r[:,0], ra, w)
-    Omr=np.interp(r[:,0], ra, Oma)
-    Hr=np.interp(r[:,0], ra, Ha)
+    Drr=np.interp(r[:,0], r_list, Dr)
+    frr=np.interp(r[:,0], r_list, fr)
+    vrr=np.interp(r[:,0], r_list, vr)
+    wrr=np.interp(r[:,0], r_list, wr)
+    Omrr=np.interp(r[:,0], r_list, Omr)
+    Hrr=np.interp(r[:,0], r_list, Hr)
 
     for ind,t in enumerate(t_list):
         if t>1:
@@ -236,11 +236,11 @@ def integrand_Am_F2(r, chi, ell, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl
             Am2[ind]=t**(ell+2.)
         Am4[ind]=fact*(Il(-1+0.j, t+0.j, ell)).real/4/np.pi
     
-    fm2=fm2_nm(r[:,0], which, Dr, fr, vr, wr, Omr, Hr)
-    fm4=fm4_nm(r[:,0], which, Dr, fr, vr, wr, Omr, Hr)
+    fm2=fm2_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
+    fm4=fm4_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
     out=chi*((fm2[0]*Cl2_0*Cl3_0 + fm2[1]*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2) + fm2[2]*(Cl3_0*Cl2_m2+Cl3_m2*Cl2_0))*Am2/(1.+2.*ell)/r[:,0]**2\
         +(fm4[0]*Cl2_0*Cl3_0 + fm4[1]*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2))*Am4)\
-        *Dr**2*W(r[:,0], r0, ddr, normW) 
+        *Drr**2*W(r[:,0], r0, ddr, normW) 
     return out
 
 
@@ -273,7 +273,7 @@ def integrand_Am_G2(r, chi, ell, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl
     return out
 
 
-def get_Am(chi_list, ell1, ell2, ell3, which, lterm, ra, D, f, v, w, Oma, Ha, r0, ddr, normW, rmin, rmax, r_list):
+def get_Am(chi_list, ell1, ell2, ell3, which, lterm, time_dict, r0, ddr, normW, rmin, rmax):
 
     Cl2n_chi = sum_qterm_and_linear_term(which, lterm, ell2)
     Cl3n_chi = sum_qterm_and_linear_term(which, lterm, ell3)
@@ -294,26 +294,21 @@ def get_Am(chi_list, ell1, ell2, ell3, which, lterm, ra, D, f, v, w, Oma, Ha, r0
  
             val, err = cubature.cubature(integrand_Am_F2, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
                                          args=(chi, ell1, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl3_p2,\
-                                         ra, D, f, v, w, Oma, Ha, r0, ddr, normW), relerr=relerr, maxEval=0, abserr=0, vectorized=True)
+                                         time_dict['r_list'], time_dict['Dr'], time_dict['fr'], time_dict['vr'],\
+                                         time_dict['wr'], time_dict['Omr'], time_dict['Hr'], r0, ddr, normW)\
+                                         , relerr=relerr, maxEval=0, abserr=0, vectorized=True)
             res[ind]=val*chi**2
         np.savetxt(output_dir+Am_fn.format(lterm, 'F2', int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
 
     else:
 
-        Dr=np.interp(r_list, ra, D)
-        fr=np.interp(r_list, ra, f)
-        vr=np.interp(r_list, ra, v)
-        wr=np.interp(r_list, ra, w)
-        Omr=np.interp(r_list, ra, Oma)
-        Hr=np.interp(r_list, ra, Ha)
-        
-        f0_tab=f0_nm(r_list, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2*W(r_list, r0, ddr, normW)
-        fm2_tab=fm2_nm(r_list, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2*W(r_list, r0, ddr, normW)
-        #f0_tab=fr*Dr**2*W(r_list, r0, ddr, normW)
-        #fm2_tab=0*fr*Dr**2*W(r_list, r0, ddr, normW)
+        f0_tab=f0_nm(time_dict['r_list'], which, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr']\
+                , time_dict['Omr'], time_dict['Hr'])*time_dict['Dr']**2*time_dict['Wr']
+        fm2_tab=fm2_nm(time_dict['r_list'], which, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'],\
+                time_dict['Omr'], time_dict['Hr'])*time_dict['Dr']**2*time_dict['Wr']
 
-        f0_tab =np.gradient(np.gradient(f0_tab, r_list, axis=1), r_list, axis=1)
-        fm2_tab=np.gradient(np.gradient(fm2_tab, r_list, axis=1), r_list, axis=1)
+        f0_tab =np.gradient(np.gradient(f0_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
+        fm2_tab=np.gradient(np.gradient(fm2_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
 
         for ind, chi in enumerate(chi_list):
             Cl2_m2 = np.interp(chi, Cl2n_chi[:,0], Cl2n_chi[:,2])
@@ -326,7 +321,7 @@ def get_Am(chi_list, ell1, ell2, ell3, which, lterm, ra, D, f, v, w, Oma, Ha, r0
  
             val, err = cubature.cubature(integrand_Am_G2, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
                                          args=(chi, ell1, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl3_p2,\
-                                         r_list, f0_tab, fm2_tab)\
+                                         time_dict['r_list'], f0_tab, fm2_tab)\
                                          , relerr=relerr, maxEval=0, abserr=0, vectorized=True)
             res[ind]=val*chi**2
         np.savetxt(output_dir+Am_fn.format(lterm, 'G2', int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
@@ -352,16 +347,16 @@ def fm4R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar):
 
 
 @njit
-def integrand_Il(r, chi, ell, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl3_p2, a, ra, D, f, v, w, Oma, Ha, r0, ddr, normW, r_list, cp_tr, bphi, Nphi, eta):
+def integrand_Il(r, chi, ell, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl3_p2, ar, r_list, Dr, fr, vr, wr, Omr, Hr, r0, ddr, normW, cp_tr, bphi, Nphi, eta):
     t_list=r[:,0]/chi
     
-    ar=np.interp(r[:,0], ra, a)
-    Dr=np.interp(r[:,0], ra, D)
-    fr=np.interp( r[:,0], ra, f)
-    vr=np.interp( r[:,0], ra, v)
-    wr=np.interp( r[:,0], ra, w)
-    Omr=np.interp(r[:,0], ra, Oma)
-    Hr=np.interp( r[:,0], ra, Ha)
+    ar=np.interp(r[:,0],  r_list, ar)
+    Dr=np.interp(r[:,0],  r_list, Dr)
+    fr=np.interp( r[:,0], r_list, fr)
+    vr=np.interp( r[:,0], r_list, vr)
+    wr=np.interp( r[:,0], r_list, wr)
+    Omr=np.interp(r[:,0], r_list, Omr)
+    Hr=np.interp( r[:,0], r_list, Hr)
 
     fm2=fm2R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar)
     fm4=fm4R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar)
@@ -392,7 +387,7 @@ def integrand_Il(r, chi, ell, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl3_p
     return np.real(out)
 
 
-def get_Il(chi_list, ell1, ell2, ell3, which, a, ra, D, f, v, w, Oma, Ha, r0, ddr, normW, rmin, rmax, r_list, cp_tr, bphi, Nphi, kmax, kmin):
+def get_Il(chi_list, ell1, ell2, ell3, which, time_dict, r0, ddr, normW, rmin, rmax, cp_tr, bphi, Nphi, kmax, kmin):
 
     Cl2n_chi = sum_qterm_and_linear_term(which, lterm, ell2)
     Cl3n_chi = sum_qterm_and_linear_term(which, lterm, ell3)
@@ -415,7 +410,9 @@ def get_Il(chi_list, ell1, ell2, ell3, which, a, ra, D, f, v, w, Oma, Ha, r0, dd
 
         val, err = cubature.cubature(integrand_Il, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
                                      args=(chi, ell1, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl3_p2,\
-                                     a, ra, D, f, v, w, Oma, Ha, r0, ddr, normW, r_list, cp_tr, bphi, Nphi, eta), relerr=relerr, maxEval=1e5, abserr=0, vectorized=True)
+                                     time_dict['ar'], time_dict['r_list'], time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'], 
+                                     time_dict['Omr'], time_dict['Hr'],
+                                     r0, ddr, normW, cp_tr, bphi, Nphi, eta), relerr=relerr, maxEval=1e5, abserr=0, vectorized=True)
         res[ind]=val*chi**2*2./np.pi/4./np.pi
         np.savetxt(output_dir+Il_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
     return res
@@ -469,10 +466,10 @@ def final_integrand(r, which, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl3n2_chi=0,\
 
 ################################################################################ spherical bispectrum
 
-def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, ra, a, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW):
+def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, time_dict, rmax, rmin):
 
-    Dr=np.interp(r_list, ra, D)
-    fr=np.interp(r_list, ra, f)
+#    Dr=np.interp(r_list, ra, D)
+#    fr=np.interp(r_list, ra, f)
     
     if which in ['F2', 'G2']:
         Cl2n_chi = sum_qterm_and_linear_term(which, lterm, ell2)
@@ -481,10 +478,10 @@ def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, ra, a, D, Ha, Oma
         Am_fn='Am_{}_{}_ell{},{},{}.txt'
         Il_fn='Il_{}_{}_ell{},{},{}.txt'
 
-        vr=np.interp(r_list, ra, v)
-        wr=np.interp(r_list, ra, w)
-        Omr=np.interp(r_list, ra, Oma)
-        Hr=np.interp(r_list, ra, Ha)
+#vr=np.interp(r_list, ra, v)
+#        wr=np.interp(r_list, ra, w)
+#Omr=np.interp(r_list, ra, Oma)
+#        Hr=np.interp(r_list, ra, Ha)
     
         try: 
             Il_tab = np.loadtxt(output_dir+Il_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)))
@@ -493,9 +490,9 @@ def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, ra, a, D, Ha, Oma
             Il_tab = 0 
 
         Am_tab = np.loadtxt(output_dir+Am_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)))
-        A0_tab = A0_chi(r_list, which, Dr, fr, vr, wr, Omr, Hr, r0, ddr, normW)
-        A2_tab = A2_chi(r_list, which, ell1, Dr, fr, vr, wr, Omr, Hr, r0, ddr, normW)
-        A4_tab = A4_chi(r_list, which, ell1, Dr, fr, vr, wr, Omr, Hr, r0, ddr, normW)
+        A0_tab = A0_chi(time_dict['r_list'], which,       time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'], time_dict['Omr'], time_dict['Hr'], time_dict['Wr'])
+        A2_tab = A2_chi(time_dict['r_list'], which, ell1, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'], time_dict['Omr'], time_dict['Hr'], time_dict['Wr'])
+        A4_tab = A4_chi(time_dict['r_list'], which, ell1, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'], time_dict['Omr'], time_dict['Hr'], time_dict['Wr'])
 
         val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
                                      args=(which, Cl2n_chi, Cl3n_chi, 0, 0, r_list, A0_tab, A2_tab, A4_tab, Am_tab, Il_tab), \
@@ -503,7 +500,7 @@ def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, ra, a, D, Ha, Oma
     else:
 
         if which=='d2vd2v':
-            A0_tab = Dr**2*fr**2*W(r_list, r0, ddr, normW)
+            A0_tab = time_dict['Dr']**2*time_dict['fr']**2*time_dict['Wr'] #(r_list, r0, ddr, normW)
 
             Cl2_chi = sum_qterm_and_linear_term('d2v', lterm, ell2)
             Cl3_chi = sum_qterm_and_linear_term('d2v', lterm, ell3)
@@ -516,11 +513,11 @@ def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, ra, a, D, Ha, Oma
                                      relerr=relerr, maxEval=0, abserr=0, vectorized=True)
         else:
             if which in ['d2vd0d', 'd1vd1d']:
-                A0_tab = Dr**2*fr*W(r_list, r0, ddr, normW)
+                A0_tab = time_dict['Dr']**2*time_dict['fr']*time_dict['Wr'] #Dr**2*fr*W(r_list, r0, ddr, normW)
             elif which in ['d1vd2v']:
-                A0_tab = np.interp(r_list, ra, Ha) * Dr**2*fr**2*W(r_list, r0, ddr, normW)
+                A0_tab = time_dict['Hr'] * time_dict['Dr']**2*time_dict['fr']**2*time_dict['Wr'] #np.interp(r_list, ra, Ha) * Dr**2*fr**2*W(r_list, r0, ddr, normW)
             else: 
-                A0_tab = Dr**2*fr**2*W(r_list, r0, ddr, normW)
+                A0_tab = time_dict['Dr']**2*time_dict['fr']**2*time_dict['Wr'] #Dr**2*fr**2*W(r_list, r0, ddr, normW)
 
             Cl2_1_chi = sum_qterm_and_linear_term(which[:3], lterm, ell2, ra, Ha, f, D, a)
             Cl3_1_chi = sum_qterm_and_linear_term(which[:3], lterm, ell3, ra, Ha, f, D, a)
@@ -535,10 +532,10 @@ def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, ra, a, D, Ha, Oma
     return val[0]*8./np.pi**2
 
 
-def spherical_bispectrum(which, lterm, ell1, ell2, ell3, ra, a, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW):
-    return   spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, ra, a, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW)\
-            +spherical_bispectrum_perm1(which, lterm, ell2, ell1, ell3, ra, a, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW)\
-            +spherical_bispectrum_perm1(which, lterm, ell3, ell2, ell1, ra, a, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW)
+def spherical_bispectrum(which, lterm, ell1, ell2, ell3, time_dict, rmax, rmin):
+    return   spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, time_dict, rmax, rmin)\
+            +spherical_bispectrum_perm1(which, lterm, ell2, ell1, ell3, time_dict, rmax, rmin)\
+            +spherical_bispectrum_perm1(which, lterm, ell3, ell2, ell1, time_dict, rmax, rmin)
 
 
 

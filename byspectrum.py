@@ -20,15 +20,15 @@ def main(argv):
     ell_start=2
     for ind,arg in enumerate(argv):
         if '-' in arg:
-            if arg[1:]=='which':
+            if arg[1:] in ['which', 'w']:
                 print('change parameter: which={}'.format(argv[ind+1]))
                 which=argv[ind+1]
                 ell_start+=2
-            elif arg[1:]=='lterm':
+            elif arg[1:] in ['lterm', 'l']:
                 print('change parameter: lterm={}'.format(argv[ind+1]))
                 lterm=argv[ind+1]
                 ell_start+=2
-            elif arg[1:]=='qterm':
+            elif arg[1:] in ['qterm', 'q']:
                 print('change parameter: qterm={}'.format(argv[ind+1]))
                 qterm=int(argv[ind+1])
                 ell_start+=2
@@ -39,22 +39,22 @@ def main(argv):
 
     rmin, rmax = get_distance(zmin)[0], get_distance(zmax)[0]
     print('rmin={:.2f} rmax={:.2f}'.format(rmin, rmax))
-    #normW = 1./4.*bb*(1. + 1./np.tanh((Wrmax - Wrmin)/bb))*(np.log(1. + np.exp((2.*Wrmax)/bb)) - np.log(1. + np.exp((2.*Wrmin)/bb)))
     normW = 1./4.*bb*(1. + 1./np.tanh((Wrmax - Wrmin)/bb))*2./bb*(Wrmax-Wrmin)
 
-    a, ra, Ha, Oma, D, f, v, w = growth_fct()
     tr, Pk = get_power(0, gauge)
     kmin, kmax = np.min(tr['k']), np.max(tr['k'])
 
-    r_list=ra[np.logical_and(ra<=rmax, ra>=rmin)]
-    ar, Hr, Omr, Dr, fr, vr, wr = interp_growth(r_list)
+    time_dict = interp_growth(r0, ddr, normW, rmin, rmax)
+    r_list = time_dict["r_list"]
+    np.save(output_dir+'time_dict', time_dict)
 
     #which=argv[2]
     if argv[ell_start-1] == 'debug':
         ell = np.float64(argv[ell_start])
 
         b=set_bias(gauge, lterm, which, qterm, False)
-        y=get_cp_of_r(r_list, tr['k'], Pk, gauge, lterm, which, qterm, False, ra, a, Ha, D, f, r0, ddr, normW, b)
+#y=get_cp_of_r(r_list, tr['k'], Pk, gauge, lterm, which, qterm, False, ra, a, Ha, D, f, r0, ddr, normW, b)
+        y=get_cp_of_r(tr['k'], Pk, gauge, lterm, which, qterm, False, time_dict, r0, ddr, normW, b)
         y1=mathcalD(r_list, y, ell)
 
         chi_list=np.linspace(rmin, rmax, Nchi)
@@ -92,25 +92,21 @@ def main(argv):
                             print('{} empty'.format(clname))
 
     elif argv[ell_start-1] == 'cl':
-
-        #if which=='d1d':
-        #    which_list = ['d1d1', 'd1d2']
-        #else:
-        #    which_list = [which]
-
-        #for wh in which_list:
-        if which=='d2v':
-            qterm_list=[1,2,3]
-        elif which in ['d1v', 'd1d']:
-            qterm_list=[1,2]
-        elif which in ['d0d']:
-            qterm_list=[1]
-        elif which=='d3v':
-            qterm_list=[1,2,3,4]
-        else:
+        if which in ['FG2', 'F2', 'G2']:
             qterm_list=[0]
+        else:
+            if which=='d2v':
+                qterm_list=[1,2,3]
+            elif which in ['d1v', 'd1d']:
+                qterm_list=[1,2]
+            elif which in ['d0d']:
+                qterm_list=[1]
+            elif which=='d3v':
+                qterm_list=[1,2,3,4]
+            else:
+                qterm_list=[0]
 
-        if qterm in qterm_list or which==['FG2']:
+        if qterm in qterm_list :
             qterm_list = [qterm]
         
         if qterm==-1:
@@ -124,23 +120,25 @@ def main(argv):
         else:
             lterm_list=[lterm]
         
+
         chi_list=np.linspace(rmin, rmax, Nchi)
         for lt in lterm_list:
             b_list=np.zeros((len(qterm_list)))
             y=np.zeros((len(tr['k'])+1, len(r_list), len(qterm_list)), dtype=complex)
             y1=np.zeros((len(tr['k'])+1, len(r_list), len(qterm_list)), dtype=complex)
 
-            if lt=='density' and which=='FG2': kpow=2.
+            if lt=='density' and which in ['FG2', 'F2', 'G2']: kpow=2.
             else: kpow=0
 
             for ind, qt in enumerate(qterm_list):
                 print('computing integrand tab of chi qterm={}'.format(qt))
-                b_list[ind]=set_bias(gauge, lt, which, qt, False)
-                y[:,:,ind]=get_cp_of_r(r_list, tr['k'], Pk, gauge, lt, which, qt, False, ra, a, Ha, D, f, r0, ddr, normW, b_list[ind])
-                np.save('cp_of_r', y)
+                #b_list[ind]=set_bias(gauge, lt, which, qt, False)
+#y[:,:,ind]=get_cp_of_r(r_list, tr['k'], Pk, gauge, lt, which, qt, False, ra, a, Ha, D, f, r0, ddr, normW, b_list[ind])
+                y[:,:,ind], b_list[ind]=get_cp_of_r(tr['k'], Pk, gauge, lt, which, qt, False, time_dict, r0, ddr, normW)
+                np.save(output_dir+'cp_of_r', y)
                 
                 for ell in np.float64(argv[ell_start:]):
-                    if which=='FG2':
+                    if which in ['FG2', 'F2', 'G2']:
                         y1[:,:,ind]=mathcalD(r_list, y[:,:,ind], ell)
 
                     if len(qterm_list)==1:
@@ -183,23 +181,24 @@ def main(argv):
                         print(' Am_ell={}'.format(int(ell)))
 
                         chi_list=np.linspace(rmin, rmax, Nchi)
-                        get_Am(chi_list, ell, ell, ell, wh, lt, ra, D, f, v, w, Oma, Ha, r0, ddr, normW, rmin, rmax, r_list)
+                        get_Am(chi_list, ell, ell, ell, wh, lt, time_dict, r0, ddr, normW, rmin, rmax)
 
                 elif argv[ell_start-1] == 'Il':
                     b=set_bias(gauge, wh, True)
 
-                    if wh == 'F2':
-                        r_arg = np.array([0])
-                    else:
-                        r_arg = r_list
+#if wh == 'F2':
+#                        r_arg = np.array([0])
+#else:
+#                        r_arg = r_list
                     
-                    cp_tr = get_cp_of_r(r_arg, tr['k'], tr['dTdk'], gauge, lt, wh, 0, True, ra, a, Ha, D, f, r0, ddr, normW, b)
+                    cp_tr = get_cp_of_r(r_arg, tr['k'], tr['dTdk'], gauge, lt, wh, 0, True, time_dict\
+                            , r0, ddr, normW, b)
                     np.savetxt(output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
 
                     for ell in np.float64(argv[ell_start:]):
                         print(' Il_ell={}'.format(int(ell)))
                         chi_list=np.linspace(rmin, rmax, Nchi)
-                        get_Il(chi_list, ell, ell, ell, wh, a, ra, D, f, v, w, Oma, Ha, r0, ddr, normW, rmin, rmax, r_list, cp_tr, bphi, len(tr['k']), kmax, kmin)
+                        get_Il(chi_list, ell, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax, cp_tr, bphi, len(tr['k']), kmax, kmin)
  
                 elif argv[ell_start-1] == 'bl':
                     fich = open(output_dir+"bl_{}_{}.txt".format(lt, wh), "w")
@@ -208,7 +207,7 @@ def main(argv):
                         for ell in range(2, 128):
 
                             try: 
-                                bl=spherical_bispectrum(wh, lt, ell, ell, ell, ra, a, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW)
+                                bl=spherical_bispectrum(wh, lt, ell, ell, ell, time_dict, rmax, rmin)
                                 fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, bl))
                             except IndexError:
                                 print(' fail')
@@ -219,7 +218,7 @@ def main(argv):
                     else:     
                         for ell_ind in range(ell_start, len(argv)):
                             ell = [int(c) for c in argv[ell_ind].split(',')]
-                            bl=spherical_bispectrum(wh, lt, ell[0], ell[1], ell[2], ra, a, D, Ha, Oma, f, v, w, r_list, rmax, rmin, r0, ddr, normW)
+                            bl=spherical_bispectrum(wh, lt, ell[0], ell[1], ell[2], time_dict, rmax, rmin)
                             fich.write('{} {} {} {:.16e} \n'.format(ell[0], ell[1], ell[2], bl))
                     fich.close
     return 0
