@@ -67,16 +67,16 @@ def get_all_Cln(which, qterm, lterm, chi_list, ell, r_list, y, y1, rmin, rmax, N
 
     if which in ['FG2', 'F2', 'G2']:
         res=np.zeros((len(chi_list), 4))
-        cl_name = output_dir+'Cln_{}_ell{}.txt'.format(lterm, int(ell))
+        cl_name = output_dir+'cln/Cln_{}_ell{}.txt'.format(lterm, int(ell))
         integrand=theintegrand_sum
     else:
         if qterm==0:
             res=np.zeros((len(chi_list), 2))
-            cl_name = output_dir+'Cln_{}_{}_ell{}.txt'.format(which, lterm, int(ell))
+            cl_name = output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lterm, int(ell))
             integrand=theintegrand_sum_quadratic
         else:
             res=np.zeros((len(chi_list), 2))
-            cl_name = output_dir+'Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qterm, lterm, int(ell))
+            cl_name = output_dir+'cln/Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qterm, lterm, int(ell))
             integrand=theintegrand_sum 
 
     print(' ') 

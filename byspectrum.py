@@ -52,9 +52,9 @@ def main(argv):
     if argv[ell_start-1] == 'debug':
         ell = np.float64(argv[ell_start])
 
-        b=set_bias(gauge, lterm, which, qterm, False)
+        b=set_bias(gauge, lterm, which, qterm)
 #y=get_cp_of_r(r_list, tr['k'], Pk, gauge, lterm, which, qterm, False, ra, a, Ha, D, f, r0, ddr, normW, b)
-        y=get_cp_of_r(tr['k'], Pk, gauge, lterm, which, qterm, False, time_dict, r0, ddr, normW, b)
+        y=get_cp_of_r(tr['k'], Pk, gauge, lterm, which, qterm, time_dict, r0, ddr, normW, b)
         y1=mathcalD(r_list, y, ell)
 
         chi_list=np.linspace(rmin, rmax, Nchi)
@@ -78,15 +78,15 @@ def main(argv):
                     #for q in ql:
                     #clname=output_dir+'Cln_{}_qterm{}_{}_ell{}.txt'.format(w, q, l, int(ell))
                     if w == 'FG2':
-                        clname=output_dir+'Cln_{}_ell{}.txt'.format(l, int(ell))
+                        clname=output_dir+'cln/Cln_{}_ell{}.txt'.format(l, int(ell))
                     else:
-                        clname=output_dir+'Cln_{}_{}_ell{}.txt'.format(w, l, int(ell))
+                        clname=output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(w, l, int(ell))
                     try:
                         cl=np.loadtxt(clname)
                     except FileNotFoundError:
                         #print(clname, '0/100')
                         for q in ql:
-                            clname=output_dir+'Cln_{}_qterm{}_{}_ell{}.txt'.format(w, q, l, int(ell))
+                            clname=output_dir+'cln/Cln_{}_qterm{}_{}_ell{}.txt'.format(w, q, l, int(ell))
                             try:
                                 cl=np.loadtxt(clname)
                                 try: 
@@ -152,7 +152,7 @@ def main(argv):
                 print('computing integrand tab of chi qterm={}'.format(qt))
                 #b_list[ind]=set_bias(gauge, lt, which, qt, False)
 #y[:,:,ind]=get_cp_of_r(r_list, tr['k'], Pk, gauge, lt, which, qt, False, ra, a, Ha, D, f, r0, ddr, normW, b_list[ind])
-                y[:,:,ind], b_list[ind]=get_cp_of_r(tr['k'], Pk, gauge, lt, which, qt, False, time_dict, r0, ddr, normW)
+                y[:,:,ind], b_list[ind]=get_cp_of_r(tr['k'], Pk, gauge, lt, which, qt, time_dict, r0, ddr, normW)
                 np.save(output_dir+'cp_of_r', y)
                 
                 for ell in np.float64(argv[ell_start:]):
@@ -185,16 +185,17 @@ def main(argv):
         else:
             lterm_list=[lterm]
 
+        if argv[ell_start]=='equi':
+            ell_list=equi
+        else:
+            ell_list=[int(c) for c in argv[ell_start:]]
+ 
         for wh in which_list:
             for lt in lterm_list:
                 print('computing {} for which={} lterm={} ell=equi'.format(argv[ell_start-1], wh, lt))
 
                 if argv[ell_start-1] == 'Am':
-                    if argv[ell_start]=='equi':
-                        ell_list=np.arange(2, 128)
-                    else:
-                        ell_list=[int(c) for c in argv[ell_start:]]
-                    
+                   
                     for ell in ell_list:
                         print(' Am_ell={}'.format(int(ell)))
 
@@ -202,27 +203,21 @@ def main(argv):
                         get_Am(chi_list, ell, ell, ell, wh, lt, time_dict, r0, ddr, normW, rmin, rmax)
 
                 elif argv[ell_start-1] == 'Il':
-                    b=set_bias(gauge, wh, True)
-
-#if wh == 'F2':
-#                        r_arg = np.array([0])
-#else:
-#                        r_arg = r_list
-                    
-                    cp_tr = get_cp_of_r(r_arg, tr['k'], tr['dTdk'], gauge, lt, wh, 0, True, time_dict\
-                            , r0, ddr, normW, b)
+                    #b=set_bias(gauge, wh, True)
+                    cp_tr, b = get_cp_of_r(tr['k'], tr['dTdk'], gauge, lt, wh, 0, time_dict\
+                            , r0, ddr, normW)
                     np.savetxt(output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
 
-                    for ell in np.float64(argv[ell_start:]):
+                    for ell in ell_list: #np.float64(argv[ell_start:]):
                         print(' Il_ell={}'.format(int(ell)))
                         chi_list=np.linspace(rmin, rmax, Nchi)
-                        get_Il(chi_list, ell, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax, cp_tr, bphi, len(tr['k']), kmax, kmin)
+                        get_Il(chi_list, ell, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax, cp_tr, b, len(tr['k']), kmax, kmin)
  
                 elif argv[ell_start-1] == 'bl':
                     fich = open(output_dir+"bl_{}_{}.txt".format(lt, wh), "w")
                     
                     if argv[ell_start]=='equi':
-                        for ell in range(2, 128):
+                        for ell in ell_list:
 
                             try: 
                                 bl=spherical_bispectrum(wh, lt, ell, ell, ell, time_dict, rmax, rmin)

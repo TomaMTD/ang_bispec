@@ -3,6 +3,7 @@ from numba import njit
 import os
 from mathematica import *
 from lincosmo import *
+from param import *
 
 #import sys, importlib
 #importlib.import_module(sys.argv[-1])
@@ -73,7 +74,7 @@ def set_bias(k, fctk):
 #    print(' bias: {}'.format(b))
 #    return b
  
-def P_of_k(k, Pk, gauge, which, rad, time_dict, r0, ddr, normW):
+def P_of_k(k, Pk, gauge, which, time_dict, r0, ddr, normW):
     if not rad:
         if gauge in ['sync']:
             out=Pk 
@@ -156,20 +157,22 @@ def compute(k, Pk, fct_k, b):
         res[p+Nk//2] = get_cp(p, b, k, Nk, kmin, kmax, fct_k)
     return res
 
-def get_cp_of_r(k, Pk, gauge, lterm, which, qterm, rad, time_dict, r0, ddr, normW):
-    fct_r = mathcalB(which, lterm, qterm, time_dict, r0, ddr, normW)
-
+def get_cp_of_r(k, Pk, gauge, lterm, which, qterm, time_dict, r0, ddr, normW):
     if which in ['FG2', 'F2', 'G2']: 
-        fct_k = P_of_k(k, Pk, gauge, which, rad, time_dict, r0, ddr, normW) 
-        np.save(output_dir+'fct_k'.format(which, lterm, qterm), fct_k)
-        np.save(output_dir+'fct_r'.format(which, lterm, qterm), fct_r)
+        fct_k = P_of_k(k, Pk, gauge, which, time_dict, r0, ddr, normW) 
+        #np.save(output_dir+'fct_k'.format(which, lterm, qterm), fct_k)
+        #np.save(output_dir+'fct_r'.format(which, lterm, qterm), fct_r)
     else: 
         fct_k = quadratic_terms(qterm, k, Pk, gauge, lterm, which, time_dict, r0, ddr, normW) 
-        np.save(output_dir+'fct_k_{}_lterm{}_qterm{}'.format(which, lterm, qterm), fct_k)
-        np.save(output_dir+'fct_r_{}_lterm{}_qterm{}'.format(which, lterm, qterm), fct_r)
+        #np.save(output_dir+'fct_k_{}_lterm{}_qterm{}'.format(which, lterm, qterm), fct_k)
+        #np.save(output_dir+'fct_r_{}_lterm{}_qterm{}'.format(which, lterm, qterm), fct_r)
 
     b=set_bias(k, fct_k)
-    return compute(k, Pk, fct_k, b)[:,None]*fct_r, b
+    if not rad:
+        fct_r = mathcalB(which, lterm, qterm, time_dict, r0, ddr, normW)
+        return compute(k, Pk, fct_k, b)[:,None]*fct_r, b
+    else:
+        return compute(k, Pk, fct_k, b)[:,None], b
 
 
 

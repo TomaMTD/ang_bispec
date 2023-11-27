@@ -7,7 +7,7 @@ from fftlog import *
 from mathematica import *
 from lincosmo import *
 
-def sum_qterm_and_linear_term(which, lterm, ell, ra=0, Ha=0, f=0, D=0, a=0):
+def sum_qterm_and_linear_term(which, lterm, ell, r_list=0, Hr=0, fr=0, Dr=0, ar=0):
     if which in ['d2p', 'd0p']:
         stuff=2./3./omega_m/H0**2
         if which=='d2p': which='d2v'
@@ -15,10 +15,9 @@ def sum_qterm_and_linear_term(which, lterm, ell, ra=0, Ha=0, f=0, D=0, a=0):
     else:
         stuff=1.
 
-
     if not isinstance(lterm, list):
         if lterm=='all':
-            lterm=['density', 'rsd']
+            lterm=['density', 'rsd', 'doppler', 'pot']
             #print(' ONLY DENSITY AND RSD AS LINEAR TERM')
         else:
             lterm=[lterm]
@@ -26,13 +25,13 @@ def sum_qterm_and_linear_term(which, lterm, ell, ra=0, Ha=0, f=0, D=0, a=0):
     if which in ['F2', 'G2']:
         for ind, lt in enumerate(lterm):
             if ind==0:
-                Cl2_chi = np.loadtxt(output_dir+'Cln_{}_ell{}.txt'.format(lt, int(ell)))
+                Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))
             else:
-                Cl2_chi[:,1:] += np.loadtxt(output_dir+'Cln_{}_ell{}.txt'.format(lt, int(ell)))[:,1:]
+                Cl2_chi[:,1:] += np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))[:,1:]
 
     elif which=='d0d':
         Cl2_chi=sum_qterm_and_linear_term('F2', lterm, ell)
-        Cl2_chi[:,1]+=3.*np.interp(Cl2_chi[:,0], ra, Ha)**2*np.interp(Cl2_chi[:,0], ra, f)\
+        Cl2_chi[:,1]+=3.*np.interp(Cl2_chi[:,0], r_list, Hr)**2*np.interp(Cl2_chi[:,0], r_list, fr)\
                             *Cl2_chi[:,2]
 
     elif which=='d0p':
@@ -41,43 +40,42 @@ def sum_qterm_and_linear_term(which, lterm, ell, ra=0, Ha=0, f=0, D=0, a=0):
 
     elif which=='dod':
         Cl2_chi=sum_qterm_and_linear_term('F2', lterm, ell)
-        ff=np.interp(Cl2_chi[:,0], ra, f)
-        HH=np.interp(Cl2_chi[:,0], ra, Ha)
-        Cl2_chi[:,1]=HH*np.interp(Cl2_chi[:,0], ra, D) * \
-                        (ff * Cl2_chi[:,1] + 3.*(ff*np.interp(Cl2_chi[:,0], ra, dotH_(1./a-1.))+\
-                        HH**2*(3./2.*np.interp(Cl2_chi[:,0], ra, Om_(1./a-1.))-ff))*Cl2_chi[:,2])
+        ff=np.interp(Cl2_chi[:,0], r_list, fr)
+        HH=np.interp(Cl2_chi[:,0], r_list, Hr)
+        Cl2_chi[:,1]=HH*np.interp(Cl2_chi[:,0], r_list, Dr) * \
+                        (ff * Cl2_chi[:,1] + 3.*(ff*np.interp(Cl2_chi[:,0], r_list, dotH_(1./ar-1.))+\
+                        HH**2*(3./2.*np.interp(Cl2_chi[:,0], r_list, Om_(1./ar-1.))-ff))*Cl2_chi[:,2])
 
     else:
-        try: 
-            ind=0
-            for lt in lterm:
+        ind=0
+        for lt in lterm:
+            try: 
                 if ind==0:
-                    Cl2_chi = np.loadtxt(output_dir+'Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))
+                    Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))
                 else:
-                    Cl2_chi[:,1] += np.loadtxt(output_dir+'Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))[:,1]
+                    Cl2_chi[:,1] += np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))[:,1]
                 ind+=1
-        except:
-            if which[:2]=='d2':
-                qlist=[1, 2, 3]
-            elif which[:2]=='d1':
-                qlist=[1, 2]
-            elif which[:2]=='d3': 
-                qlist=[1, 2, 3, 4]
-            else: 
-                print('{} not recognised'.format(which))
-                exit()
+            except FileNotFoundError:
+                print(output_dir+'cln/Cln_{}_{}_ell{}.txt not found, try qterm...'.format(which, lt, int(ell)))
+                if which[:2]=='d2':
+                    qlist=[1, 2, 3]
+                elif which[:2]=='d1':
+                    qlist=[1, 2]
+                elif which[:2]=='d3': 
+                    qlist=[1, 2, 3, 4]
+                else: 
+                    print('{} not recognised'.format(which))
+                    exit()
  
-            ind=0
-            for qt in qlist:
-                for lt in lterm:
+                for qt in qlist:
                     if ind==0:
-                        Cl2_chi = np.loadtxt(output_dir+'Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))
+                        Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))
                     else:
-                        Cl2_chi[:,1] += np.loadtxt(output_dir+'Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))[:,1]
+                        Cl2_chi[:,1] += np.loadtxt(output_dir+'cln/Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))[:,1]
                     ind+=1
         
         if which=='d1d':
-            Cl2_chi[:,1]+=3.*np.interp(Cl2_chi[:,0], ra, Ha)**2*np.interp(Cl2_chi[:,0], ra, f)\
+            Cl2_chi[:,1]+=3.*np.interp(Cl2_chi[:,0], r_list, Hr)**2*np.interp(Cl2_chi[:,0], r_list, fr)\
                             *sum_qterm_and_linear_term('d1v', lterm, ell)[:,1]
 
     #np.savetxt(output_dir+'cl_{}_{}_ell{}.txt'.format(which, lterm[0], int(ell)), Cl2_chi)
@@ -282,11 +280,10 @@ def integrand_Am_G2(r, chi, ell, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl
 
 
 def get_Am(chi_list, ell1, ell2, ell3, which, lterm, time_dict, r0, ddr, normW, rmin, rmax):
-
     Cl2n_chi = sum_qterm_and_linear_term(which, lterm, ell2)
     Cl3n_chi = sum_qterm_and_linear_term(which, lterm, ell3)
 
-    Am_fn = 'Am_{}_{}_ell{},{},{}.txt'
+    Am_fn = 'Am/Am_{}_{}_ell{},{},{}.txt'
 
     res=np.zeros((len(chi_list)))
     
@@ -335,7 +332,6 @@ def get_Am(chi_list, ell1, ell2, ell3, which, lterm, time_dict, r0, ddr, normW, 
         np.savetxt(output_dir+Am_fn.format(lterm, 'G2', int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
 
     return res
-
 
 
 ################################################################################ radiation
@@ -400,7 +396,7 @@ def get_Il(chi_list, ell1, ell2, ell3, which, time_dict, r0, ddr, normW, rmin, r
     Cl2n_chi = sum_qterm_and_linear_term(which, lterm, ell2)
     Cl3n_chi = sum_qterm_and_linear_term(which, lterm, ell3)
 
-    Il_fn = 'Il_{}_{}_ell{},{},{}.txt'
+    Il_fn = 'Il/Il_{}_{}_ell{},{},{}.txt'
 
     res=np.zeros((len(chi_list)))
     eta=2.*np.pi/np.log(kmax/kmin)
@@ -451,7 +447,10 @@ def final_integrand(r, which, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl3n2_chi=0,\
         A40 = np.interp(r, r_list, A4_tab[0])
 
         Am = np.interp(r, Am_tab[:,0], Am_tab[:,1])
-        Il_res = 0 # np.interp(r, Il_tab[:,0], Il_tab[:,1])
+        if rad:
+            Il_res = np.interp(r, Il_tab[:,0], Il_tab[:,1])
+        else:
+            Il_res = 0
 
         out = A00*Cl2_0*Cl3_0 + (A03+A21+A40)*Cl2_m2*Cl3_m2 + A01*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)\
                    + (A02+A20)*(Cl2_0*Cl3_m2+Cl3_0*Cl2_m2) + Am + Il_res
@@ -476,25 +475,16 @@ def final_integrand(r, which, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl3n2_chi=0,\
 
 def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, time_dict, rmax, rmin):
 
-#    Dr=np.interp(r_list, ra, D)
-#    fr=np.interp(r_list, ra, f)
-    
     if which in ['F2', 'G2']:
         Cl2n_chi = sum_qterm_and_linear_term(which, lterm, ell2)
         Cl3n_chi = sum_qterm_and_linear_term(which, lterm, ell3)
 
-        Am_fn='Am_{}_{}_ell{},{},{}.txt'
-        Il_fn='Il_{}_{}_ell{},{},{}.txt'
+        Am_fn='Am/Am_{}_{}_ell{},{},{}.txt'
+        Il_fn='Il/Il_{}_{}_ell{},{},{}.txt'
 
-#vr=np.interp(r_list, ra, v)
-#        wr=np.interp(r_list, ra, w)
-#Omr=np.interp(r_list, ra, Oma)
-#        Hr=np.interp(r_list, ra, Ha)
-    
-        try: 
+        if rad: 
             Il_tab = np.loadtxt(output_dir+Il_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)))
-        except FileNotFoundError:
-            #print(' no rad')
+        else:
             Il_tab = 0 
 
         Am_tab = np.loadtxt(output_dir+Am_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)))
@@ -503,7 +493,7 @@ def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, time_dict, rmax, 
         A4_tab = A4_chi(time_dict['r_list'], which, ell1, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'], time_dict['Omr'], time_dict['Hr'], time_dict['Wr'])
 
         val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
-                                     args=(which, Cl2n_chi, Cl3n_chi, 0, 0, r_list, A0_tab, A2_tab, A4_tab, Am_tab, Il_tab), \
+                                     args=(which, Cl2n_chi, Cl3n_chi, 0, 0, time_dict['r_list'], A0_tab, A2_tab, A4_tab, Am_tab, Il_tab), \
                                      relerr=relerr, maxEval=0, abserr=0, vectorized=True)
     else:
 
@@ -513,11 +503,11 @@ def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, time_dict, rmax, 
             Cl2_chi = sum_qterm_and_linear_term('d2v', lterm, ell2)
             Cl3_chi = sum_qterm_and_linear_term('d2v', lterm, ell3)
 
-            txt = final_integrand((Cl2_chi[:,0])[:,None] , which, Cl2_chi, Cl3_chi, 0, 0, r_list, A0_tab)
+            txt = final_integrand((Cl2_chi[:,0])[:,None] , which, Cl2_chi, Cl3_chi, 0, 0, time_dict['r_list'], A0_tab)
             np.savetxt('d2vd2v.txt', np.vstack([Cl2_chi[:,0], txt]).T )
 
             val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
-                                     args=(which, Cl2_chi, Cl3_chi, 0, 0, r_list, A0_tab),\
+                                     args=(which, Cl2_chi, Cl3_chi, 0, 0, time_dict['r_list'], A0_tab),\
                                      relerr=relerr, maxEval=0, abserr=0, vectorized=True)
         else:
             if which in ['d2vd0d', 'd1vd1d']:
@@ -527,14 +517,14 @@ def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, time_dict, rmax, 
             else: 
                 A0_tab = time_dict['Dr']**2*time_dict['fr']**2*time_dict['Wr'] #Dr**2*fr**2*W(r_list, r0, ddr, normW)
 
-            Cl2_1_chi = sum_qterm_and_linear_term(which[:3], lterm, ell2, ra, Ha, f, D, a)
-            Cl3_1_chi = sum_qterm_and_linear_term(which[:3], lterm, ell3, ra, Ha, f, D, a)
-
-            Cl2_2_chi = sum_qterm_and_linear_term(which[3:], lterm, ell2, ra, Ha, f, D, a)
-            Cl3_2_chi = sum_qterm_and_linear_term(which[3:], lterm, ell3, ra, Ha, f, D, a)
+            Cl2_1_chi = sum_qterm_and_linear_term(which[:3], lterm, ell2, time_dict['r_list'], time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
+            Cl3_1_chi = sum_qterm_and_linear_term(which[:3], lterm, ell3, time_dict['r_list'], time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
+                                                                                                                                                             
+            Cl2_2_chi = sum_qterm_and_linear_term(which[3:], lterm, ell2, time_dict['r_list'], time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
+            Cl3_2_chi = sum_qterm_and_linear_term(which[3:], lterm, ell3, time_dict['r_list'], time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
 
             val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
-                                     args=(which, Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi, r_list, A0_tab),\
+                                     args=(which, Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi, time_dict['r_list'], A0_tab),\
                                      relerr=relerr, maxEval=0, abserr=0, vectorized=True)
             val/=2.
     return val[0]*8./np.pi**2
