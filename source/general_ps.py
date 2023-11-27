@@ -52,7 +52,7 @@ def get_Cl_sum(integrand, chi, ell, n, r_list, y, y1, rmin, rmax, N, kmax, kmin,
 
     val, err = cubature.cubature(integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
                          args=(chi, ell, n, r_list, f_of_rp, N, kmax, kmin, kpow, b), \
-                                     relerr=relerr, maxEval=1e6, abserr=0, vectorized=True)
+                                     relerr=relerr, maxEval=1e5, abserr=0, vectorized=True)
     return val/4./np.pi
 
 def get_all_Cln(which, qterm, lterm, chi_list, ell, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b):

@@ -62,8 +62,8 @@ def main(argv):
 
 
     elif argv[ell_start-1] == 'search':
-        for ell in range(2, 128):
-            for w in ['d3v', 'd2v', 'd1v', 'd1d', 'd0d']:
+        for ell in range(2, 128*2, 2):
+            for w in ['FG2', 'd3v', 'd2v', 'd1v', 'd1d']:
 
                 if w=='d3v':
                     ql=[1, 2, 3, 4]
@@ -75,21 +75,40 @@ def main(argv):
                     ql=[1]
 
                 for l in ['density', 'rsd', 'pot', 'doppler']:
-                    for q in ql:
-                        clname=output_dir+'Cln_{}_qterm{}_{}_ell{}.txt'.format(w, q, l, int(ell))
-                        try:
-                            cl=np.loadtxt(clname)
-                        except FileNotFoundError:
-                            print('{} not found'.format(clname))
-                            continue
+                    #for q in ql:
+                    #clname=output_dir+'Cln_{}_qterm{}_{}_ell{}.txt'.format(w, q, l, int(ell))
+                    if w == 'FG2':
+                        clname=output_dir+'Cln_{}_ell{}.txt'.format(l, int(ell))
+                    else:
+                        clname=output_dir+'Cln_{}_{}_ell{}.txt'.format(w, l, int(ell))
+                    try:
+                        cl=np.loadtxt(clname)
+                    except FileNotFoundError:
+                        #print(clname, '0/100')
+                        for q in ql:
+                            clname=output_dir+'Cln_{}_qterm{}_{}_ell{}.txt'.format(w, q, l, int(ell))
+                            try:
+                                cl=np.loadtxt(clname)
+                                try: 
+                                    for ind, chi in enumerate(cl[:,0]):
+                                        if cl[ind,1]==0:
+                                            print(clname, '{}/100'.format(ind))
+                                            break
+                                except IndexError:
+                                    print('{} empty'.format(clname))
 
-                        try: 
-                            for ind, chi in enumerate(cl[:,0]):
-                                if cl[ind,1]==0:
-                                    print(clname, '{}/100'.format(ind))
-                                    break
-                        except IndexError:
-                            print('{} empty'.format(clname))
+                            except FileNotFoundError:
+                                print(clname, 'qterm: 0/100')
+                                continue
+                        continue
+
+                    try: 
+                        for ind, chi in enumerate(cl[:,0]):
+                            if cl[ind,1]==0:
+                                print(clname, '{}/100'.format(ind))
+                                break
+                    except IndexError:
+                        print('{} empty'.format(clname))
 
     elif argv[ell_start-1] == 'cl':
         if which in ['FG2', 'F2', 'G2']:
@@ -120,7 +139,6 @@ def main(argv):
         else:
             lterm_list=[lterm]
         
-
         chi_list=np.linspace(rmin, rmax, Nchi)
         for lt in lterm_list:
             b_list=np.zeros((len(qterm_list)))

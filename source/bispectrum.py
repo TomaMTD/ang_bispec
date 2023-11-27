@@ -48,27 +48,35 @@ def sum_qterm_and_linear_term(which, lterm, ell, ra=0, Ha=0, f=0, D=0, a=0):
                         HH**2*(3./2.*np.interp(Cl2_chi[:,0], ra, Om_(1./a-1.))-ff))*Cl2_chi[:,2])
 
     else:
-        if which[:2]=='d2':
-            qlist=[1, 2, 3]
-        elif which[:2]=='d1':
-            qlist=[1, 2]
-        elif which[:2]=='d3': 
-            qlist=[1, 2, 3, 4]
-        else: 
-            print('{} not recognised'.format(which))
-            exit()
-        
-        ind=0
-        for qt in qlist:
+        try: 
+            ind=0
             for lt in lterm:
                 if ind==0:
-                    Cl2_chi = np.loadtxt(output_dir+'Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))
+                    Cl2_chi = np.loadtxt(output_dir+'Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))
                 else:
-                    Cl2_chi[:,1] += np.loadtxt(output_dir+'Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))[:,1]
+                    Cl2_chi[:,1] += np.loadtxt(output_dir+'Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))[:,1]
                 ind+=1
+        except:
+            if which[:2]=='d2':
+                qlist=[1, 2, 3]
+            elif which[:2]=='d1':
+                qlist=[1, 2]
+            elif which[:2]=='d3': 
+                qlist=[1, 2, 3, 4]
+            else: 
+                print('{} not recognised'.format(which))
+                exit()
+ 
+            ind=0
+            for qt in qlist:
+                for lt in lterm:
+                    if ind==0:
+                        Cl2_chi = np.loadtxt(output_dir+'Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))
+                    else:
+                        Cl2_chi[:,1] += np.loadtxt(output_dir+'Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))[:,1]
+                    ind+=1
         
         if which=='d1d':
-
             Cl2_chi[:,1]+=3.*np.interp(Cl2_chi[:,0], ra, Ha)**2*np.interp(Cl2_chi[:,0], ra, f)\
                             *sum_qterm_and_linear_term('d1v', lterm, ell)[:,1]
 
