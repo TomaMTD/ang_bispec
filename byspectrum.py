@@ -174,9 +174,9 @@ def main(argv):
         if which=='all':
             if argv[ell_start-1] == 'bl':
                 which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v',\
-                        'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p'] #RG2
+                        'dv2', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p'] #RG2
             else:
-                which_list=['F2', 'G2']
+                which_list=['F2', 'G2', 'dv2']
         else:
             which_list=[which]
 
@@ -214,7 +214,10 @@ def main(argv):
                         get_Il(chi_list, ell, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax, cp_tr, b, len(tr['k']), kmax, kmin)
  
                 elif argv[ell_start-1] == 'bl':
-                    fich = open(output_dir+"bl_{}_{}.txt".format(lt, wh), "w")
+                    if rad and wh in ['F2', 'G2', 'dv2']:
+                        fich = open(output_dir+"bl_{}_{}_rad.txt".format(lt, wh), "w")
+                    else:
+                        fich = open(output_dir+"bl_{}_{}.txt".format(lt, wh), "w")
                     
                     if argv[ell_start]=='equi':
                         for ell in ell_list:

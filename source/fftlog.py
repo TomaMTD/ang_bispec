@@ -24,7 +24,6 @@ def mathcalD(x, y, ell):
     return -np.gradient(dy, x, axis=1)+2./x*dy+(ell*(ell+1)-2.)/x**2*y
 
 def set_bias(k, fctk):
-    
     b=0
     for i in range(5, 16):
         b+=(np.log(np.abs(fctk[-i])) - np.log(np.abs(fctk[i]))) / (np.log(k[-i]) - np.log(k[i]))

@@ -7,16 +7,20 @@ which='d0d' # for cl: FG2, d2v, d1v, d3v, d1d, d0d
            
 lterm='all' # each, all, density, rsd, pot or doppler
 
-qterm=-1 # 1, 2, 3, 4 only for which neq F2 G2
+qterm=0 # 1, 2, 3, 4 only for which neq F2 G2
 gauge='new'
+
+rad=False #True
 
 z0, dz=2, 0.25
 bb=25
 zmin, zmax = z0-2.*dz, z0+2.*dz
 Nchi=100
-output_dir = 'test/' #'output_z{}_dz{}/'.format(z0, dz)
+output_dir = 'output_z{}_dz{}_bb25/'.format(z0, dz)
 
-relerr=1e-2
+equi = range(2, 128*2, 2)
+
+relerr=1e-3
 h=0.67556
 omega_b=0.0482754
 omega_cdm=0.263771

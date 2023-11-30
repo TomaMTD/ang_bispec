@@ -11,7 +11,6 @@ def sum_qterm_and_linear_term(which, lterm, ell, r_list=0, Hr=0, fr=0, Dr=0, ar=
     if which in ['d2p', 'd0p']:
         stuff=2./3./omega_m/H0**2
         if which=='d2p': which='d2v'
-
     else:
         stuff=1.
 
@@ -22,7 +21,7 @@ def sum_qterm_and_linear_term(which, lterm, ell, r_list=0, Hr=0, fr=0, Dr=0, ar=
         else:
             lterm=[lterm]
 
-    if which in ['F2', 'G2']:
+    if which in ['F2', 'G2', 'dv2']:
         for ind, lt in enumerate(lterm):
             if ind==0:
                 Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))
@@ -34,9 +33,9 @@ def sum_qterm_and_linear_term(which, lterm, ell, r_list=0, Hr=0, fr=0, Dr=0, ar=
         Cl2_chi[:,1]+=3.*np.interp(Cl2_chi[:,0], r_list, Hr)**2*np.interp(Cl2_chi[:,0], r_list, fr)\
                             *Cl2_chi[:,2]
 
-    elif which=='d0p':
+    elif which in ['d0p', 'dav']:
         Cl2_chi=sum_qterm_and_linear_term('F2', lterm, ell)
-        Cl2_chi[:,1]=sum_qterm_and_linear_term('F2', lterm, ell)[:,2]
+        Cl2_chi[:,1]=Cl2_chi[:,2]
 
     elif which=='dod':
         Cl2_chi=sum_qterm_and_linear_term('F2', lterm, ell)
@@ -54,7 +53,6 @@ def sum_qterm_and_linear_term(which, lterm, ell, r_list=0, Hr=0, fr=0, Dr=0, ar=
                     Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))
                 else:
                     Cl2_chi[:,1] += np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))[:,1]
-                ind+=1
             except FileNotFoundError:
                 print(output_dir+'cln/Cln_{}_{}_ell{}.txt not found, try qterm...'.format(which, lt, int(ell)))
                 if which[:2]=='d2':
@@ -72,7 +70,7 @@ def sum_qterm_and_linear_term(which, lterm, ell, r_list=0, Hr=0, fr=0, Dr=0, ar=
                         Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))
                     else:
                         Cl2_chi[:,1] += np.loadtxt(output_dir+'cln/Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))[:,1]
-                    ind+=1
+            ind+=1
         
         if which=='d1d':
             Cl2_chi[:,1]+=3.*np.interp(Cl2_chi[:,0], r_list, Hr)**2*np.interp(Cl2_chi[:,0], r_list, fr)\
@@ -172,30 +170,34 @@ def f4_nm(r, which, Dr, fr, vr, wr, Omr, Hr):
 #@njit
 def A0_chi(r, which, Dr, fr, vr, wr, Omr, Hr, Wr):
     if which=='F2':
-        return f0_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2* Wr #W(r, r0, ddr, normW)
+        return f0_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2* Wr
     else:
         return 0
 
 #@njit
-def A2_chi(r, which, ell, Dr, fr, vr, wr, Omr, Hr, Wr):
-    y=f2_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2*Wr #(r, r0, ddr, normW)
-    #y=-9./14.*fr*Dr**2*W(r, r0, ddr, normW)
+def A2_chi(r, which, ell, Dr, fr, vr, wr, Omr, Hr, Wr, mathcalR):
+    y=f2_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2*Wr 
 
     if which == 'F2':
         out = mathcalD(r, y, ell)
-    else:
+    elif which=='G2':
         out = np.gradient(np.gradient(y, r, axis=1), r, axis=1)
+    else:
+        y*=Hr*mathcalR
+        out = np.gradient(y, r, axis=1)
     return out
 
 #@njit
-def A4_chi(r, which, ell, Dr, fr, vr, wr, Omr, Hr, Wr):
-    y=f4_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2*Wr #(r, r0, ddr, normW)
-    #y=fr*Dr**2*W(r, r0, ddr, normW)
+def A4_chi(r, which, ell, Dr, fr, vr, wr, Omr, Hr, Wr, mathcalR):
+    y=f4_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2*Wr
 
     if which == 'F2':
         y=mathcalD(r, y[None,:], ell)
-    else:
+    elif which == 'G2':
         y=np.gradient(np.gradient(y[None, :], r, axis=1), r, axis=1)
+    else:
+        y*=Hr*mathcalR
+        y=np.gradient(y[None, :], r, axis=1)
     return  mathcalD(r, y, ell)
 
 
@@ -303,17 +305,25 @@ def get_Am(chi_list, ell1, ell2, ell3, which, lterm, time_dict, r0, ddr, normW, 
                                          time_dict['wr'], time_dict['Omr'], time_dict['Hr'], r0, ddr, normW)\
                                          , relerr=relerr, maxEval=0, abserr=0, vectorized=True)
             res[ind]=val*chi**2
-        np.savetxt(output_dir+Am_fn.format(lterm, 'F2', int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
+        np.savetxt(output_dir+Am_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
 
     else:
 
-        f0_tab=f0_nm(time_dict['r_list'], which, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr']\
-                , time_dict['Omr'], time_dict['Hr'])*time_dict['Dr']**2*time_dict['Wr']
-        fm2_tab=fm2_nm(time_dict['r_list'], which, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'],\
+        f0_tab=f0_nm(time_dict['r_list'], which, time_dict['Dr'],\
+                time_dict['fr'], time_dict['vr'], time_dict['wr'],\
+                time_dict['Omr'], time_dict['Hr'])*time_dict['Dr']**2*time_dict['Wr']
+        fm2_tab=fm2_nm(time_dict['r_list'], which, time_dict['Dr'],\
+                time_dict['fr'], time_dict['vr'], time_dict['wr'],\
                 time_dict['Omr'], time_dict['Hr'])*time_dict['Dr']**2*time_dict['Wr']
 
-        f0_tab =np.gradient(np.gradient(f0_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
-        fm2_tab=np.gradient(np.gradient(fm2_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
+        if which=='G2':
+            f0_tab =np.gradient(np.gradient(f0_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
+            fm2_tab=np.gradient(np.gradient(fm2_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
+        else:
+            f0_tab *=time_dict['mathcalR']*time_dict['Hr']
+            fm2_tab*=time_dict['mathcalR']*time_dict['Hr']
+            f0_tab =np.gradient(f0_tab, time_dict['r_list'], axis=1)
+            fm2_tab=np.gradient(fm2_tab, time_dict['r_list'], axis=1)
 
         for ind, chi in enumerate(chi_list):
             Cl2_m2 = np.interp(chi, Cl2n_chi[:,0], Cl2n_chi[:,2])
@@ -329,7 +339,7 @@ def get_Am(chi_list, ell1, ell2, ell3, which, lterm, time_dict, r0, ddr, normW, 
                                          time_dict['r_list'], f0_tab, fm2_tab)\
                                          , relerr=relerr, maxEval=0, abserr=0, vectorized=True)
             res[ind]=val*chi**2
-        np.savetxt(output_dir+Am_fn.format(lterm, 'G2', int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
+        np.savetxt(output_dir+Am_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
 
     return res
 
@@ -428,13 +438,13 @@ def final_integrand(r, which, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl3n2_chi=0,\
     Cl2_0 = np.interp(r, Cl2n1_chi[:,0], Cl2n1_chi[:,1])
     Cl3_0 = np.interp(r, Cl3n1_chi[:,0], Cl3n1_chi[:,1])
 
-    if which in ['F2', 'G2']:
+    if which in ['F2', 'G2', 'dv2']:
         if which == 'F2':
             A00 = np.interp(r, r_list, A0_tab[0])
             A01 = np.interp(r, r_list, A0_tab[1])
             A02 = np.interp(r, r_list, A0_tab[2])
             A03 = np.interp(r, r_list, A0_tab[3])
-        elif which == 'G2':
+        else :
             A00, A01, A02, A03 = 0, 0, 0, 0
 
         Cl2_p2 = np.interp(r, Cl2n1_chi[:,0], Cl2n1_chi[:,3])
@@ -453,20 +463,24 @@ def final_integrand(r, which, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl3n2_chi=0,\
             Il_res = 0
 
         out = A00*Cl2_0*Cl3_0 + (A03+A21+A40)*Cl2_m2*Cl3_m2 + A01*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)\
-                   + (A02+A20)*(Cl2_0*Cl3_m2+Cl3_0*Cl2_m2) + Am + Il_res
+                  + (A02+A20)*(Cl2_0*Cl3_m2+Cl3_0*Cl2_m2) + Am + Il_res
     else:
         A00 = np.interp(r, r_list, A0_tab)
-
         if which=='d2vd2v':
-            out = A00*Cl2_0*Cl3_0/r**4
+            out = A00*Cl2_0*Cl3_0 #/r**4
         else:
             Cl2_0_2 = np.interp(r, Cl2n2_chi[:,0], Cl2n2_chi[:,1])
             Cl3_0_2 = np.interp(r, Cl3n2_chi[:,0], Cl3n2_chi[:,1])
-            
-            if which=='d1vd3v':
-                out = A00*(Cl2_0*Cl3_0_2+Cl3_0*Cl2_0_2)/r**4
-            else:
-                out = A00*(Cl2_0*Cl3_0_2+Cl3_0*Cl2_0_2)/r**2
+            out = A00*(Cl2_0*Cl3_0_2+Cl3_0*Cl2_0_2)
+
+            #if which in ['d1vd3v', 'd0pd3v']:
+            #    out = A00*(Cl2_0*Cl3_0_2+Cl3_0*Cl2_0_2)/r**4
+            #elif which=='d1vd2v':
+            #    out = A00*(Cl2_0*Cl3_0_2+Cl3_0*Cl2_0_2)/r**3
+            #elif which=='d1vdod':
+            #    out = A00*(Cl2_0*Cl3_0_2+Cl3_0*Cl2_0_2)/r
+            #else:
+            #    out = A00*(Cl2_0*Cl3_0_2+Cl3_0*Cl2_0_2)/r**2
 
     return out
 
@@ -475,7 +489,7 @@ def final_integrand(r, which, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl3n2_chi=0,\
 
 def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, time_dict, rmax, rmin):
 
-    if which in ['F2', 'G2']:
+    if which in ['F2', 'G2', 'dv2']:
         Cl2n_chi = sum_qterm_and_linear_term(which, lterm, ell2)
         Cl3n_chi = sum_qterm_and_linear_term(which, lterm, ell3)
 
@@ -489,8 +503,8 @@ def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, time_dict, rmax, 
 
         Am_tab = np.loadtxt(output_dir+Am_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)))
         A0_tab = A0_chi(time_dict['r_list'], which,       time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'], time_dict['Omr'], time_dict['Hr'], time_dict['Wr'])
-        A2_tab = A2_chi(time_dict['r_list'], which, ell1, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'], time_dict['Omr'], time_dict['Hr'], time_dict['Wr'])
-        A4_tab = A4_chi(time_dict['r_list'], which, ell1, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'], time_dict['Omr'], time_dict['Hr'], time_dict['Wr'])
+        A2_tab = A2_chi(time_dict['r_list'], which, ell1, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'], time_dict['Omr'], time_dict['Hr'], time_dict['Wr'], time_dict['mathcalR'])
+        A4_tab = A4_chi(time_dict['r_list'], which, ell1, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'], time_dict['Omr'], time_dict['Hr'], time_dict['Wr'], time_dict['mathcalR'])
 
         val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
                                      args=(which, Cl2n_chi, Cl3n_chi, 0, 0, time_dict['r_list'], A0_tab, A2_tab, A4_tab, Am_tab, Il_tab), \
@@ -498,7 +512,7 @@ def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, time_dict, rmax, 
     else:
 
         if which=='d2vd2v':
-            A0_tab = time_dict['Dr']**2*time_dict['fr']**2*time_dict['Wr'] #(r_list, r0, ddr, normW)
+            A0_tab = time_dict['Dr']**2*time_dict['fr']**2*time_dict['Wr']/time_dict['r_list']**4
 
             Cl2_chi = sum_qterm_and_linear_term('d2v', lterm, ell2)
             Cl3_chi = sum_qterm_and_linear_term('d2v', lterm, ell3)
@@ -510,12 +524,30 @@ def spherical_bispectrum_perm1(which, lterm, ell1, ell2, ell3, time_dict, rmax, 
                                      args=(which, Cl2_chi, Cl3_chi, 0, 0, time_dict['r_list'], A0_tab),\
                                      relerr=relerr, maxEval=0, abserr=0, vectorized=True)
         else:
-            if which in ['d2vd0d', 'd1vd1d']:
-                A0_tab = time_dict['Dr']**2*time_dict['fr']*time_dict['Wr'] #Dr**2*fr*W(r_list, r0, ddr, normW)
-            elif which in ['d1vd2v']:
-                A0_tab = time_dict['Hr'] * time_dict['Dr']**2*time_dict['fr']**2*time_dict['Wr'] #np.interp(r_list, ra, Ha) * Dr**2*fr**2*W(r_list, r0, ddr, normW)
-            else: 
-                A0_tab = time_dict['Dr']**2*time_dict['fr']**2*time_dict['Wr'] #Dr**2*fr**2*W(r_list, r0, ddr, normW)
+            if which in ['d2vd0d', 'd1vd1d', 'd1vd0d', 'd1vdod']:
+                A0_tab = time_dict['Dr']**2*time_dict['fr']*time_dict['Wr'] 
+                if which in ['d1vd0d']:
+                    A0_tab*=time_dict['mathcalR'] 
+
+            elif which in ['d0pd3v', 'd0pd1d', 'd1vd2p']:
+                A0_tab = time_dict['Dr']**2*time_dict['Wr']/time_dict['Hr']/time_dict['ar']
+                if 'v' in which:
+                    A0_tab*=time_dict['fr']
+            else:
+                A0_tab = time_dict['Dr']**2*time_dict['fr']**2*time_dict['Wr'] 
+                if which in ['d1vd2v']:
+                    A0_tab *= time_dict['Hr'] * \
+                            (1.+time_dict['dHr']/time_dict['Hr']**2 + 4./time_dict['Hr']/time_dict['r_list'])
+                elif which in ['davd1v']:
+                    A0_tab *= 2.*time_dict['Hr']*Al123(ell1, ell2, ell3)*np.sqrt(ell2*(ell2+1.)*ell3*(ell3+1.))
+
+            try:
+                A0_tab/=time_dict['r_list']**(int(which[1]) + int(which[4]))
+            except ValueError:
+                try: 
+                    A0_tab/=time_dict['r_list']**(int(which[1]))
+                except ValueError:
+                    A0_tab/=time_dict['r_list']**(int(which[4]))
 
             Cl2_1_chi = sum_qterm_and_linear_term(which[:3], lterm, ell2, time_dict['r_list'], time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
             Cl3_1_chi = sum_qterm_and_linear_term(which[:3], lterm, ell3, time_dict['r_list'], time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])

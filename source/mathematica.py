@@ -1,8 +1,13 @@
 import numpy as np
 from numba import njit
 import sympy as sp
+from sympy.physics.wigner import wigner_3j
 from param import *
 
+
+def Al123(ell1, ell2, ell3):
+    return float((wigner_3j(ell1, ell2, ell3, 0,1,-1)+wigner_3j(ell1, ell2, ell3, 0,-1,1))\
+            /wigner_3j(ell1, ell2, ell3, 0,0,0))
 
 ############################################################################# window fct
 @njit
@@ -181,7 +186,7 @@ def mathcalB(which, lterm, qterm, time_dict, z0, Dz, normW):
     elif lterm=='rsd':
         B = -sp.diff(D*f*W , x, 2)
     elif lterm=='pot':
-        B=W*D*((1.-R)/a+3*f*H**2)
+        B = W*D*((1.-R)/a+3*f*H**2)
     elif lterm=='doppler':
         B = sp.diff(H*D*W*f*R , x, 1)
     else:
