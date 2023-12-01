@@ -32,6 +32,10 @@ def main(argv):
                 print('change parameter: qterm={}'.format(argv[ind+1]))
                 qterm=int(argv[ind+1])
                 ell_start+=2
+            elif arg[1:] in ['N', 'Newtonian']:
+                print('change parameter: Newtonian={}'.format(argv[ind+1]))
+                Newtonian=int(argv[ind+1])
+                ell_start+=2
 
     Wrmin, Wrmax = get_distance(z0-dz)[0], get_distance(z0+dz)[0]
     r0=(Wrmin+Wrmax)/2.
@@ -174,7 +178,7 @@ def main(argv):
         if which=='all':
             if argv[ell_start-1] == 'bl':
                 which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v',\
-                        'dv2', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p'] #RG2
+                        'dv2', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p', 'davd1v'] #RG2
             else:
                 which_list=['F2', 'G2', 'dv2']
         else:
@@ -216,12 +220,13 @@ def main(argv):
                 elif argv[ell_start-1] == 'bl':
                     if rad and wh in ['F2', 'G2', 'dv2']:
                         fich = open(output_dir+"bl_{}_{}_rad.txt".format(lt, wh), "w")
+                    elif Newton:
+                        fich = open(output_dir+"bl_{}_{}_newton.txt".format(lt, wh), "w")
                     else:
                         fich = open(output_dir+"bl_{}_{}.txt".format(lt, wh), "w")
                     
                     if argv[ell_start]=='equi':
                         for ell in ell_list:
-
                             try: 
                                 bl=spherical_bispectrum(wh, lt, ell, ell, ell, time_dict, rmax, rmin)
                                 fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, bl))
