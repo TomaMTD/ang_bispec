@@ -81,14 +81,11 @@ def P_of_k(k, Pk, gauge, which, time_dict, r0, ddr, normW):
             out=Pk*k**4 
 
     else:
-        if which=='F2':
-            out=Pk
-        else:
-            out=Pk/(1.+3.*time_dict['Hr'][:,None]**2/k**2)
+        out=Pk
     return out
 
 def quadratic_terms(qterm, k, Pk, gauge, lterm, which, time_dict, r0, ddr, normW):
-    B=P_of_k(k, Pk, gauge, which, False, time_dict, r0, ddr, normW)
+    B=P_of_k(k, Pk, gauge, which, time_dict, r0, ddr, normW)
     
     #print('     qterm={}'.format(qterm))
     if which=='d2v':
@@ -157,41 +154,18 @@ def compute(k, Pk, fct_k, b):
     return res
 
 def get_cp_of_r(k, Pk, gauge, lterm, which, qterm, time_dict, r0, ddr, normW):
-    if which in ['FG2', 'F2', 'G2']: 
+    if which in ['FG2', 'F2', 'G2', 'dv2']: 
         fct_k = P_of_k(k, Pk, gauge, which, time_dict, r0, ddr, normW) 
-        #np.save(output_dir+'fct_k'.format(which, lterm, qterm), fct_k)
-        #np.save(output_dir+'fct_r'.format(which, lterm, qterm), fct_r)
+        np.save(output_dir+'fct_k'.format(which, lterm, qterm), fct_k)
     else: 
         fct_k = quadratic_terms(qterm, k, Pk, gauge, lterm, which, time_dict, r0, ddr, normW) 
-        #np.save(output_dir+'fct_k_{}_lterm{}_qterm{}'.format(which, lterm, qterm), fct_k)
-        #np.save(output_dir+'fct_r_{}_lterm{}_qterm{}'.format(which, lterm, qterm), fct_r)
+        np.save(output_dir+'fct_k_{}_lterm{}_qterm{}'.format(which, lterm, qterm), fct_k)
 
     b=set_bias(k, fct_k)
     if not rad:
         fct_r = mathcalB(which, lterm, qterm, time_dict, r0, ddr, normW)
+        np.save(output_dir+'fct_r_{}_lterm{}_qterm{}'.format(which, lterm, qterm), fct_r)
         return compute(k, Pk, fct_k, b)[:,None]*fct_r, b
     else:
         return compute(k, Pk, fct_k, b)[:,None], b
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 

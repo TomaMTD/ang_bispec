@@ -15,8 +15,7 @@ from general_ps import *
 from bispectrum import *
 
 def main(argv):
-    global which, lterm, qterm    
-
+    global Newton, which, lterm, qterm    
     ell_start=2
     for ind,arg in enumerate(argv):
         if '-' in arg:
@@ -32,9 +31,9 @@ def main(argv):
                 print('change parameter: qterm={}'.format(argv[ind+1]))
                 qterm=int(argv[ind+1])
                 ell_start+=2
-            elif arg[1:] in ['N', 'Newtonian']:
-                print('change parameter: Newtonian={}'.format(argv[ind+1]))
-                Newtonian=int(argv[ind+1])
+            elif arg[1:] in ['N', 'Newton']:
+                print('change parameter: Newton={}'.format(argv[ind+1]))
+                Newton=int(argv[ind+1])
                 ell_start+=2
 
     Wrmin, Wrmax = get_distance(z0-dz)[0], get_distance(z0+dz)[0]
@@ -204,7 +203,7 @@ def main(argv):
                         print(' Am_ell={}'.format(int(ell)))
 
                         chi_list=np.linspace(rmin, rmax, Nchi)
-                        get_Am(chi_list, ell, ell, ell, wh, lt, time_dict, r0, ddr, normW, rmin, rmax)
+                        get_Am(chi_list, ell, ell, ell, wh, Newton, lt, time_dict, r0, ddr, normW, rmin, rmax)
 
                 elif argv[ell_start-1] == 'Il':
                     #b=set_bias(gauge, wh, True)
@@ -215,7 +214,8 @@ def main(argv):
                     for ell in ell_list: #np.float64(argv[ell_start:]):
                         print(' Il_ell={}'.format(int(ell)))
                         chi_list=np.linspace(rmin, rmax, Nchi)
-                        get_Il(chi_list, ell, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax, cp_tr, b, len(tr['k']), kmax, kmin)
+                        get_Il(chi_list, ell, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax, cp_tr[:,0]\
+                                , b, len(tr['k']), kmax, kmin)
  
                 elif argv[ell_start-1] == 'bl':
                     if rad and wh in ['F2', 'G2', 'dv2']:
@@ -228,7 +228,7 @@ def main(argv):
                     if argv[ell_start]=='equi':
                         for ell in ell_list:
                             try: 
-                                bl=spherical_bispectrum(wh, lt, ell, ell, ell, time_dict, rmax, rmin)
+                                bl=spherical_bispectrum(wh, Newton, lt, ell, ell, ell, time_dict, rmax, rmin)
                                 fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, bl))
                             except IndexError:
                                 print(' fail')
@@ -239,7 +239,7 @@ def main(argv):
                     else:     
                         for ell_ind in range(ell_start, len(argv)):
                             ell = [int(c) for c in argv[ell_ind].split(',')]
-                            bl=spherical_bispectrum(wh, lt, ell[0], ell[1], ell[2], time_dict, rmax, rmin)
+                            bl=spherical_bispectrum(wh, Newton, lt, ell[0], ell[1], ell[2], time_dict, rmax, rmin)
                             fich.write('{} {} {} {:.16e} \n'.format(ell[0], ell[1], ell[2], bl))
                     fich.close
     return 0

@@ -1,4 +1,5 @@
 import numpy as np
+import numba
 from numba import njit
 import sympy as sp
 from sympy.physics.wigner import wigner_3j
@@ -6,10 +7,24 @@ from param import *
 
 
 def Al123(ell1, ell2, ell3):
-    return float((wigner_3j(ell1, ell2, ell3, 0,1,-1)+wigner_3j(ell1, ell2, ell3, 0,-1,1))\
+    if ell1==ell2 and ell2==ell3:
+        return -1.0
+    else:
+        return float((wigner_3j(ell1, ell2, ell3, 0,1,-1)+wigner_3j(ell1, ell2, ell3, 0,-1,1))\
             /wigner_3j(ell1, ell2, ell3, 0,0,0))
 
 ############################################################################# window fct
+@numba.extending.overload(np.gradient)
+def np_gradient(f):
+    def np_gradient_impl(f):
+        out = np.empty_like(f, np.float64)
+        out[1:-1] = (f[2:] - f[:-2]) / 2.0
+        out[0] = f[1] - f[0]
+        out[-1] = f[-1] - f[-2]
+        return out
+
+    return np_gradient_impl
+
 @njit
 def W(x, z0, Dz, normW=1):
     
@@ -190,7 +205,7 @@ def mathcalB(which, lterm, qterm, time_dict, z0, Dz, normW):
     elif lterm=='doppler':
         B = sp.diff(H*D*W*f*R , x, 1)
     else:
-        print('no code')
+        print('no code for {}'.format(lterm))
 
     if qterm==4:
         expr = sp.diff(x**3*B, x, 3)
