@@ -17,6 +17,7 @@ from bispectrum import *
 def main(argv):
     global Newton, which, lterm, qterm    
     ell_start=2
+    squ=0
     for ind,arg in enumerate(argv):
         if '-' in arg:
             if arg[1:] in ['which', 'w']:
@@ -34,6 +35,10 @@ def main(argv):
             elif arg[1:] in ['N', 'Newton']:
                 print('change parameter: Newton={}'.format(argv[ind+1]))
                 Newton=int(argv[ind+1])
+                ell_start+=2
+            elif arg[1:] in ['squ', 'squeeze']:
+                print('change parameter: squeeze={}'.format(argv[ind+1]))
+                squ=int(argv[ind+1])
                 ell_start+=2
 
     Wrmin, Wrmax = get_distance(z0-dz)[0], get_distance(z0+dz)[0]
@@ -192,7 +197,6 @@ def main(argv):
         else:
             lterm_list=[lterm]
 
-        squbin = 6
         if argv[ell_start] in ['equi', 'squ']:
             ell_list=equi
         else:
@@ -206,10 +210,11 @@ def main(argv):
                    
                     for ell in ell_list:
                         print(' Am_ell={}'.format(int(ell)))
-                        if argv[ell_start]=='equi':
+
+                        if squ>0:
+                            get_Am(chi_list, squ, ell, ell, wh, Newton, lt, time_dict, r0, ddr, normW, rmin, rmax)
+                        else:
                             get_Am(chi_list, ell, ell, ell, wh, Newton, lt, time_dict, r0, ddr, normW, rmin, rmax)
-                        elif argv[ell_start]=='squ':
-                            get_Am(chi_list, squbin, ell, ell, wh, Newton, lt, time_dict, r0, ddr, normW, rmin, rmax)
 
                 elif argv[ell_start-1] == 'Il':
                     #b=set_bias(gauge, wh, True)
@@ -219,11 +224,11 @@ def main(argv):
 
                     for ell in ell_list: #np.float64(argv[ell_start:]):
                         print(' Il_ell={}'.format(int(ell)))
-                        if argv[ell_start]=='equi':
-                            get_Il(chi_list, ell, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax,\
+                        if squ>0:
+                            get_Il(chi_list, squ, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax,\
                                     cp_tr[:,0], b, len(tr['k']), kmax, kmin)
-                        elif argv[ell_start]=='squ':
-                            get_Il(chi_list, squbin, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax,\
+                        else:
+                            get_Il(chi_list, ell, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax,\
                                     cp_tr[:,0], b, len(tr['k']), kmax, kmin)
  
                 elif argv[ell_start-1] == 'bl':
@@ -237,10 +242,10 @@ def main(argv):
                     if argv[ell_start] in ['equi', 'squ']:
                         for ell in ell_list:
                             #try: \
-                            if argv[ell_start]=='equi':
+                            if squ>0:
+                                bl=spherical_bispectrum(wh, Newton, lt, squ, ell, ell, time_dict, rmax, rmin)
+                            else:
                                 bl=spherical_bispectrum(wh, Newton, lt, ell, ell, ell, time_dict, rmax, rmin)
-                            elif argv[ell_start]=='squ':
-                                bl=spherical_bispectrum(wh, Newton, lt, squbin, ell, ell, time_dict, rmax, rmin)
                             fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, bl))
                             #except IndexError:
                             #    print(' fail')
