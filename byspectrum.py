@@ -51,6 +51,12 @@ def main(argv):
     r_list = time_dict["r_list"]
     np.save(output_dir+'time_dict', time_dict)
 
+    if Nchi>0:
+        chi_list=np.linspace(rmin, rmax, Nchi)
+    else:
+        chi_list=np.copy(r_list)
+
+
     #which=argv[2]
     if argv[ell_start-1] == 'debug':
         ell = np.float64(argv[ell_start])
@@ -60,7 +66,6 @@ def main(argv):
         y=get_cp_of_r(tr['k'], Pk, gauge, lterm, which, qterm, time_dict, r0, ddr, normW, b)
         y1=mathcalD(r_list, y, ell)
 
-        chi_list=np.linspace(rmin, rmax, Nchi)
         plot_integrand(ell, 0, r_list, y, y1, rmin, rmax, len(tr['k']), kmax, kmin, 0, b)
 
 
@@ -142,7 +147,6 @@ def main(argv):
         else:
             lterm_list=[lterm]
         
-        chi_list=np.linspace(rmin, rmax, Nchi)
         for lt in lterm_list:
             b_list=np.zeros((len(qterm_list)))
             y=np.zeros((len(tr['k'])+1, len(r_list), len(qterm_list)), dtype=complex)
@@ -188,7 +192,8 @@ def main(argv):
         else:
             lterm_list=[lterm]
 
-        if argv[ell_start]=='equi':
+        squbin = 6
+        if argv[ell_start] in ['equi', 'squ']:
             ell_list=equi
         else:
             ell_list=[int(c) for c in argv[ell_start:]]
@@ -201,9 +206,10 @@ def main(argv):
                    
                     for ell in ell_list:
                         print(' Am_ell={}'.format(int(ell)))
-
-                        chi_list=np.linspace(rmin, rmax, Nchi)
-                        get_Am(chi_list, ell, ell, ell, wh, Newton, lt, time_dict, r0, ddr, normW, rmin, rmax)
+                        if argv[ell_start]=='equi':
+                            get_Am(chi_list, ell, ell, ell, wh, Newton, lt, time_dict, r0, ddr, normW, rmin, rmax)
+                        elif argv[ell_start]=='squ':
+                            get_Am(chi_list, squbin, ell, ell, wh, Newton, lt, time_dict, r0, ddr, normW, rmin, rmax)
 
                 elif argv[ell_start-1] == 'Il':
                     #b=set_bias(gauge, wh, True)
@@ -213,9 +219,12 @@ def main(argv):
 
                     for ell in ell_list: #np.float64(argv[ell_start:]):
                         print(' Il_ell={}'.format(int(ell)))
-                        chi_list=np.linspace(rmin, rmax, Nchi)
-                        get_Il(chi_list, ell, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax, cp_tr[:,0]\
-                                , b, len(tr['k']), kmax, kmin)
+                        if argv[ell_start]=='equi':
+                            get_Il(chi_list, ell, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax,\
+                                    cp_tr[:,0], b, len(tr['k']), kmax, kmin)
+                        elif argv[ell_start]=='squ':
+                            get_Il(chi_list, squbin, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax,\
+                                    cp_tr[:,0], b, len(tr['k']), kmax, kmin)
  
                 elif argv[ell_start-1] == 'bl':
                     if rad and wh in ['F2', 'G2', 'dv2']:
@@ -225,16 +234,18 @@ def main(argv):
                     else:
                         fich = open(output_dir+"bl_{}_{}.txt".format(lt, wh), "w")
                     
-                    if argv[ell_start]=='equi':
+                    if argv[ell_start] in ['equi', 'squ']:
                         for ell in ell_list:
-                            try: 
+                            #try: \
+                            if argv[ell_start]=='equi':
                                 bl=spherical_bispectrum(wh, Newton, lt, ell, ell, ell, time_dict, rmax, rmin)
-                                fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, bl))
-                            except IndexError:
-                                print(' fail')
-                                fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, -1))
-                                continue
-
+                            elif argv[ell_start]=='squ':
+                                bl=spherical_bispectrum(wh, Newton, lt, squbin, ell, ell, time_dict, rmax, rmin)
+                            fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, bl))
+                            #except IndexError:
+                            #    print(' fail')
+                            #    fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, -1))
+                            #    continue
 
                     else:     
                         for ell_ind in range(ell_start, len(argv)):
