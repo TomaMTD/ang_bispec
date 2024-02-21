@@ -1,5 +1,5 @@
 ############################################################################# Parameters
-force=True
+force=False #True
 
 which='d0d' # for cl: FG2, d2v, d1v, d3v, d1d, d0d
             # for bl, F2, G2, d2vd2v, d1vd3v, d1vd1d, d2vd0d
@@ -18,10 +18,10 @@ z0, dz=2, 0.25
 bb=25
 zmin, zmax = z0-2.*dz, z0+2.*dz
 Nchi=200
-output_dir = 'test/' #'output_z{}_dz{}_hp/'.format(z0, dz)
+output_dir = 'output_z{}_dz{}_hp/'.format(z0, dz)
 
-#equi = range(2, 128*2, 2)
-equi = range(2, (130-1)*4-2, 2) #range(2, 128*2, 2)
+equi = range(2, 128*2, 2)
+#equi = range(2, (130-1)*4-2, 2) #range(2, 128*2, 2)
 
 relerr=1e-2
 h=0.67556

@@ -40,11 +40,12 @@ def solvr(Y, t):
     return [a*H, Y[2], -H*Y[2]+3./2.* omega_m*H0**2/a*Y[1], Y[4], -H*Y[4]+3./2.*omega_m*H0**2*(Y[3]+Y[1]**2) / a]
 
 def growth_fct():
-    print('computing growth')
 
     if os.path.isfile(output_dir+'growth.txt') and not force:
+        print('loading growth')
         apy, ra, Ha, Oma, Dpy, fpy, vpy, wpy = np.loadtxt(output_dir+'growth.txt').T
     else:
+        print('computing growth')
         a0=1e-10
         z0=1./a0-1.
         D0=1.
@@ -101,17 +102,16 @@ def interp_growth(r0, ddr, normW, rmin, rmax):
 
 ############################################################################# power spectrum
 def trans(z, gauge):
-    print('computing class')
-
-    clss = Class()
-    clss.set({'gauge': gauge, 'h': h,'omega_b': omega_b*h**2, 'omega_cdm': omega_cdm*h**2,
-        'output':'dTk,vTk','z_pk': 10, 'A_s': A_s , 'n_s': n_s,
-             'k_per_decade_for_pk' :  100,
-             'k_per_decade_for_bao' : 100,
-#              "transfer_neglect_delta_k_S_t0" :0.17,
-#              "transfer_neglect_delta_k_S_t1" :0.05,
-#              "transfer_neglect_delta_k_S_t2" :0.17,
-#              "transfer_neglect_delta_k_S_e" : 0.13,
+    if not os.path.isfile(output_dir+'class_transfer.npy') or force:
+        clss = Class()
+        clss.set({'gauge': gauge, 'h': h,'omega_b': omega_b*h**2, 'omega_cdm': omega_cdm*h**2,
+            'output':'dTk,vTk','z_pk': 10, 'A_s': A_s , 'n_s': n_s,
+                 'k_per_decade_for_pk' :  100,
+                 'k_per_decade_for_bao' : 100,
+#                  "transfer_neglect_delta_k_S_t0" :0.17,
+#                  "transfer_neglect_delta_k_S_t1" :0.05,
+#                  "transfer_neglect_delta_k_S_t2" :0.17,
+#                  "transfer_neglect_delta_k_S_e" : 0.13,
 
 #'tol_background_integration' : 1.e-15 ,
 #'tol_thermo_integration' : 1.e-15,
@@ -128,33 +128,37 @@ def trans(z, gauge):
 #'k_step_sub':0.015,
 #'k_step_super':0.0001,
 #'k_step_super_reduction':0.1
-             })
-    clss.compute()
+                 })
+        clss.compute()
 
-    tr=clss.get_transfer(z=z)
-    tr['k'] = tr.pop('k (h/Mpc)')
+        tr=clss.get_transfer(z=z)
+        tr['k'] = tr.pop('k (h/Mpc)')
 
-#     if z==0:
-#         for key in list(tr.keys())[1:]:
-#             tr[key]*=Dz
+#         if z==0:
+#             for key in list(tr.keys())[1:]:
+#                 tr[key]*=Dz
 
-#    tr['logphi'] = np.log(tr['phi'])
-#    tr['logk'] = np.log(tr['k'])
-#     dlogT=np.diff(np.append(tr['logphi'],tr['logphi'][-1]*2-tr['logphi'][-2]))
-#     dlogk=np.diff(np.append(tr['logk'],tr['logk'][-1]*2-tr['logk'][-2]))
-#    dlogT=np.diff(tr['logphi'])
-#    dlogk=np.diff(tr['logk'])
-#    tr['dTdk'] = dlogT/dlogk
-#    tr['dk'] = np.diff(tr['k'])
-    tr['dTdk'] = np.gradient(np.log(tr['phi']), np.log(tr['k']))
+#        tr['logphi'] = np.log(tr['phi'])
+#        tr['logk'] = np.log(tr['k'])
+#         dlogT=np.diff(np.append(tr['logphi'],tr['logphi'][-1]*2-tr['logphi'][-2]))
+#         dlogk=np.diff(np.append(tr['logk'],tr['logk'][-1]*2-tr['logk'][-2]))
+#        dlogT=np.diff(tr['logphi'])
+#        dlogk=np.diff(tr['logk'])
+#        tr['dTdk'] = dlogT/dlogk
+#        tr['dk'] = np.diff(tr['k'])
+        tr['dTdk'] = np.gradient(np.log(tr['phi']), np.log(tr['k']))
 
-    tr['d_m'] =  (omega_cdm*tr['d_cdm'] + omega_b*tr['d_b'])/(omega_b+omega_cdm)
+        tr['d_m'] =  (omega_cdm*tr['d_cdm'] + omega_b*tr['d_b'])/(omega_b+omega_cdm)
 
-    if gauge=='new':
-        tr['t_m'] =  (omega_cdm*tr['t_cdm'] + omega_b*tr['t_b'])/(omega_b+omega_cdm)
-        tr['v_m'] = -tr['t_m']/tr['k']**2/h
+        if gauge=='new':
+            tr['t_m'] =  (omega_cdm*tr['t_cdm'] + omega_b*tr['t_b'])/(omega_b+omega_cdm)
+            tr['v_m'] = -tr['t_m']/tr['k']**2/h
 
-    np.save(output_dir+'class_transfer', tr)
+        np.save(output_dir+'class_transfer', tr)
+    else:
+        print('loading class')
+        tr = np.load(output_dir+'class_transfer.npy', allow_pickle=True).tolist()
+    
     return tr
 
 def primordial(k):

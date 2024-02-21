@@ -16,7 +16,7 @@ def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, D
 
     if not isinstance(lterm, list):
         if lterm=='all':
-            lterm=['density', 'rsd']#, 'doppler', 'pot']
+            lterm=['density', 'rsd', 'pot', 'doppler']
             #print(' ONLY DENSITY AND RSD AS LINEAR TERM')
         else:
             lterm=[lterm]
@@ -550,25 +550,32 @@ def spherical_bispectrum_perm1(which, Newton, lterm, ell1, ell2, ell3, time_dict
             Hr = 0
         
         if not Newton or (Newton and which!='F2'):
-            Am_tab = np.loadtxt(output_dir+Am_fn.format(lterm, which, int(ell1), int(ell2), int(ell3), Am_new))
+            Am_tab = np.loadtxt(output_dir+Am_fn.format(lterm, which, \
+                    int(ell1), int(ell2), int(ell3), Am_new))
         else:
             Am_tab = 0
 
         A0_tab = A0_chi(time_dict['r_list'], which,       time_dict['Dr'], time_dict['fr'], \
                 time_dict['vr'], time_dict['wr'], time_dict['Omr'], Hr, time_dict['Wr'])
         A2_tab = A2_chi(time_dict['r_list'], which, ell1, time_dict['Dr'], time_dict['fr'], \
-                time_dict['vr'], time_dict['wr'], time_dict['Omr'], Hr, time_dict['Wr'], time_dict['mathcalR'])
+                time_dict['vr'], time_dict['wr'], time_dict['Omr'], Hr, time_dict['Wr'], \
+                time_dict['mathcalR'])
         A4_tab = A4_chi(time_dict['r_list'], which, ell1, time_dict['Dr'], time_dict['fr'], \
-                time_dict['vr'], time_dict['wr'], time_dict['Omr'], Hr, time_dict['Wr'], time_dict['mathcalR'])
+                time_dict['vr'], time_dict['wr'], time_dict['Omr'], Hr, time_dict['Wr'], 
+                time_dict['mathcalR'])
         
         if which=='dv2':
             A2_tab*=time_dict['Hr']
             A4_tab*=time_dict['Hr']
 
         val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
-                                     args=(which, Newton, Cl2n_chi, Cl3n_chi, 0, 0, time_dict['r_list'],\
+                                     args=(which, Newton, Cl2n_chi, Cl3n_chi, 0, 0, \
+                                     time_dict['r_list'],\
                                      A0_tab, A2_tab, A4_tab, Am_tab, Il_tab), \
                                      relerr=relerr, maxEval=0, abserr=0, vectorized=True)
+        if which=='G2':
+            val*=-1.
+
     else:
 
         if which=='d2vd2v':
@@ -632,9 +639,8 @@ def spherical_bispectrum_perm1(which, Newton, lterm, ell1, ell2, ell3, time_dict
     return val[0]*8./np.pi**2
 
 def spherical_bispectrum(which, Newton, lterm, ell1, ell2, ell3, time_dict, rmax, rmin):
-    if ell1%20==0:
-        print('     ell={}'.format(ell1))
-
+    #if ell1%20==0:
+    #    print('     ell={}'.format(ell1))
     return   spherical_bispectrum_perm1(which, Newton, lterm, ell1, ell2, ell3, time_dict, rmax, rmin)\
             +spherical_bispectrum_perm1(which, Newton, lterm, ell2, ell1, ell3, time_dict, rmax, rmin)\
             +spherical_bispectrum_perm1(which, Newton, lterm, ell3, ell2, ell1, time_dict, rmax, rmin)

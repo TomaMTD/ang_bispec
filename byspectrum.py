@@ -260,11 +260,14 @@ def main(argv):
                         for ell in ell_list:
                             #try: \
                             if squ>0:
-                                bl=spherical_bispectrum(wh, Newton, lt, squ, ell, ell, time_dict, rmax, rmin)
+                                bl=spherical_bispectrum(wh, Newton, lt, squ, ell, ell,\
+                                        time_dict, rmax, rmin)
                                 fich.write('{} {} {} {:.16e} \n'.format(squ, ell, ell, bl))
                             else:
-                                bl=spherical_bispectrum(wh, Newton, lt, ell, ell, ell, time_dict, rmax, rmin)
+                                bl=spherical_bispectrum(wh, Newton, lt, ell, ell, ell,\
+                                        time_dict, rmax, rmin)
                                 fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, bl))
+
                             #except IndexError:
                             #    print(' fail')
                             #    fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, -1))
