@@ -291,6 +291,7 @@ def main(argv):
                         bl=[]
                         ell1=int(argv[ell_start+1])
                         for ell2 in range(ell1, ellmax):
+                            print('     ell2={}/'.format(ell2, ellmax))
                             for ell3 in range(ell2, ellmax):
                                 bl.append(spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
                                         time_dict, r0, ddr, normW, rmax, rmin, chi_list))
