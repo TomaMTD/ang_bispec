@@ -12,7 +12,8 @@ qterm=0 # 1, 2, 3, 4 only for which neq F2 G2
 gauge='new'
 
 Newton=False
-rad=True
+rad=False
+ellmax=128
 
 z0, dz=2, 0.25
 bb=25

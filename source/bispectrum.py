@@ -288,7 +288,7 @@ def integrand_Am_G2(r, chi, ell, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl
     return out
 
 
-def get_Am(chi_list, ell1, ell2, ell3, which, Newton, lterm, time_dict, r0, ddr, normW, rmin, rmax):
+def get_Am(chi_list, ell1, ell2, ell3, which, Newton, lterm, time_dict, r0, ddr, normW, rmin, rmax, save=True):
     Cl2n_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell2)
     Cl3n_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell3)
 
@@ -314,7 +314,8 @@ def get_Am(chi_list, ell1, ell2, ell3, which, Newton, lterm, time_dict, r0, ddr,
                                              time_dict['wr'], time_dict['Omr'], time_dict['Hr'], r0, ddr, normW)\
                                              , relerr=relerr, maxEval=0, abserr=0, vectorized=True)
                 res[ind]=val*chi**2
-            np.savetxt(output_dir+Am_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
+            if save:
+                np.savetxt(output_dir+Am_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
 
     else:
         if Newton: Hr=0
@@ -350,9 +351,10 @@ def get_Am(chi_list, ell1, ell2, ell3, which, Newton, lterm, time_dict, r0, ddr,
                                          time_dict['r_list'], f0_tab, fm2_tab)\
                                          , relerr=relerr, maxEval=0, abserr=0, vectorized=True)
             res[ind]=val*chi**2
-        np.savetxt(output_dir+Am_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
+        if save:
+            np.savetxt(output_dir+Am_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
 
-    return res
+    return np.vstack([chi_list, res]).T
 
 
 ################################################################################ radiation
@@ -503,7 +505,7 @@ def final_integrand(r, which, Newton, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl3n2_c
         else:
             Am=0
 
-        if rad:
+        if rad and not Newton:
             Il_res = np.interp(r, Il_tab[:,0], Il_tab[:,1])
         else:
             Il_res = 0
@@ -523,7 +525,7 @@ def final_integrand(r, which, Newton, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl3n2_c
 
 ################################################################################ spherical bispectrum
 
-def spherical_bispectrum_perm1(which, Newton, lterm, ell1, ell2, ell3, time_dict, rmax, rmin):
+def spherical_bispectrum_perm1(which, Newton, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list):
 
     if which in ['F2', 'G2', 'dv2']:
         Cl2n_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell2)
@@ -550,8 +552,13 @@ def spherical_bispectrum_perm1(which, Newton, lterm, ell1, ell2, ell3, time_dict
             Hr = 0
         
         if not Newton or (Newton and which!='F2'):
-            Am_tab = np.loadtxt(output_dir+Am_fn.format(lterm, which, \
+            try:
+                Am_tab = np.loadtxt(output_dir+Am_fn.format(lterm, which, \
                     int(ell1), int(ell2), int(ell3), Am_new))
+            except FileNotFoundError:
+                Am_tab = get_Am(chi_list, ell1, ell2, ell3, which, Newton, lterm, time_dict,\
+                                    r0, ddr, normW, rmin, rmax, save=False)
+
         else:
             Am_tab = 0
 
@@ -638,9 +645,12 @@ def spherical_bispectrum_perm1(which, Newton, lterm, ell1, ell2, ell3, time_dict
             val/=2.
     return val[0]*8./np.pi**2
 
-def spherical_bispectrum(which, Newton, lterm, ell1, ell2, ell3, time_dict, rmax, rmin):
+def spherical_bispectrum(which, Newton, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list):
     #if ell1%20==0:
     #    print('     ell={}'.format(ell1))
-    return   spherical_bispectrum_perm1(which, Newton, lterm, ell1, ell2, ell3, time_dict, rmax, rmin)\
-            +spherical_bispectrum_perm1(which, Newton, lterm, ell2, ell1, ell3, time_dict, rmax, rmin)\
-            +spherical_bispectrum_perm1(which, Newton, lterm, ell3, ell2, ell1, time_dict, rmax, rmin)
+    return   spherical_bispectrum_perm1(which, Newton, lterm, ell1, ell2, ell3, time_dict,\
+                r0, ddr, normW, rmax, rmin, chi_list)\
+            +spherical_bispectrum_perm1(which, Newton, lterm, ell2, ell1, ell3, time_dict,\
+                r0, ddr, normW, rmax, rmin, chi_list)\
+            +spherical_bispectrum_perm1(which, Newton, lterm, ell3, ell2, ell1, time_dict,\
+                r0, ddr, normW, rmax, rmin, chi_list)

@@ -17,7 +17,6 @@ from bispectrum import *
 def main(argv):
     global Newton, which, lterm, qterm    
     ell_start=2
-    squ=0
     for ind,arg in enumerate(argv):
         if '-' in arg:
             if arg[1:] in ['which', 'w']:
@@ -35,10 +34,6 @@ def main(argv):
             elif arg[1:] in ['N', 'Newton']:
                 print('change parameter: Newton={}'.format(argv[ind+1]))
                 Newton=int(argv[ind+1])
-                ell_start+=2
-            elif arg[1:] in ['squ', 'squeeze']:
-                print('change parameter: squeeze={}'.format(argv[ind+1]))
-                squ=int(argv[ind+1])
                 ell_start+=2
 
     Wrmin, Wrmax = get_distance(z0-dz)[0], get_distance(z0+dz)[0]
@@ -197,88 +192,110 @@ def main(argv):
         else:
             lterm_list=[lterm]
 
-        if argv[ell_start] in ['equi', 'squ']:
+        if argv[ell_start] in ['equi', 'squ', 'all']:
             ell_list=equi
         else:
             ell_list=[int(c) for c in argv[ell_start:]]
  
         for wh in which_list:
             for lt in lterm_list:
-                print('computing {} for which={} lterm={} ell=equi'.format(argv[ell_start-1], wh, lt))
+                print('computing {} for which={} lterm={} ell={}'.format(argv[ell_start-1], wh, lt, argv[ell_start]))
 
                 if argv[ell_start-1] == 'Am':
                    
                     for ell in ell_list:
-                        print(' Am_ell={}'.format(int(ell)))
+                        #print(' Am_ell={}'.format(int(ell)))
 
-                        if squ>0:
-                            get_Am(chi_list, squ, ell, ell, wh, Newton, lt, time_dict,\
+                        if argv[ell_start]=='squ':
+                            get_Am(chi_list, int(argv[ell_start+1]), ell, ell, wh, Newton, lt, time_dict,\
                                     r0, ddr, normW, rmin, rmax)
-                            get_Am(chi_list, ell, squ, ell, wh, Newton, lt, time_dict,\
+                            get_Am(chi_list, ell, int(argv[ell_start+1]), ell, wh, Newton, lt, time_dict,\
                                     r0, ddr, normW, rmin, rmax)
-                            get_Am(chi_list, ell, ell, squ, wh, Newton, lt, time_dict,\
+                            get_Am(chi_list, ell, ell, int(argv[ell_start+1]), wh, Newton, lt, time_dict,\
                                     r0, ddr, normW, rmin, rmax)
-                        else:
+                        elif argv[ell_start]=='equi':
                             get_Am(chi_list, ell, ell, ell, wh, Newton, lt, time_dict,\
                                     r0, ddr, normW, rmin, rmax)
+                        else:
+                            indd=0
+                            for ell1 in range(2, ellmax, 2):
+                                print('     ell1={}'.format(ell1))
+                                for ell2 in range(ell1, ellmax, 2):
+                                    for ell3 in range(ell2, ellmax, 2):
+                                        indd+=1
+                                        get_Am(chi_list, ell1, ell2, ell3, wh, Newton, lt, time_dict,\
+                                            r0, ddr, normW, rmin, rmax)
+
+                                        get_Am(chi_list, ell2, ell1, ell3, wh, Newton, lt, time_dict,\
+                                            r0, ddr, normW, rmin, rmax)
+
+                                        get_Am(chi_list, ell2, ell3, ell1, wh, Newton, lt, time_dict,\
+                                            r0, ddr, normW, rmin, rmax)
 
                 elif argv[ell_start-1] == 'Il':
-                    #b=set_bias(gauge, wh, True)
                     cp_tr, b = get_cp_of_r(tr['k'], tr['dTdk'], gauge, lt, wh, 0, time_dict\
                             , r0, ddr, normW)
                     np.savetxt(output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
 
                     for ell in ell_list: #np.float64(argv[ell_start:]):
                         print(' Il_ell={}'.format(int(ell)))
-                        if squ>0:
-                            get_Il(chi_list, squ, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax,\
+                        if argv[ell_start]=='squ':
+                            get_Il(chi_list, int(argv[ell_start+1]), ell, ell, wh, time_dict, \
+                                    r0, ddr, normW, rmin, rmax,\
                                     cp_tr[:,0], b, len(tr['k']), kmax, kmin)
-                            get_Il(chi_list, ell, squ, ell, wh, time_dict, r0, ddr, normW, rmin, rmax,\
+                            get_Il(chi_list, ell, int(argv[ell_start+1]), ell, wh, time_dict, \
+                                    r0, ddr, normW, rmin, rmax,\
                                     cp_tr[:,0], b, len(tr['k']), kmax, kmin)
-                            get_Il(chi_list, ell, ell, squ, wh, time_dict, r0, ddr, normW, rmin, rmax,\
+                            get_Il(chi_list, ell, ell, int(argv[ell_start+1]), wh, time_dict, \
+                                    r0, ddr, normW, rmin, rmax,\
                                     cp_tr[:,0], b, len(tr['k']), kmax, kmin)
-                        else:
+                        elif argv[ell_start]=='equi':
                             get_Il(chi_list, ell, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax,\
                                     cp_tr[:,0], b, len(tr['k']), kmax, kmin)
+                        else:
+                            for ell1 in range(ellmax):
+                                for ell2 in range(ell1, ellmax):
+                                    for ell3 in range(ell2, ellmax):
+                                        get_Il(chi_list, ell1, ell2, ell3, wh, time_dict, r0, ddr, normW,\
+                                                rmin, rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin)
  
                 elif argv[ell_start-1] == 'bl':
-
                     if argv[ell_start] == 'equi':
-                        shape = '_equi'
-                        if squ>0 : shape = '_squ'
+                        shape_name = '_equi'
+                    elif argv[ell_start] == 'squ':
+                        shape_name = '_squ'
                     else:
-                        shape=''
+                        shape_name=''
 
                     if rad and wh in ['F2', 'G2', 'dv2']:
-                        fich = open(output_dir+"bl_{}_{}_rad{}.txt".format(lt, wh, shape), "w")
+                        name=output_dir+"bl_{}_{}_rad{}".format(lt, wh, shape_name)
                     elif Newton:
-                        fich = open(output_dir+"bl_{}_{}_newton{}.txt".format(lt, wh, shape), "w")
+                        name=output_dir+"bl_{}_{}_newton{}".format(lt, wh, shape_name)
                     else:
-                        fich = open(output_dir+"bl_{}_{}{}.txt".format(lt, wh, shape), "w")
-                    
+                        name=output_dir+"bl_{}_{}{}".format(lt, wh, shape_name)
+ 
                     if argv[ell_start] in ['equi', 'squ']:
+                        fich = open(name+'.txt', "w")
+
                         for ell in ell_list:
-                            #try: \
-                            if squ>0:
-                                bl=spherical_bispectrum(wh, Newton, lt, squ, ell, ell,\
-                                        time_dict, rmax, rmin)
-                                fich.write('{} {} {} {:.16e} \n'.format(squ, ell, ell, bl))
+                            if argv[ell_start] == 'squ':
+                                bl=spherical_bispectrum(wh, Newton, lt, int(argv[ell_start+1]), ell, ell,\
+                                        time_dict, r0, ddr, normW, rmax, rmin, chi_list)
+                                fich.write('{} {} {} {:.16e} \n'.format(int(argv[ell_start+1]), ell, ell, bl))
                             else:
                                 bl=spherical_bispectrum(wh, Newton, lt, ell, ell, ell,\
-                                        time_dict, rmax, rmin)
+                                        time_dict, r0, ddr, normW, rmax, rmin, chi_list)
                                 fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, bl))
 
-                            #except IndexError:
-                            #    print(' fail')
-                            #    fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, -1))
-                            #    continue
-
                     else:     
-                        for ell_ind in range(ell_start, len(argv)):
-                            ell = [int(c) for c in argv[ell_ind].split(',')]
-                            bl=spherical_bispectrum(wh, Newton, lt, ell[0], ell[1], ell[2], time_dict, rmax, rmin)
-                            fich.write('{} {} {} {:.16e} \n'.format(ell[0], ell[1], ell[2], bl))
-                    fich.close
+                        bl=[]
+                        ell1=int(argv[ell_start+1])
+                        for ell2 in range(ell1, ellmax):
+                            for ell3 in range(ell2, ellmax):
+                                bl.append(spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
+                                        time_dict, r0, ddr, normW, rmax, rmin, chi_list))
+                        bl=np.array(bl)
+                        np.save(name+'_ell{}'.format(ell1), bl)
     return 0
 
 if __name__ == "__main__":
