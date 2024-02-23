@@ -89,34 +89,41 @@ def main(argv):
                         clname=output_dir+'cln/Cln_{}_ell{}.txt'.format(l, int(ell))
                     else:
                         clname=output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(w, l, int(ell))
-                    try:
+                    
+                    test=False
+                    if os.path.isfile(clname):
                         cl=np.loadtxt(clname)
-                    except FileNotFoundError:
+                        try:
+                            for ind, chi in enumerate(cl[:,0]):
+                                if cl[ind,1]==0:
+                                    #print(clname, '{}/100'.format(ind))
+                                    test=True
+                                    break
+                        except IndexError:
+                            print('{} empty'.format(clname))
+
+                    if test:
+                        printt=False
                         #print(clname, '0/100')
                         for q in ql:
-                            clname=output_dir+'cln/Cln_{}_qterm{}_{}_ell{}.txt'.format(w, q, l, int(ell))
+                            clname_q=output_dir+'cln/Cln_{}_qterm{}_{}_ell{}.txt'.format(w, q, l, int(ell))
                             try:
-                                cl=np.loadtxt(clname)
-                                try: 
-                                    for ind, chi in enumerate(cl[:,0]):
-                                        if cl[ind,1]==0:
-                                            print(clname, '{}/100'.format(ind))
+                                cl=np.loadtxt(clname_q)
+                                try:
+                                    for indq, chi in enumerate(cl[:,0]):
+                                        if cl[indq,1]==0:
+                                            print(clname_q, '{}/100'.format(indq))
                                             break
                                 except IndexError:
-                                    print('{} empty'.format(clname))
+                                    print('{} empty'.format(clname_q))
 
                             except FileNotFoundError:
-                                print(clname, 'qterm: 0/100')
+                                #print(clname, '{}/100'.format(ind))
+                                #print(clname, 'qterm: 0/100')
+                                printt = True
                                 continue
+                        if printt: print(clname, '{}/100'.format(ind))
                         continue
-
-                    try: 
-                        for ind, chi in enumerate(cl[:,0]):
-                            if cl[ind,1]==0:
-                                print(clname, '{}/100'.format(ind))
-                                break
-                    except IndexError:
-                        print('{} empty'.format(clname))
 
     elif argv[ell_start-1] == 'cl':
         if which in ['FG2', 'F2', 'G2']:
