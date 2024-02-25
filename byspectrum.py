@@ -15,7 +15,7 @@ from general_ps import *
 from bispectrum import *
 
 def main(argv):
-    global Newton, which, lterm, qterm    
+    global Newton, which, lterm, qterm, chi_ind 
     ell_start=2
     for ind,arg in enumerate(argv):
         if '-' in arg:
@@ -34,6 +34,10 @@ def main(argv):
             elif arg[1:] in ['N', 'Newton']:
                 print('change parameter: Newton={}'.format(argv[ind+1]))
                 Newton=int(argv[ind+1])
+                ell_start+=2
+            elif arg[1:] in ['chi_i', 'i', 'chi_ind']:
+                print('change parameter: chi_ind={}'.format(argv[ind+1]))
+                chi_ind=int(argv[ind+1])
                 ell_start+=2
 
     Wrmin, Wrmax = get_distance(z0-dz)[0], get_distance(z0+dz)[0]
@@ -56,6 +60,8 @@ def main(argv):
     else:
         chi_list=np.copy(r_list)
 
+    if chi_ind>-1:
+        chi_list=np.array([chi_list[chi_ind]])
 
     #which=argv[2]
     if argv[ell_start-1] == 'debug':

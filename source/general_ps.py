@@ -89,24 +89,24 @@ def get_all_Cln(which, qterm, lterm, chi_list, ell, r_list, y, y1, rmin, rmax, N
 
     a=time.time()
     for ind, chi in enumerate(chi_list):
-        if ind%1==0: 
-            print('  {}/{} chi={:.2f}, time {:.2f}'.format(ind, len(chi_list), chi, time.time()-a))
+        ind_chi = np.where(chi==res[:,0])[0][0]
+        print('  {}/{} chi={:.2f}, time {:.2f}'.format(ind_chi, len(res[:,0]), chi, time.time()-a))
 
-        if res[ind,1]!=0 and not force: 
+        if res[ind_chi,1]!=0 and not force: 
             print('     already computed -> jump')
             continue
-        res[ind,1]=stuff2*get_Cl_sum(integrand, chi, ell, 0, r_list, y, None, rmin, rmax, N, kmax, kmin, kpow, b)
+        res[ind_chi,1]=stuff2*get_Cl_sum(integrand, chi, ell, 0, r_list, y, None, rmin, rmax, N, kmax, kmin, kpow, b)
 
         if which in ['FG2', 'F2', 'G2']:
-            if res[ind,2]!=0 and not force: 
+            if res[ind_chi,2]!=0 and not force: 
                 print('     already computed -> jump')
                 continue
-            res[ind,2]=stuff2*get_Cl_sum(integrand, chi, ell, -2, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b)
+            res[ind_chi,2]=stuff2*get_Cl_sum(integrand, chi, ell, -2, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b)
 
-            if res[ind,3]!=0 and not force: 
+            if res[ind_chi,3]!=0 and not force: 
                 print('     already computed -> jump')
                 continue
-            res[ind,3]=stuff2*get_Cl_sum(integrand, chi, ell, 2, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b)
+            res[ind_chi,3]=stuff2*get_Cl_sum(integrand, chi, ell, 2, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b)
         
         np.savetxt(cl_name, res) 
     else:
