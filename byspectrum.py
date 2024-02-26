@@ -45,7 +45,7 @@ def main(argv):
     ddr=(-Wrmin+Wrmax)
 
     rmin, rmax = get_distance(zmin)[0], get_distance(zmax)[0]
-    print('rmin={:.2f} rmax={:.2f}'.format(rmin, rmax))
+    print('rmin={} rmax={}'.format(rmin, rmax))
     normW = 1./4.*bb*(1. + 1./np.tanh((Wrmax - Wrmin)/bb))*2./bb*(Wrmax-Wrmin)
 
     tr, Pk = get_power(0, gauge)
@@ -76,6 +76,10 @@ def main(argv):
 
 
     elif argv[ell_start-1] == 'search':
+        wlist=[]
+        llist=[]
+        elllist=[]
+
         for ell in range(2, 128*2, 2):
             for w in ['FG2', 'd3v', 'd2v', 'd1v', 'd1d']:
 
@@ -128,8 +132,16 @@ def main(argv):
                                 #print(clname, 'qterm: 0/100')
                                 printt = True
                                 continue
-                        if printt: print(clname, '{}/100'.format(ind))
+                        if printt: 
+                            wlist.append(w)
+                            llist.append(l)
+                            elllist.append(ell)
+
+                            print(clname, '{}/100'.format(ind))
                         continue
+        print(wlist)
+        print(llist)
+        print(ell)
 
     elif argv[ell_start-1] == 'cl':
         if which in ['FG2', 'F2', 'G2']:
