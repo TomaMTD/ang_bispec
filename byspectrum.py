@@ -79,6 +79,7 @@ def main(argv):
         wlist=[]
         llist=[]
         elllist=[]
+        indlist=[]
 
         for ell in range(2, 128*2, 2):
             for w in ['FG2', 'd3v', 'd2v', 'd1v', 'd1d']:
@@ -136,12 +137,14 @@ def main(argv):
                             wlist.append(w)
                             llist.append(l)
                             elllist.append(ell)
+                            indlist.append(ind)
 
                             print(clname, '{}/100'.format(ind))
                         continue
         print(wlist)
         print(llist)
         print(elllist)
+        print(indlist)
 
     elif argv[ell_start-1] == 'cl':
         if which in ['FG2', 'F2', 'G2']:
