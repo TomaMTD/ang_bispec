@@ -108,7 +108,13 @@ def get_all_Cln(which, qterm, lterm, chi_list, ell, r_list, y, y1, rmin, rmax, N
                 continue
             res[ind_chi,3]=stuff2*get_Cl_sum(integrand, chi, ell, 2, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b)
         
-        np.savetxt(cl_name, res) 
+        if len(chi_list)==1:
+            os.system("awk -i inplace '{{if (NR=={}) $2=\"{}\"; print $0}}' {}".format(ind_chi+1, str(res[ind_chi,1]), cl_name))
+            if which in ['FG2', 'F2', 'G2']:
+                os.system("awk -i inplace '{{if (NR=={}) $3=\"{}\"; print $0}}' {}".format(ind_chi+1, res[ind_chi,2], cl_name))
+                os.system("awk -i inplace '{{if (NR=={}) $4=\"{}\"; print $0}}' {}".format(ind_chi+1, res[ind_chi,3], cl_name))
+        else:
+            np.savetxt(cl_name, res) 
     else:
         res=np.loadtxt(cl_name)
     return res
