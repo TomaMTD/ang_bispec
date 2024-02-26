@@ -141,7 +141,7 @@ def main(argv):
                         continue
         print(wlist)
         print(llist)
-        print(ell)
+        print(elllist)
 
     elif argv[ell_start-1] == 'cl':
         if which in ['FG2', 'F2', 'G2']:
