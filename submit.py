@@ -6,9 +6,9 @@ import sys
 ell0=2
 core=128
 ellmax= core+ell0
-ell_list = np.arange(ell0, ellmax*2, 2)
+ell_list = np.arange(ell0, ellmax*2, 1)
 Nell=len(ell_list)
-Nnode = 1
+Nnode = 2
 Nproc = Nnode*core
 
 Nell_per_proc = Nell//Nproc
@@ -17,9 +17,9 @@ script=''
 
 
 # for cl: FG2, d2v, d1v, d3v, d1d, d0d
-which=['d3v', 'd2v'] #['FG2', 'd3v', 'd2v', 'd1v', 'd1d']
-lterm=['rsd', 'doppler'] #['density', 'rsd', 'doppler', 'pot']
-qterm= [[0], [0], [0], [0], [0]]
+which=['FG2', 'd3v', 'd2v', 'd1v', 'd1d']
+lterm=['density','rsd', 'doppler', 'pot'] 
+qterm= [[0]]
 
 for w in which:
     for l in lterm:
@@ -29,7 +29,7 @@ for w in which:
 
                 script=''
                 for ell_i in range(0, Nproc):
-                    if ell_i < Nell%Nproc:
+                    if ell_i < Nell%Nproc - 2:
                         lenght2 = lenght+1
                     else:
                         lenght2 = lenght+0
@@ -52,7 +52,7 @@ for w in which:
 #SBATCH -N """+str(Nnode)+r"""
 #SBATCH --ntasks="""+str(ell_i)+r"""
 #SBATCH --cpus-per-task=1
-#SBATCH --time=10:00:00
+#SBATCH --time=5:00:00
 #SBATCH --job-name=w{}_l{}_q{}
 
 source $HOME/myenv/bin/activate
@@ -64,5 +64,6 @@ srun -n """.format(w, l, q)+str(ell_i)+""" -l --multi-prog script/silly_w{}_l{}_
                 text_file.write(batch)
                 text_file.close()
 
-                #os.system("sbatch {}".format('script_integral_w{}_l{}_q{}.sh'.format(w, l, q)))
+                os.system("sbatch {}".format('script/script_integral_w{}_l{}_q{}.sh'.format(w, l, q)))
+                print("sbatch {}".format('script/script_integral_w{}_l{}_q{}.sh'.format(w, l, q)))
 

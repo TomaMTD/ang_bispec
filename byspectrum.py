@@ -81,8 +81,8 @@ def main(argv):
         elllist=[]
         indlist=[]
 
-        for ell in range(2, 128*2, 2):
-            for w in ['FG2', 'd3v', 'd2v', 'd1v', 'd1d']:
+        for ell in range(2, 128*2, 1):
+            for w in ['d3v', 'd2v']: #['FG2', 'd1v', 'd1d']:#, 'd3v', 'd2v']:
 
                 if w=='d3v':
                     ql=[1, 2, 3, 4]
@@ -140,6 +140,7 @@ def main(argv):
                             indlist.append(ind)
 
                             print(clname, '{}/100'.format(ind))
+                            #os.system("python -u byspectrum.py -w {} -l {} -q 0 -i {} cl {}".format(w,l,ind,ell))
                         continue
         print(wlist)
         print(llist)
