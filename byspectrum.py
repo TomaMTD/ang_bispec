@@ -297,11 +297,11 @@ def main(argv):
                         shape_name=''
 
                     if rad and wh in ['F2', 'G2', 'dv2']:
-                        name=output_dir+"bl_{}_{}_rad{}".format(lt, wh, shape_name)
+                        name=output_dir+"bl/bl_{}_{}_rad{}".format(lt, wh, shape_name)
                     elif Newton:
-                        name=output_dir+"bl_{}_{}_newton{}".format(lt, wh, shape_name)
+                        name=output_dir+"bl/bl_{}_{}_newton{}".format(lt, wh, shape_name)
                     else:
-                        name=output_dir+"bl_{}_{}{}".format(lt, wh, shape_name)
+                        name=output_dir+"bl/bl_{}_{}{}".format(lt, wh, shape_name)
  
                     if argv[ell_start] in ['equi', 'squ']:
                         fich = open(name+'.txt', "w")
@@ -319,13 +319,31 @@ def main(argv):
                     else:     
                         bl=[]
                         ell1=int(argv[ell_start+1])
-                        for ell2 in range(ell1, ellmax):
-                            print('     ell2={}/{}'.format(ell2, ellmax))
-                            for ell3 in range(ell2, ellmax):
-                                bl.append(spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
-                                        time_dict, r0, ddr, normW, rmax, rmin, chi_list))
-                        bl=np.array(bl)
-                        np.save(name+'_ell{}'.format(ell1), bl)
+                        if os.path.isfile(name+'_ell{}.npy'.format(ell1)):
+                            bl=np.load(name+'_ell{}.npy'.format(ell1))
+                            lenght=len(bl)
+                            ind=0
+                            for ell2 in range(ell1, ellmax):
+                                print('     ell2={}/{}'.format(ell2, ellmax))
+                                for ell3 in range(ell2, ellmax):
+                                    if ind<lenght: 
+                                        ind+=1
+                                        continue
+                                    else:
+                                        bl=np.append(spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
+                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list), bl)
+
+                                        np.save(name+'_ell{}'.format(ell1), np.array(bl))
+
+                        else:
+                            for ell2 in range(ell1, ellmax):
+                                print('     ell2={}/{}'.format(ell2, ellmax))
+                                for ell3 in range(ell2, ellmax):
+                                    print(ell3)
+                                    bl.append(spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
+                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list))
+                                    np.save(name+'_ell{}'.format(ell1), np.array(bl))
+
     return 0
 
 if __name__ == "__main__":
