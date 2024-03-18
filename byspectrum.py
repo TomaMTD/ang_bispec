@@ -319,7 +319,9 @@ def main(argv):
                     else:     
                         bl=[]
                         ell1=int(argv[ell_start+1])
-                        if os.path.isfile(name+'_ell{}.npy'.format(ell1)):
+                        #if os.path.isfile(name+'_ell{}.npy'.format(ell1)):
+
+                        try:
                             bl=np.load(name+'_ell{}.npy'.format(ell1))
                             lenght=len(bl)
                             ind=0
@@ -335,11 +337,10 @@ def main(argv):
 
                                         np.save(name+'_ell{}'.format(ell1), np.array(bl))
 
-                        else:
+                        except (FileNotFoundError, EOFError, ValueError):
                             for ell2 in range(ell1, ellmax):
                                 print('     ell2={}/{}'.format(ell2, ellmax))
                                 for ell3 in range(ell2, ellmax):
-                                    print(ell3)
                                     bl.append(spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
                                             time_dict, r0, ddr, normW, rmax, rmin, chi_list))
                                     np.save(name+'_ell{}'.format(ell1), np.array(bl))
