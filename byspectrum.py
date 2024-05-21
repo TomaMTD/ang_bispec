@@ -5,8 +5,9 @@ from scipy import integrate
 import time
 from numba import njit
 import cubature
+from sympy.physics.wigner import wigner_3j
 
-sys.path.insert(1, './source')
+sys.path.insert(1, '/sps/lupm/tmontand/software/byspectrum/source')
 from param import *
 from fftlog import *
 from lincosmo import *
@@ -317,7 +318,7 @@ def main(argv):
                                 fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, bl))
 
                     else:     
-                        bl=[]
+                        bl=np.array([])
                         ell1=int(argv[ell_start+1])
                         #if os.path.isfile(name+'_ell{}.npy'.format(ell1)):
 
@@ -332,19 +333,27 @@ def main(argv):
                                         ind+=1
                                         continue
                                     else:
-                                        bl=np.append(spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
-                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list), bl)
+                                        wigner_test = float(wigner_3j(ell1, ell2, ell3, 0,0,0))==0
+                                        if wigner_test:
+                                            bl=np.append(0., bl)
+                                        else:
+                                            bl=np.append(spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
+                                                time_dict, r0, ddr, normW, rmax, rmin, chi_list), bl)
 
-                                        np.save(name+'_ell{}'.format(ell1), np.array(bl))
+                                        np.save(name+'_ell{}'.format(ell1), bl)
 
-                        except (FileNotFoundError, EOFError, ValueError):
+                        except (OSError, FileNotFoundError, EOFError, ValueError):
                             for ell2 in range(ell1, ellmax):
                                 print('     ell2={}/{}'.format(ell2, ellmax))
                                 for ell3 in range(ell2, ellmax):
-                                    bl.append(spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
-                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list))
-                                    np.save(name+'_ell{}'.format(ell1), np.array(bl))
+                                    wigner_test = float(wigner_3j(ell1, ell2, ell3, 0,0,0))==0
+                                    if wigner_test:
+                                        bl=np.append(0., bl)
+                                    else:
+                                        bl=np.append(spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
+                                                time_dict, r0, ddr, normW, rmax, rmin, chi_list), bl)
 
+                                    np.save(name+'_ell{}'.format(ell1), bl)
     return 0
 
 if __name__ == "__main__":
