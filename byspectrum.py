@@ -7,13 +7,14 @@ from numba import njit
 import cubature
 from sympy.physics.wigner import wigner_3j
 
-sys.path.insert(1, '/sps/lupm/tmontand/software/byspectrum/source')
+sys.path.insert(1, '/home/tmontandon/software/byspectrum/source')
 from param import *
 from fftlog import *
 from lincosmo import *
 from mathematica import *
 from general_ps import *
 from bispectrum import *
+from binning import *
 
 def main(argv):
     global Newton, which, lterm, qterm, chi_ind 
@@ -208,10 +209,11 @@ def main(argv):
                     get_all_Cln(which, qterm, lt, chi_list, ell, r_list, y, y1, rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list)
 
     else:
-        if which=='all':
+        if which=='all' and not argv[ell_start]=='bin':
             if argv[ell_start-1] == 'bl':
                 which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v',\
-                        'dv2', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p', 'davd1v'] #RG2
+                            'dv2', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p', 'davd1v'] #RG2
+
             else:
                 which_list=['F2', 'G2', 'dv2']
         else:
@@ -222,7 +224,7 @@ def main(argv):
         else:
             lterm_list=[lterm]
 
-        if argv[ell_start] in ['equi', 'squ', 'all']:
+        if argv[ell_start] in ['equi', 'squ', 'all', 'bin']:
             ell_list=equi
         else:
             ell_list=[int(c) for c in argv[ell_start:]]
@@ -230,7 +232,6 @@ def main(argv):
         for wh in which_list:
             for lt in lterm_list:
                 print('computing {} for which={} lterm={} ell={}'.format(argv[ell_start-1], wh, lt, argv[ell_start]))
-
                 if argv[ell_start-1] == 'Am':
                    
                     for ell in ell_list:
@@ -290,70 +291,78 @@ def main(argv):
                                                 rmin, rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin)
  
                 elif argv[ell_start-1] == 'bl':
-                    if argv[ell_start] == 'equi':
-                        shape_name = '_equi'
-                    elif argv[ell_start] == 'squ':
-                        shape_name = '_squ'
-                    else:
-                        shape_name=''
 
-                    if rad and wh in ['F2', 'G2', 'dv2']:
-                        name=output_dir+"bl/bl_{}_{}_rad{}".format(lt, wh, shape_name)
-                    elif Newton:
-                        name=output_dir+"bl/bl_{}_{}_newton{}".format(lt, wh, shape_name)
+                    if argv[ell_start] == 'bin':
+                        print('Binning bispectrum...')
+                        get_binned_B(ell_list, wh, lt, Newton)
+
                     else:
-                        name=output_dir+"bl/bl_{}_{}{}".format(lt, wh, shape_name)
+                        if argv[ell_start] == 'equi':
+                            shape_name = '_equi'
+                        elif argv[ell_start] == 'squ':
+                            shape_name = '_squ'
+                        else:
+                            shape_name=''
+
+                        if rad and wh in ['F2', 'G2', 'dv2']:
+                            name=output_dir+"bl/bl_{}_{}_rad{}".format(lt, wh, shape_name)
+                        elif Newton:
+                            name=output_dir+"bl/bl_{}_{}_newton{}".format(lt, wh, shape_name)
+                        else:
+                            name=output_dir+"bl/bl_{}_{}{}".format(lt, wh, shape_name)
  
-                    if argv[ell_start] in ['equi', 'squ']:
-                        fich = open(name+'.txt', "w")
+                        if argv[ell_start] in ['equi', 'squ']:
+                            fich = open(name+'.txt', "w")
 
-                        for ell in ell_list:
-                            if argv[ell_start] == 'squ':
-                                bl=spherical_bispectrum(wh, Newton, lt, int(argv[ell_start+1]), ell, ell,\
-                                        time_dict, r0, ddr, normW, rmax, rmin, chi_list)
-                                fich.write('{} {} {} {:.16e} \n'.format(int(argv[ell_start+1]), ell, ell, bl))
-                            else:
-                                bl=spherical_bispectrum(wh, Newton, lt, ell, ell, ell,\
-                                        time_dict, r0, ddr, normW, rmax, rmin, chi_list)
-                                fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, bl))
+                            for ell in ell_list:
+                                if argv[ell_start] == 'squ':
+                                    bl=spherical_bispectrum(wh, Newton, lt, int(argv[ell_start+1]), ell, ell,\
+                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list)
+                                    fich.write('{} {} {} {:.16e} \n'.format(int(argv[ell_start+1]), ell, ell, bl))
+                                else:
+                                    bl=spherical_bispectrum(wh, Newton, lt, ell, ell, ell,\
+                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list)
+                                    fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, bl))
 
-                    else:     
-                        bl=np.array([])
-                        ell1=int(argv[ell_start+1])
-                        #if os.path.isfile(name+'_ell{}.npy'.format(ell1)):
+                        else:     
+                            bl=np.array([])
+                            ell1=int(argv[ell_start+1])
+                            #if os.path.isfile(name+'_ell{}.npy'.format(ell1)):
 
-                        try:
-                            bl=np.load(name+'_ell{}.npy'.format(ell1))
-                            lenght=len(bl)
-                            ind=0
-                            for ell2 in range(ell1, ellmax):
-                                print('     ell2={}/{}'.format(ell2, ellmax))
-                                for ell3 in range(ell2, ellmax):
-                                    if ind<lenght: 
-                                        ind+=1
-                                        continue
-                                    else:
+                            try:
+                                bl=np.load(name+'_ell{}.npy'.format(ell1))
+                                lenght=len(bl)
+                                ind=0
+                                for ell2 in range(ell1, ellmax):
+                                    print('     ell2={}/{}'.format(ell2, ellmax))
+                                    for ell3 in range(ell2, ellmax):
+                                        if ind<lenght: 
+                                            ind+=1
+                                            continue
+                                        else:
+                                            wigner_test = float(wigner_3j(ell1, ell2, ell3, 0,0,0))==0
+                                            if wigner_test:
+                                                bl=np.append(bl, 0.)
+                                            else:
+                                                bl=np.append(bl, spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
+                                                    time_dict, r0, ddr, normW, rmax, rmin, chi_list))
+
+                                            np.save(name+'_ell{}'.format(ell1), bl)
+
+                            except (OSError, FileNotFoundError, EOFError, ValueError):
+                                for ell2 in range(ell1, ellmax):
+                                    print('     ell2={}/{}'.format(ell2, ellmax))
+                                    for ell3 in range(ell2, ellmax):
                                         wigner_test = float(wigner_3j(ell1, ell2, ell3, 0,0,0))==0
                                         if wigner_test:
-                                            bl=np.append(0., bl)
+                                            bl=np.append(bl, 0.)
                                         else:
-                                            bl=np.append(spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
-                                                time_dict, r0, ddr, normW, rmax, rmin, chi_list), bl)
+                                            bl=np.append(bl, spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
+                                                    time_dict, r0, ddr, normW, rmax, rmin, chi_list))
 
                                         np.save(name+'_ell{}'.format(ell1), bl)
-
-                        except (OSError, FileNotFoundError, EOFError, ValueError):
-                            for ell2 in range(ell1, ellmax):
-                                print('     ell2={}/{}'.format(ell2, ellmax))
-                                for ell3 in range(ell2, ellmax):
-                                    wigner_test = float(wigner_3j(ell1, ell2, ell3, 0,0,0))==0
-                                    if wigner_test:
-                                        bl=np.append(0., bl)
-                                    else:
-                                        bl=np.append(spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
-                                                time_dict, r0, ddr, normW, rmax, rmin, chi_list), bl)
-
-                                    np.save(name+'_ell{}'.format(ell1), bl)
+                
+                    
     return 0
 
 if __name__ == "__main__":
