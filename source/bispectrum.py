@@ -18,6 +18,8 @@ def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, D
         if lterm=='all':
             lterm=['density', 'rsd', 'pot', 'doppler']
             #print(' ONLY DENSITY AND RSD AS LINEAR TERM')
+        elif lterm=='nopot':
+            lterm=['density', 'rsd', 'doppler'] 
         else:
             lterm=[lterm]
 
@@ -433,7 +435,7 @@ def integrand_Il(r, chi, ell, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl3_p
     return np.real(out)
 
 
-def get_Il(chi_list, ell1, ell2, ell3, which, time_dict, r0, ddr, normW, rmin, rmax, cp_tr, bphi, Nphi, kmax, kmin):
+def get_Il(chi_list, ell1, ell2, ell3, which, time_dict, r0, ddr, normW, rmin, rmax, cp_tr, bphi, Nphi, kmax, kmin, save=True):
 
     Cl2n_chi = sum_qterm_and_linear_term(which, False, lterm, ell2)
     Cl3n_chi = sum_qterm_and_linear_term(which, False, lterm, ell3)
@@ -472,7 +474,9 @@ def get_Il(chi_list, ell1, ell2, ell3, which, time_dict, r0, ddr, normW, rmin, r
                                              maxEval=1e5, abserr=0, vectorized=True)
 
         res[ind]=val*chi**2*2./np.pi/4./np.pi
-        np.savetxt(output_dir+Il_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
+        
+        if save: 
+            np.savetxt(output_dir+Il_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
     return res
 
 ################################################################################ spherical bispectrum
@@ -525,7 +529,7 @@ def final_integrand(r, which, Newton, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl3n2_c
 
 ################################################################################ spherical bispectrum
 
-def spherical_bispectrum_perm1(which, Newton, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list):
+def spherical_bispectrum_perm1(which, Newton, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin):
 
     if which in ['F2', 'G2', 'dv2']:
         Cl2n_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell2)
@@ -533,13 +537,15 @@ def spherical_bispectrum_perm1(which, Newton, lterm, ell1, ell2, ell3, time_dict
 
         Il_fn='Il/Il_{}_{}_ell{},{},{}.txt'
         if not Newton and rad:
-            Il_txt = np.loadtxt(output_dir+Il_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)))
-            Il_tab=np.zeros((len(Il_txt[:,0]), 2))
-            Il_tab[:,0]=Il_txt[:,0]
-            #if which=='F2':
-            #    Il_tab[:,1]=Il_txt[:,1]+Il_txt[:,2]
-            #else:
-            Il_tab[:,1]=Il_txt[:,1]
+            Il_tab=np.zeros((len(chi_list), 2))
+            try:
+                Il_txt = np.loadtxt(output_dir+Il_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)))
+                Il_tab[:,0]=Il_txt[:,0]
+                Il_tab[:,1]=Il_txt[:,1]
+            except FileNotFoundError:
+                Il_tab[:,0] = get_Il(chi_list, ell1, ell2, ell3, which, time_dict, r0, ddr, normW,\
+                                     rmin, rmax, cp_tr, b, k, kmax, kmin)
+                Il_tab[:,1] = chi_list
         else:
             Il_tab = 0 
         
@@ -645,12 +651,11 @@ def spherical_bispectrum_perm1(which, Newton, lterm, ell1, ell2, ell3, time_dict
             val/=2.
     return val[0]*8./np.pi**2
 
-def spherical_bispectrum(which, Newton, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list):
-    #if ell1%20==0:
-    #    print('     ell={}'.format(ell1))
+def spherical_bispectrum(which, Newton, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin):
+    #print(which, lterm, ell1, ell2, ell3)
     return   spherical_bispectrum_perm1(which, Newton, lterm, ell1, ell2, ell3, time_dict,\
-                r0, ddr, normW, rmax, rmin, chi_list)\
+                r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin)\
             +spherical_bispectrum_perm1(which, Newton, lterm, ell2, ell1, ell3, time_dict,\
-                r0, ddr, normW, rmax, rmin, chi_list)\
+                r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin)\
             +spherical_bispectrum_perm1(which, Newton, lterm, ell3, ell2, ell1, time_dict,\
-                r0, ddr, normW, rmax, rmin, chi_list)
+                r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin)

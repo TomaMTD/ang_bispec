@@ -291,6 +291,13 @@ def main(argv):
                                                 rmin, rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin)
  
                 elif argv[ell_start-1] == 'bl':
+                    if rad:
+                        cp_tr, b = get_cp_of_r(tr['k'], tr['dTdk'], gauge, lt, wh, 0, time_dict\
+                            , r0, ddr, normW)
+                        cp_tr=cp_tr[:,0]
+                        np.savetxt(output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
+                    else:
+                        cp_tr, b = 0
 
                     if argv[ell_start] == 'bin':
                         print('Binning bispectrum...')
@@ -317,17 +324,18 @@ def main(argv):
                             for ell in ell_list:
                                 if argv[ell_start] == 'squ':
                                     bl=spherical_bispectrum(wh, Newton, lt, int(argv[ell_start+1]), ell, ell,\
-                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list)
+                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
+                                            len(tr['k']), kmax, kmin)
                                     fich.write('{} {} {} {:.16e} \n'.format(int(argv[ell_start+1]), ell, ell, bl))
                                 else:
                                     bl=spherical_bispectrum(wh, Newton, lt, ell, ell, ell,\
-                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list)
+                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
+                                            len(tr['k']), kmax, kmin)
                                     fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, bl))
 
                         else:     
                             bl=np.array([])
                             ell1=int(argv[ell_start+1])
-                            #if os.path.isfile(name+'_ell{}.npy'.format(ell1)):
 
                             try:
                                 bl=np.load(name+'_ell{}.npy'.format(ell1))
@@ -344,8 +352,9 @@ def main(argv):
                                             if wigner_test:
                                                 bl=np.append(bl, 0.)
                                             else:
-                                                bl=np.append(bl, spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
-                                                    time_dict, r0, ddr, normW, rmax, rmin, chi_list))
+                                                bl=np.append(bl, spherical_bispectrum(wh, Newton, lt, ell1, ell2,\
+                                                        ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, \
+                                                        cp_tr, b, len(tr['k']), kmax, kmin))
 
                                             np.save(name+'_ell{}'.format(ell1), bl)
 
@@ -358,7 +367,8 @@ def main(argv):
                                             bl=np.append(bl, 0.)
                                         else:
                                             bl=np.append(bl, spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
-                                                    time_dict, r0, ddr, normW, rmax, rmin, chi_list))
+                                                    time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b,\
+                                                    len(tr['k']), kmax, kmin))
 
                                         np.save(name+'_ell{}'.format(ell1), bl)
                 
