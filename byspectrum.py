@@ -37,6 +37,10 @@ def main(argv):
                 print('change parameter: Newton={}'.format(argv[ind+1]))
                 Newton=int(argv[ind+1])
                 ell_start+=2
+            elif arg[1:] in ['r', 'rad']:
+                print('change parameter: rad={}'.format(argv[ind+1]))
+                rad=int(argv[ind+1])
+                ell_start+=2
             elif arg[1:] in ['chi_i', 'i', 'chi_ind']:
                 print('change parameter: chi_ind={}'.format(argv[ind+1]))
                 chi_ind=int(argv[ind+1])
