@@ -214,7 +214,7 @@ def main(argv):
 
     else:
         if which=='all' and not argv[ell_start]=='bin':
-            if argv[ell_start-1] == 'bl':
+            if argv[ell_start-1] == 'bl' and not rad:
                 which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v',\
                             'dv2', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p', 'davd1v'] #RG2
 
