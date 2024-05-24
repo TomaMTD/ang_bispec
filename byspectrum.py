@@ -17,7 +17,7 @@ from bispectrum import *
 from binning import *
 
 def main(argv):
-    global Newton, which, lterm, qterm, chi_ind 
+    global Newton, which, lterm, qterm, chi_ind, rad
     ell_start=2
     for ind,arg in enumerate(argv):
         if '-' in arg:
@@ -75,7 +75,7 @@ def main(argv):
 
         b=set_bias(gauge, lterm, which, qterm)
 #y=get_cp_of_r(r_list, tr['k'], Pk, gauge, lterm, which, qterm, False, ra, a, Ha, D, f, r0, ddr, normW, b)
-        y=get_cp_of_r(tr['k'], Pk, gauge, lterm, which, qterm, time_dict, r0, ddr, normW, b)
+        y=get_cp_of_r(tr['k'], Pk, gauge, lterm, which, qterm, rad, time_dict, r0, ddr, normW, b)
         y1=mathcalD(r_list, y, ell)
 
         plot_integrand(ell, 0, r_list, y, y1, rmin, rmax, len(tr['k']), kmax, kmin, 0, b)
@@ -194,7 +194,7 @@ def main(argv):
                 print('computing integrand tab of chi qterm={}'.format(qt))
                 #b_list[ind]=set_bias(gauge, lt, which, qt, False)
 #y[:,:,ind]=get_cp_of_r(r_list, tr['k'], Pk, gauge, lt, which, qt, False, ra, a, Ha, D, f, r0, ddr, normW, b_list[ind])
-                y[:,:,ind], b_list[ind]=get_cp_of_r(tr['k'], Pk, gauge, lt, which, qt, time_dict, r0, ddr, normW)
+                y[:,:,ind], b_list[ind]=get_cp_of_r(tr['k'], Pk, gauge, lt, which, qt, 0, time_dict, r0, ddr, normW)
                 np.save(output_dir+'cp_of_r', y)
                 
                 for ell in np.float64(argv[ell_start:]):
@@ -268,7 +268,7 @@ def main(argv):
                                             r0, ddr, normW, rmin, rmax)
 
                 elif argv[ell_start-1] == 'Il':
-                    cp_tr, b = get_cp_of_r(tr['k'], tr['dTdk'], gauge, lt, wh, 0, time_dict\
+                    cp_tr, b = get_cp_of_r(tr['k'], tr['dTdk'], gauge, lt, wh, 0, 1, time_dict\
                             , r0, ddr, normW)
                     np.savetxt(output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
 
@@ -295,13 +295,13 @@ def main(argv):
                                                 rmin, rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin)
  
                 elif argv[ell_start-1] == 'bl':
-                    if rad:
-                        cp_tr, b = get_cp_of_r(tr['k'], tr['dTdk'], gauge, lt, wh, 0, time_dict\
+                    if rad and wh in ['F2', 'G2', 'dv2']:
+                        cp_tr, b = get_cp_of_r(tr['k'], tr['dTdk'], gauge, lt, wh, 0, rad, time_dict\
                             , r0, ddr, normW)
                         cp_tr=cp_tr[:,0]
                         np.savetxt(output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
                     else:
-                        cp_tr, b = 0
+                        cp_tr, b = 0, 0
 
                     if argv[ell_start] == 'bin':
                         print('Binning bispectrum...')
@@ -327,12 +327,12 @@ def main(argv):
 
                             for ell in ell_list:
                                 if argv[ell_start] == 'squ':
-                                    bl=spherical_bispectrum(wh, Newton, lt, int(argv[ell_start+1]), ell, ell,\
+                                    bl=spherical_bispectrum(wh, Newton, rad, lt, int(argv[ell_start+1]), ell, ell,\
                                             time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
                                             len(tr['k']), kmax, kmin)
                                     fich.write('{} {} {} {:.16e} \n'.format(int(argv[ell_start+1]), ell, ell, bl))
                                 else:
-                                    bl=spherical_bispectrum(wh, Newton, lt, ell, ell, ell,\
+                                    bl=spherical_bispectrum(wh, Newton, rad, lt, ell, ell, ell,\
                                             time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
                                             len(tr['k']), kmax, kmin)
                                     fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, bl))
@@ -356,7 +356,7 @@ def main(argv):
                                             if wigner_test:
                                                 bl=np.append(bl, 0.)
                                             else:
-                                                bl=np.append(bl, spherical_bispectrum(wh, Newton, lt, ell1, ell2,\
+                                                bl=np.append(bl, spherical_bispectrum(wh, Newton, rad, lt, ell1, ell2,\
                                                         ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, \
                                                         cp_tr, b, len(tr['k']), kmax, kmin))
 
@@ -370,7 +370,7 @@ def main(argv):
                                         if wigner_test:
                                             bl=np.append(bl, 0.)
                                         else:
-                                            bl=np.append(bl, spherical_bispectrum(wh, Newton, lt, ell1, ell2, ell3,\
+                                            bl=np.append(bl, spherical_bispectrum(wh, Newton, rad, lt, ell1, ell2, ell3,\
                                                     time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b,\
                                                     len(tr['k']), kmax, kmin))
 

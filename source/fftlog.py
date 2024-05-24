@@ -24,10 +24,11 @@ def mathcalD(x, y, ell):
     return -np.gradient(dy, x, axis=1)+2./x*dy+(ell*(ell+1)-2.)/x**2*y
 
 def set_bias(k, fctk):
-    b=0
+    b, ind = 0, 0
     for i in range(5, 16):
         b+=(np.log(np.abs(fctk[-i])) - np.log(np.abs(fctk[i]))) / (np.log(k[-i]) - np.log(k[i]))
-    b/=10
+        ind+=1
+    b/=ind
     print(' bias: {:.2f}'.format(b))
     return b
 
@@ -73,7 +74,7 @@ def set_bias(k, fctk):
 #    print(' bias: {}'.format(b))
 #    return b
  
-def P_of_k(k, Pk, gauge, which, time_dict, r0, ddr, normW):
+def P_of_k(k, Pk, gauge, which, rad, time_dict, r0, ddr, normW):
     if not rad:
         if gauge in ['sync']:
             out=Pk 
@@ -85,7 +86,7 @@ def P_of_k(k, Pk, gauge, which, time_dict, r0, ddr, normW):
     return out
 
 def quadratic_terms(qterm, k, Pk, gauge, lterm, which, time_dict, r0, ddr, normW):
-    B=P_of_k(k, Pk, gauge, which, time_dict, r0, ddr, normW)
+    B=P_of_k(k, Pk, gauge, which, 0, time_dict, r0, ddr, normW)
     
     #print('     qterm={}'.format(qterm))
     if which=='d2v':
@@ -153,13 +154,13 @@ def compute(k, Pk, fct_k, b):
         res[p+Nk//2] = get_cp(p, b, k, Nk, kmin, kmax, fct_k)
     return res
 
-def get_cp_of_r(k, Pk, gauge, lterm, which, qterm, time_dict, r0, ddr, normW):
+def get_cp_of_r(k, Pk, gauge, lterm, which, qterm, rad, time_dict, r0, ddr, normW):
     if which in ['FG2', 'F2', 'G2', 'dv2']: 
-        fct_k = P_of_k(k, Pk, gauge, which, time_dict, r0, ddr, normW) 
-        np.save(output_dir+'fct_k'.format(which, lterm, qterm), fct_k)
+        fct_k = P_of_k(k, Pk, gauge, which, rad, time_dict, r0, ddr, normW) 
+        np.save(output_dir+'fct_k'.format(which, lterm, qterm), np.vstack([k, fct_k]).T)
     else: 
         fct_k = quadratic_terms(qterm, k, Pk, gauge, lterm, which, time_dict, r0, ddr, normW) 
-        np.save(output_dir+'fct_k_{}_lterm{}_qterm{}'.format(which, lterm, qterm), fct_k)
+        np.save(output_dir+'fct_k_{}_lterm{}_qterm{}'.format(which, lterm, qterm), np.vstack([k, fct_k]).T)
 
     b=set_bias(k, fct_k)
     if not rad:
