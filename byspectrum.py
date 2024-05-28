@@ -217,7 +217,6 @@ def main(argv):
             if argv[ell_start-1] == 'bl' and not rad:
                 which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v',\
                             'dv2', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p', 'davd1v'] #RG2
-
             else:
                 which_list=['F2', 'G2', 'dv2']
         else:
@@ -236,63 +235,22 @@ def main(argv):
         for wh in which_list:
             for lt in lterm_list:
                 print('computing {} for which={} lterm={} ell={}'.format(argv[ell_start-1], wh, lt, argv[ell_start]))
-                if argv[ell_start-1] == 'Am':
-                   
-                    for ell in ell_list:
-                        #print(' Am_ell={}'.format(int(ell)))
 
-                        if argv[ell_start]=='squ':
-                            get_Am(chi_list, int(argv[ell_start+1]), ell, ell, wh, Newton, lt, time_dict,\
-                                    r0, ddr, normW, rmin, rmax)
-                            get_Am(chi_list, ell, int(argv[ell_start+1]), ell, wh, Newton, lt, time_dict,\
-                                    r0, ddr, normW, rmin, rmax)
-                            get_Am(chi_list, ell, ell, int(argv[ell_start+1]), wh, Newton, lt, time_dict,\
-                                    r0, ddr, normW, rmin, rmax)
-                        elif argv[ell_start]=='equi':
-                            get_Am(chi_list, ell, ell, ell, wh, Newton, lt, time_dict,\
-                                    r0, ddr, normW, rmin, rmax)
-                        else:
-                            indd=0
-                            for ell1 in range(2, ellmax, 2):
-                                print('     ell1={}'.format(ell1))
-                                for ell2 in range(ell1, ellmax, 2):
-                                    for ell3 in range(ell2, ellmax, 2):
-                                        indd+=1
-                                        get_Am(chi_list, ell1, ell2, ell3, wh, Newton, lt, time_dict,\
-                                            r0, ddr, normW, rmin, rmax)
-
-                                        get_Am(chi_list, ell2, ell1, ell3, wh, Newton, lt, time_dict,\
-                                            r0, ddr, normW, rmin, rmax)
-
-                                        get_Am(chi_list, ell2, ell3, ell1, wh, Newton, lt, time_dict,\
-                                            r0, ddr, normW, rmin, rmax)
-
-                elif argv[ell_start-1] == 'Il':
+                if argv[ell_start-1] == 'Il':
                     cp_tr, b = get_cp_of_r(tr['k'], tr['dTdk'], gauge, lt, wh, 0, 1, time_dict\
                             , r0, ddr, normW)
                     np.savetxt(output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
 
-                    for ell in ell_list: #np.float64(argv[ell_start:]):
-                        print(' Il_ell={}'.format(int(ell)))
-                        if argv[ell_start]=='squ':
-                            get_Il(chi_list, int(argv[ell_start+1]), ell, ell, wh, time_dict, \
-                                    r0, ddr, normW, rmin, rmax,\
-                                    cp_tr[:,0], b, len(tr['k']), kmax, kmin)
-                            get_Il(chi_list, ell, int(argv[ell_start+1]), ell, wh, time_dict, \
-                                    r0, ddr, normW, rmin, rmax,\
-                                    cp_tr[:,0], b, len(tr['k']), kmax, kmin)
-                            get_Il(chi_list, ell, ell, int(argv[ell_start+1]), wh, time_dict, \
-                                    r0, ddr, normW, rmin, rmax,\
-                                    cp_tr[:,0], b, len(tr['k']), kmax, kmin)
-                        elif argv[ell_start]=='equi':
-                            get_Il(chi_list, ell, ell, ell, wh, time_dict, r0, ddr, normW, rmin, rmax,\
-                                    cp_tr[:,0], b, len(tr['k']), kmax, kmin)
-                        else:
-                            for ell1 in range(ellmax):
-                                for ell2 in range(ell1, ellmax):
-                                    for ell3 in range(ell2, ellmax):
-                                        get_Il(chi_list, ell1, ell2, ell3, wh, time_dict, r0, ddr, normW,\
-                                                rmin, rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin)
+                    if argv[ell_start]=='all':
+                        for ell in ell_list: #np.float64(argv[ell_start:]):
+                            print(' Il_ell={}'.format(int(ell)))
+                            get_Am_and_Il(chi_list, ell, wh, Newton, rad, time_dict, r0, ddr, normW, rmin,\
+                                    rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin, True)
+                    else:
+                        for ell in np.float64(argv[ell_start:]):
+                            print(' Il_ell={}'.format(int(ell)))
+                            get_Am_and_Il(chi_list, ell, wh, Newton, rad, time_dict, r0, ddr, normW, rmin,\
+                                    rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin, True)
  
                 elif argv[ell_start-1] == 'bl':
                     if rad and wh in ['F2', 'G2', 'dv2']:
@@ -321,7 +279,8 @@ def main(argv):
                             name=output_dir+"bl/bl_{}_{}_newton{}".format(lt, wh, shape_name)
                         else:
                             name=output_dir+"bl/bl_{}_{}{}".format(lt, wh, shape_name)
- 
+                        
+                        print(' bispectrum file={}'.format(name))
                         if argv[ell_start] in ['equi', 'squ']:
                             fich = open(name+'.txt', "w")
 
@@ -342,6 +301,7 @@ def main(argv):
                             ell1=int(argv[ell_start+1])
 
                             try:
+                                raise(FileNotFoundError)
                                 bl=np.load(name+'_ell{}.npy'.format(ell1))
                                 lenght=len(bl)
                                 ind=0
@@ -371,11 +331,10 @@ def main(argv):
                                             bl=np.append(bl, 0.)
                                         else:
                                             bl=np.append(bl, spherical_bispectrum(wh, Newton, rad, lt, ell1, ell2, ell3,\
-                                                    time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b,\
+                                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b,\
                                                     len(tr['k']), kmax, kmin))
 
                                         np.save(name+'_ell{}'.format(ell1), bl)
-                
                     
     return 0
 

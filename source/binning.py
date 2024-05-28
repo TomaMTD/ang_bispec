@@ -47,8 +47,13 @@ def load_bl(l1, which, lterm, Newton):
         name=output_dir+"bl/bl_{}_{}_ell{}.npy"
     
     if which=='all':
-        which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d', \
+        if lterm!='nopot':
+            which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d', \
                 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p']
+        else:
+            which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d', \
+                'd1vd2v', 'd1vd0d', 'd1vdod']
+
     elif which=='rsd':
         which_list=['G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d']
     elif which=='pot':

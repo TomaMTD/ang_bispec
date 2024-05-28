@@ -230,135 +230,6 @@ def fm4_nm(r, which, Dr, fr, vr, wr, Omr, Hr):
     res[1]=(alpha_chi(r, 2, which, Dr, fr, vr, wr, Omr) - beta_chi(r, 2, which, Dr, fr, vr, wr, Omr))/4.+gamma_chi(r, 2, which, Dr, fr, vr, wr, Omr)
     return res*Hr**4
 
-@njit
-def integrand_Am_F2(r, chi, ell, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl3_p2, r_list, Dr, fr, vr, wr, Omr, Hr, r0, ddr, normW):
-    t_list=r[:,0]/chi
-    Am4=np.zeros(len(t_list), dtype=np.float64)
-    Am2=np.zeros(len(t_list), dtype=np.float64)
-    
-    Drr=np.interp(r[:,0], r_list, Dr)
-    frr=np.interp(r[:,0], r_list, fr)
-    vrr=np.interp(r[:,0], r_list, vr)
-    wrr=np.interp(r[:,0], r_list, wr)
-    Omrr=np.interp(r[:,0], r_list, Omr)
-    Hrr=np.interp(r[:,0], r_list, Hr)
-
-    for ind,t in enumerate(t_list):
-        if t>1:
-            Am2[ind]=t**(-ell+1.)
-            fact=t
-            t=1./t
-        else:
-            fact=1.
-            Am2[ind]=t**(ell+2.)
-        Am4[ind]=fact*(Il(-1+0.j, t+0.j, ell)).real/4/np.pi
-    
-    fm2=fm2_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
-    fm4=fm4_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
-    out=chi*((fm2[0]*Cl2_0*Cl3_0 + fm2[1]*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2) + fm2[2]*(Cl3_0*Cl2_m2+Cl3_m2*Cl2_0))*Am2/(1.+2.*ell)/r[:,0]**2\
-        +(fm4[0]*Cl2_0*Cl3_0 + fm4[1]*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2))*Am4)\
-        *Drr**2*W(r[:,0], r0, ddr, normW) 
-    return out
-
-
-@njit
-def integrand_Am_G2(r, chi, ell, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl3_p2, r_list, f0_tab, fm2_tab):
-    t_list=r[:,0]/chi
-    Am4=np.zeros(len(t_list), dtype=np.float64)
-    Am2=np.zeros(len(t_list), dtype=np.float64)
-    
-    for ind,t in enumerate(t_list):
-        if t>1:
-            Am2[ind]=t**(-ell+1.)
-            fact=t
-            t=1./t
-        else:
-            fact=1.
-            Am2[ind]=t**(ell+2.)
-        Am4[ind]=fact*(Il(-1+0.j, t+0.j, ell)).real/4/np.pi
-
-    f00=np.interp(r[:,0], r_list, f0_tab[0])
-    f01=np.interp(r[:,0], r_list, f0_tab[1])
-    f02=np.interp(r[:,0], r_list, f0_tab[2])
-
-    fm20=np.interp(r[:,0], r_list, fm2_tab[0])
-    fm21=np.interp(r[:,0], r_list, fm2_tab[1])
-
-    out=chi*((f00*Cl2_0*Cl3_0 + f01*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2) + f02*(Cl3_0*Cl2_m2+Cl3_m2*Cl2_0))*Am2/(1.+2.*ell)/ r[:,0]**2\
-            +(fm20*Cl2_0*Cl3_0 + fm21*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2))*Am4)
-        
-    return out
-
-
-def get_Am(chi_list, ell1, ell2, ell3, which, Newton, lterm, time_dict, r0, ddr, normW, rmin, rmax, save=True):
-    Cl2n_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell2)
-    Cl3n_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell3)
-
-    if not Newton: Am_fn = 'Am/Am_{}_{}_ell{},{},{}.txt'
-    else: Am_fn = 'Am/Am_{}_{}_ell{},{},{}_newton.txt'
-
-    res=np.zeros((len(chi_list)))
-    
-    if which=='F2' :
-        if not Newton:
-            for ind, chi in enumerate(chi_list):
-                Cl2_m2 = np.interp(chi, Cl2n_chi[:,0], Cl2n_chi[:,2])
-                Cl2_0 = np.interp (chi, Cl2n_chi[:,0], Cl2n_chi[:,1])
-                Cl2_p2 = np.interp(chi, Cl2n_chi[:,0], Cl2n_chi[:,3])
-
-                Cl3_m2 = np.interp(chi, Cl3n_chi[:,0], Cl3n_chi[:,2])
-                Cl3_0 = np.interp (chi, Cl3n_chi[:,0], Cl3n_chi[:,1])
-                Cl3_p2 = np.interp(chi, Cl3n_chi[:,0], Cl3n_chi[:,3])
- 
-                val, err = cubature.cubature(integrand_Am_F2, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
-                                             args=(chi, ell1, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl3_p2,\
-                                             time_dict['r_list'], time_dict['Dr'], time_dict['fr'], time_dict['vr'],\
-                                             time_dict['wr'], time_dict['Omr'], time_dict['Hr'], r0, ddr, normW)\
-                                             , relerr=relerr, maxEval=0, abserr=0, vectorized=True)
-                res[ind]=val*chi**2
-            if save:
-                np.savetxt(output_dir+Am_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
-
-    else:
-        if Newton: Hr=0
-        else: Hr=time_dict['Hr']
-
-        f0_tab=f0_nm(time_dict['r_list'], which, time_dict['Dr'],\
-                time_dict['fr'], time_dict['vr'], time_dict['wr'],\
-                time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
-        fm2_tab=fm2_nm(time_dict['r_list'], which, time_dict['Dr'],\
-                time_dict['fr'], time_dict['vr'], time_dict['wr'],\
-                time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
-
-        if which=='G2':
-            f0_tab =np.gradient(np.gradient(f0_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
-            fm2_tab=np.gradient(np.gradient(fm2_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
-        else:
-            f0_tab *=time_dict['mathcalR']*time_dict['Hr']
-            fm2_tab*=time_dict['mathcalR']*time_dict['Hr']
-            f0_tab =np.gradient(f0_tab, time_dict['r_list'], axis=1)
-            fm2_tab=np.gradient(fm2_tab, time_dict['r_list'], axis=1)
-
-        for ind, chi in enumerate(chi_list):
-            Cl2_m2 = np.interp(chi, Cl2n_chi[:,0], Cl2n_chi[:,2])
-            Cl2_0 = np.interp (chi, Cl2n_chi[:,0], Cl2n_chi[:,1])
-            Cl2_p2 = np.interp(chi, Cl2n_chi[:,0], Cl2n_chi[:,3])
-
-            Cl3_m2 = np.interp(chi, Cl3n_chi[:,0], Cl3n_chi[:,2])
-            Cl3_0 = np.interp (chi, Cl3n_chi[:,0], Cl3n_chi[:,1])
-            Cl3_p2 = np.interp(chi, Cl3n_chi[:,0], Cl3n_chi[:,3])
- 
-            val, err = cubature.cubature(integrand_Am_G2, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
-                                         args=(chi, ell1, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl3_p2,\
-                                         time_dict['r_list'], f0_tab, fm2_tab)\
-                                         , relerr=relerr, maxEval=0, abserr=0, vectorized=True)
-            res[ind]=val*chi**2
-        if save:
-            np.savetxt(output_dir+Am_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
-
-    return np.vstack([chi_list, res]).T
-
-
 ################################################################################ radiation
 @njit
 def fm2R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar):
@@ -383,101 +254,224 @@ def nb_gradient(f, x):
     return out
 
 @njit
-def integrand_Il(r, chi, ell, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl3_p2, fm2, \
-        ar, r_list, Dr, fr, vr, wr, Omr, Hr, mathcalR, r0, ddr, normW, cp_tr, bphi, Nphi, eta):
+def integrand_Am_F2(r, chi, ell, which, r_list, \
+        ar, Dr, fr, vr, wr, Omr, Hr, mathcalR, r0, ddr, normW, \
+        f0_tab, fm2_tab,\
+        cp_tr, bphi, Nphi, eta):
     t_list=r[:,0]/chi
+    Am4=np.zeros(len(t_list), dtype=np.float64)
+    Am2=np.zeros(len(t_list), dtype=np.float64)
+    out=np.zeros((5, len(t_list)), dtype=np.float64)
     
-    if which=='F2':
-        ar=np.interp(r[:,0],  r_list, ar)
-        Dr=np.interp(r[:,0],  r_list, Dr)
-        fr=np.interp( r[:,0], r_list, fr)
-        vr=np.interp( r[:,0], r_list, vr)
-        wr=np.interp( r[:,0], r_list, wr)
-        Omr=np.interp(r[:,0], r_list, Omr)
-        Hr=np.interp( r[:,0], r_list, Hr)
-        Wr=W(r[:,0], r0, ddr, normW)
+    Drr=np.interp(r[:,0], r_list, Dr)
+    frr=np.interp(r[:,0], r_list, fr)
+    vrr=np.interp(r[:,0], r_list, vr)
+    wrr=np.interp(r[:,0], r_list, wr)
+    Omrr=np.interp(r[:,0], r_list, Omr)
+    Hrr=np.interp(r[:,0], r_list, Hr)
 
-        fm2=fm2R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar)
-        fm4=fm4R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar)
+    for ind,t in enumerate(t_list):
+        if t>1:
+            Am2[ind]=t**(-ell+1.)
+            fact=t
+            t=1./t
+        else:
+            fact=1.
+            Am2[ind]=t**(ell+2.)
+        Am4[ind]=fact*(Il(-1+0.j, t+0.j, ell)).real/4/np.pi
+    
+    fm2=fm2_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
+    fm4=fm4_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
+    Am2=Am2/(1.+2.*ell)/r[:,0]**2
+    WDr=Drr**2*W(r[:,0], r0, ddr, normW) 
+    out[0]=chi*fm2[0]*Am2*WDr
+    out[1]=chi*fm2[1]*Am2*WDr
+    out[2]=chi*fm2[2]*Am2*WDr
+    out[3]=chi*fm4[0]*Am4.real*WDr
+    out[4]=chi*fm4[1]*Am4.real*WDr
+#    out=chi*np.array([fm2[0]*Am2, fm2[1]*Am2, fm2[2]*Am2, fm4[0]*Am4, fm4[1]*Am4])\
+        #        *Drr**2*W(r[:,0], r0, ddr, normW) 
+    return out.T
 
-        Ilm2=np.zeros(len(t_list), dtype=np.complex128)
-        Ilm4=np.zeros(len(t_list), dtype=np.complex128)
-        for p in range(-Nphi//2, Nphi//2+1):
-            nu=bphi+1j*p*eta
-            if ell>=5: 
-                t1min = tmin_fct(ell, nu)
-            else: 
-                t1min=0
 
-            for ind, t in enumerate(t_list):
-                Ilm2[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu, t, chi, ell, t1min)
-                Ilm4[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu-2., t, chi, ell, t1min)
+@njit
+def integrand_Am_G2(r, chi, ell, which, r_list, \
+        ar, Dr, fr, vr, wr, Omr, Hr, mathcalR, r0, ddr, normW, \
+        f0_tab, fm2_tab,\
+        cp_tr, bphi, Nphi, eta):
+    t_list=r[:,0]/chi
+    Am4=np.zeros(len(t_list), dtype=np.float64)
+    Am2=np.zeros(len(t_list), dtype=np.float64)
+    out=np.zeros((5, len(t_list)), dtype=np.float64)
+    
+    for ind,t in enumerate(t_list):
+        if t>1:
+            Am2[ind]=t**(-ell+1.)
+            fact=t
+            t=1./t
+        else:
+            fact=1.
+            Am2[ind]=t**(ell+2.)
+        Am4[ind]=fact*(Il(-1+0.j, t+0.j, ell)).real/4/np.pi
 
-        out=((fm2[0]*Cl2_0*Cl3_0 + fm2[1]*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2))*Ilm2\
-            +(fm4[0]*Cl2_0*Cl3_0 + fm4[1]*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2))*Ilm4)\
-                *Dr**2*Wr
+    f00=np.interp(r[:,0], r_list, f0_tab[0])
+    f01=np.interp(r[:,0], r_list, f0_tab[1])
+    f02=np.interp(r[:,0], r_list, f0_tab[2])
+
+    fm20=np.interp(r[:,0], r_list, fm2_tab[0])
+    fm21=np.interp(r[:,0], r_list, fm2_tab[1])
+
+    Am2=Am2/(1.+2.*ell)/ r[:,0]**2
+
+    out[0]=chi*f00*Am2
+    out[1]=chi*f01*Am2
+    out[2]=chi*f02*Am2
+    out[3]=chi*fm20*Am4
+    out[4]=chi*fm21*Am4
+
+    #out=chi*np.array([f00*Am2, f01*Am2, f02*Am2, fm20*Am4, fm21*Am4])
+    return out.T
+
+@njit
+def integrand_Il_F2(r, chi, ell, which, r_list, \
+        ar, Dr, fr, vr, wr, Omr, Hr, mathcalR, r0, ddr, normW, \
+        f0_tab, fm2_tab,\
+        cp_tr, bphi, Nphi, eta):
+    t_list=r[:,0]/chi
+    out=np.zeros((4, len(t_list)), dtype=np.float64)
+    
+    ar=np.interp(r[:,0],  r_list, ar)
+    Dr=np.interp(r[:,0],  r_list, Dr)
+    fr=np.interp( r[:,0], r_list, fr)
+    vr=np.interp( r[:,0], r_list, vr)
+    wr=np.interp( r[:,0], r_list, wr)
+    Omr=np.interp(r[:,0], r_list, Omr)
+    Hr=np.interp( r[:,0], r_list, Hr)
+    Wr=W(r[:,0], r0, ddr, normW)
+
+    fm2=fm2R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar)
+    fm4=fm4R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar)
+
+    Ilm2=np.zeros(len(t_list), dtype=np.complex128)
+    Ilm4=np.zeros(len(t_list), dtype=np.complex128)
+    for p in range(-Nphi//2, Nphi//2+1):
+        nu=bphi+1j*p*eta
+        if ell>=5: 
+            t1min = tmin_fct(ell, nu)
+        else: 
+            t1min=0
+
+        for ind, t in enumerate(t_list):
+            Ilm2[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu, t, chi, ell, t1min)
+            Ilm4[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu-2., t, chi, ell, t1min)
+
+    WDr=Dr**2*Wr
+    out[0]=fm2[0]*Ilm2.real*WDr
+    out[1]=fm2[1]*Ilm2.real*WDr
+    out[2]=fm4[0]*Ilm4.real*WDr
+    out[3]=fm4[1]*Ilm4.real*WDr
+
+    #out=np.array([fm2[0]*Ilm2 , fm2[1]*Ilm2, fm4[0]*Ilm4, fm4[1]*Ilm4])*Dr**2*Wr
+    return out.T/2./np.pi**2
+
+@njit
+def integrand_Il_G2(r, chi, ell, which, r_list, \
+        ar, Dr, fr, vr, wr, Omr, Hr, mathcalR, r0, ddr, normW, \
+        f0_tab, fm2_tab,\
+        cp_tr, bphi, Nphi, eta):
+    t_list=r[:,0]/chi
+    out=np.zeros((2, len(t_list)), dtype=np.float64)
+ 
+    Ilm2=np.zeros(len(t_list), dtype=np.complex128)
+    for p in range(-Nphi//2, Nphi//2+1):
+        nu=bphi+1j*p*eta
+        if ell>=5: 
+            t1min = tmin_fct(ell, nu)
+        else: 
+            t1min=0
+        
+        for ind, t in enumerate(t_list):
+            Ilm2[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu, t, chi, ell, t1min)
+    
+    out[0]=np.interp(r[:,0], r_list, fm2_tab[0])*Ilm2.real
+    out[1]=np.interp(r[:,0], r_list, fm2_tab[1])*Ilm2.real
+
+    #out=np.array([np.interp(r[:,0], r_list, fm2_tab[0])*Ilm2 , np.interp(r[:,0], r_list, fm2_tab[1])*Ilm2])
+    return out.T/2./np.pi**2
+
+
+def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW, rmin, rmax, \
+        cp_tr, bphi, Nphi, kmax, kmin, save=True):
+
+    eta=2.*np.pi/np.log(kmax/kmin)
+    fm2_tab, f0_tab=0, 0
+    
+    if rad: print('     Computing I_ell={}'.format(ell1))
+    else: print('     Computing A_ell={}'.format(ell1))
+
+    if rad:
+        fn = 'Il/Il_{}_{}_ell{}.txt'
+        
+        fm2_tab=fm2R_nm(which, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'],\
+                                time_dict['Omr'], time_dict['Hr'], time_dict['ar'])*time_dict['Dr']**2*time_dict['Wr']
+        if which=='F2':
+            integ, fdim = integrand_Il_F2, 4
+        elif which=='G2':
+            integ, fdim = integrand_Il_G2, 2
+            fm2_tab = np.gradient(np.gradient(fm2_tab, \
+                            time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
+        elif which=='dv2':
+            integ, fdim = integrand_Il_G2, 2
+            fm2_tab = np.gradient(fm2_tab*\
+                        time_dict['mathcalR']*time_dict['Hr'], time_dict['r_list'], axis=1)
 
     else:
-        Ilm2=np.zeros(len(t_list), dtype=np.complex128)
-        for p in range(-Nphi//2, Nphi//2+1):
-            nu=bphi+1j*p*eta
-            if ell>=5: 
-                t1min = tmin_fct(ell, nu)
-            else: 
-                t1min=0
-            
-            for ind, t in enumerate(t_list):
-                Ilm2[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu, t, chi, ell, t1min)
+        if not Newton: fn = 'Am/Am_{}_{}_ell{}.txt'
+        else: fn = 'Am/Am_{}_{}_ell{}_newton.txt'
+ 
+        if which=='F2' :
+            if not Newton:
+                integ , fdim = integrand_Am_F2, 5
+        else:
+            if Newton: Hr=0
+            else: Hr=time_dict['Hr']
     
-        out=(np.interp(r[:,0], r_list, fm2[0])*Cl2_0*Cl3_0 + np.interp(r[:,0], r_list, fm2[1])*\
-                (Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2))*Ilm2
-
-    return np.real(out)
-
-
-def get_Il(chi_list, ell1, ell2, ell3, which, time_dict, r0, ddr, normW, rmin, rmax, cp_tr, bphi, Nphi, kmax, kmin, save=True):
-
-    Cl2n_chi = sum_qterm_and_linear_term(which, False, lterm, ell2)
-    Cl3n_chi = sum_qterm_and_linear_term(which, False, lterm, ell3)
-
-    Il_fn = 'Il/Il_{}_{}_ell{},{},{}.txt'
-
-    res=np.zeros((len(chi_list)))
-    eta=2.*np.pi/np.log(kmax/kmin)
+            f0_tab=f0_nm(time_dict['r_list'], which, time_dict['Dr'],\
+                    time_dict['fr'], time_dict['vr'], time_dict['wr'],\
+                    time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
+            fm2_tab=fm2_nm(time_dict['r_list'], which, time_dict['Dr'],\
+                    time_dict['fr'], time_dict['vr'], time_dict['wr'],\
+                    time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
     
-    fm2=fm2R_nm(which, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'],\
-                            time_dict['Omr'], time_dict['Hr'], time_dict['ar'])*time_dict['Dr']**2*time_dict['Wr']
-
-    if which=='G2':
-        fm2 = np.gradient(np.gradient(fm2, \
-                        time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
-    elif which=='dv2':
-        fm2 = np.gradient(fm2*\
-                    time_dict['mathcalR']*time_dict['Hr'], time_dict['r_list'], axis=1)
+            if which=='G2':
+                f0_tab =np.gradient(np.gradient(f0_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
+                fm2_tab=np.gradient(np.gradient(fm2_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
+            else:
+                f0_tab *=time_dict['mathcalR']*time_dict['Hr']
+                fm2_tab*=time_dict['mathcalR']*time_dict['Hr']
+                f0_tab =np.gradient(f0_tab, time_dict['r_list'], axis=1)
+                fm2_tab=np.gradient(fm2_tab, time_dict['r_list'], axis=1)
     
+            integ, fdim = integrand_Am_G2, 5
+
+    res=np.zeros((fdim, len(chi_list)))
     for ind, chi in enumerate(chi_list):
-        if ind%1==0: print(' {}/{}'.format(ind, len(chi_list)))
-        Cl2_m2 = np.interp(chi, Cl2n_chi[:,0], Cl2n_chi[:,2])
-        Cl2_0 = np.interp (chi, Cl2n_chi[:,0], Cl2n_chi[:,1])
-        Cl2_p2 = np.interp(chi, Cl2n_chi[:,0], Cl2n_chi[:,3])
+        if ind%10==0: print('   {}/{}'.format(ind, len(chi_list)))
 
-        Cl3_m2 = np.interp(chi, Cl3n_chi[:,0], Cl3n_chi[:,2])
-        Cl3_0 = np.interp (chi, Cl3n_chi[:,0], Cl3n_chi[:,1])
-        Cl3_p2 = np.interp(chi, Cl3n_chi[:,0], Cl3n_chi[:,3])
-
-        val, err = cubature.cubature(integrand_Il, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
-                                     args=(chi, ell1, which, Cl2_m2, Cl2_0, Cl2_p2, Cl3_m2, Cl3_0, Cl3_p2,\
-                                     fm2, time_dict['ar'], time_dict['r_list'], time_dict['Dr'], time_dict['fr'],\
-                                     time_dict['vr'], time_dict['wr'], 
-                                     time_dict['Omr'], time_dict['Hr'], time_dict['mathcalR'],
-                                     r0, ddr, normW, cp_tr, bphi, Nphi, eta), relerr=relerr, \
+        val, err = cubature.cubature(integ, ndim=1, fdim=fdim, xmin=[rmin], xmax=[rmax],\
+                                     args=(chi, ell1, which, time_dict['r_list'], \
+                                        time_dict['ar'], time_dict['Dr'], time_dict['fr'], \
+                                        time_dict['vr'], time_dict['wr'], time_dict['Omr'], \
+                                        time_dict['Hr'], time_dict['mathcalR'], r0, ddr, normW, \
+                                        f0_tab, fm2_tab,\
+                                        cp_tr, bphi, Nphi, eta), relerr=relerr, \
                                              maxEval=1e5, abserr=0, vectorized=True)
-
-        res[ind]=val*chi**2*2./np.pi/4./np.pi
+        res[:,ind]=val*chi**2
         
         if save: 
-            np.savetxt(output_dir+Il_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)), np.vstack([chi_list, res]).T) 
-    return res
+            np.savetxt(output_dir+fn.format(lterm, which, int(ell1)), np.vstack([chi_list, res]).T) 
+    return np.vstack([chi_list, res]).T
+
 
 ################################################################################ spherical bispectrum
 def final_integrand(r, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl3n2_chi=0,\
@@ -500,22 +494,35 @@ def final_integrand(r, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl
         Cl3_m2 = np.interp(r, Cl3n1_chi[:,0], Cl3n1_chi[:,2])
         Cl3_p2 = np.interp(r, Cl3n1_chi[:,0], Cl3n1_chi[:,3])
 
+        if not Newton or (Newton and which!='F2'):
+            Am = np.interp(r, Am_tab[:,0], Am_tab[:,1])*Cl2_0*Cl3_0+\
+                 np.interp(r, Am_tab[:,0], Am_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)+\
+                 np.interp(r, Am_tab[:,0], Am_tab[:,3])*(Cl3_0*Cl2_m2+Cl3_m2*Cl2_0)+\
+                 np.interp(r, Am_tab[:,0], Am_tab[:,4])*Cl2_0*Cl3_0 +\
+                 np.interp(r, Am_tab[:,0], Am_tab[:,5])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
+        else:
+            Am=0
+
         A20 = np.interp(r, r_list, A2_tab[0])
         A21 = np.interp(r, r_list, A2_tab[1])
         A40 = np.interp(r, r_list, A4_tab[0])
 
-        if not Newton or (Newton and which!='F2'):
-            Am = np.interp(r, Am_tab[:,0], Am_tab[:,1])
-        else:
-            Am=0
-
         if rad and not Newton:
-            Il_res = np.interp(r, Il_tab[:,0], Il_tab[:,1])
+            if which=='F2':
+                Il_res=np.interp(r, Il_tab[:,0], Il_tab[:,1])*Cl2_0*Cl3_0+\
+                       np.interp(r, Il_tab[:,0], Il_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)+\
+                       np.interp(r, Il_tab[:,0], Il_tab[:,3])*Cl2_0*Cl3_0+\
+                       np.interp(r, Il_tab[:,0], Il_tab[:,4])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
+            else:
+    
+                Il_res=np.interp(r, Il_tab[:,0], Il_tab[:,1])*Cl2_0*Cl3_0+\
+                       np.interp(r, Il_tab[:,0], Il_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
         else:
-            Il_res = 0
+            Il_res=0
 
         out = A00*Cl2_0*Cl3_0 + (A03+A21+A40)*Cl2_m2*Cl3_m2 + A01*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)\
-                  + (A02+A20)*(Cl2_0*Cl3_m2+Cl3_0*Cl2_m2) + Am + Il_res
+                          + (A02+A20)*(Cl2_0*Cl3_m2+Cl3_0*Cl2_m2) + Am + Il_res
+
     else:
         A00 = np.interp(r, r_list, A0_tab)
         if which=='d2vd2v':
@@ -535,21 +542,17 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
         Cl2n_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell2)
         Cl3n_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell3)
 
-        Il_fn='Il/Il_{}_{}_ell{},{},{}.txt'
+        Il_fn='Il/Il_{}_{}_ell{}.txt'
         if not Newton and rad:
-            Il_tab=np.zeros((len(chi_list), 2))
             try:
-                Il_txt = np.loadtxt(output_dir+Il_fn.format(lterm, which, int(ell1), int(ell2), int(ell3)))
-                Il_tab[:,0]=Il_txt[:,0]
-                Il_tab[:,1]=Il_txt[:,1]
+                Il_tab = np.loadtxt(output_dir+Il_fn.format(lterm, which, int(ell1)))
             except FileNotFoundError:
-                Il_tab[:,1] = get_Il(chi_list, ell1, ell2, ell3, which, time_dict, r0, ddr, normW,\
-                                     rmin, rmax, cp_tr, b, k, kmax, kmin)
-                Il_tab[:,0] = chi_list
+                Il_tab = get_Am_and_Il(chi_list, ell1, which, Newton, True, time_dict, r0, ddr, normW, rmin,\
+                                    rmax, cp_tr, b, k, kmax, kmin, True)
         else:
             Il_tab = 0 
         
-        Am_fn='Am/Am_{}_{}_ell{},{},{}{}.txt'
+        Am_fn='Am/Am_{}_{}_ell{}{}.txt'
         if not Newton:
             Am_new=''
             Hr = time_dict['Hr']
@@ -560,11 +563,10 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
         if not Newton or (Newton and which!='F2'):
             try:
                 Am_tab = np.loadtxt(output_dir+Am_fn.format(lterm, which, \
-                    int(ell1), int(ell2), int(ell3), Am_new))
-            except FileNotFoundError:
-                Am_tab = get_Am(chi_list, ell1, ell2, ell3, which, Newton, lterm, time_dict,\
-                                    r0, ddr, normW, rmin, rmax, save=False)
-
+                    int(ell1), Am_new))
+            except (ValueError, FileNotFoundError):
+                Am_tab = get_Am_and_Il(chi_list, ell1, which, Newton, False, time_dict, r0, ddr, normW, rmin,\
+                                    rmax, cp_tr, b, k, kmax, kmin, True)
         else:
             Am_tab = 0
 
