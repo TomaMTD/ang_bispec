@@ -400,7 +400,7 @@ def integrand_Il_G2(r, chi, ell, which, r_list, \
     return out.T/2./np.pi**2
 
 
-def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW, rmin, rmax, \
+def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr, normW, rmin, rmax, \
         cp_tr, bphi, Nphi, kmax, kmin, save=True):
 
     eta=2.*np.pi/np.log(kmax/kmin)
@@ -455,6 +455,7 @@ def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW,
             integ, fdim = integrand_Am_G2, 5
 
     res=np.zeros((fdim, len(chi_list)))
+    #if ell1<100:
     for ind, chi in enumerate(chi_list):
         if ind%10==0: print('   {}/{}'.format(ind, len(chi_list)))
 
@@ -467,9 +468,34 @@ def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW,
                                         cp_tr, bphi, Nphi, eta), relerr=relerr, \
                                              maxEval=1e5, abserr=0, vectorized=True)
         res[:,ind]=val*chi**2
-        
+
         if save: 
             np.savetxt(output_dir+fn.format(lterm, which, int(ell1)), np.vstack([chi_list, res]).T) 
+
+    # Limber seems not to work ...
+    #else:
+    #    ar=np.interp( chi_list, time_dict['r_list'], time_dict['ar'])
+    #    Dr=np.interp( chi_list, time_dict['r_list'], time_dict['Dr'])
+    #    fr=np.interp( chi_list, time_dict['r_list'], time_dict['fr'])
+    #    vr=np.interp( chi_list, time_dict['r_list'], time_dict['vr'])
+    #    wr=np.interp( chi_list, time_dict['r_list'], time_dict['wr'])
+    #    Omr=np.interp(chi_list, time_dict['r_list'], time_dict['Omr'])
+    #    Hr=np.interp( chi_list, time_dict['r_list'], time_dict['Hr'])
+    #    Wr=W(chi_list, r0, ddr, normW)
+    #
+    #    fm2=fm2R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar)
+    #    fm4=fm4R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar)
+    #
+    #    p_range=np.arange(-Nphi//2, Nphi//2+1)
+    #    nu=bphi+1j*p_range*eta
+    #        
+    #    limber=(cp_tr*(ell1/chi_list[:,None])**(nu-3.)).sum(1)
+    #    WDr=Dr**2*Wr
+    #    res[0]=fm2[0]*limber.real*WDr
+    #    res[1]=fm2[1]*limber.real*WDr
+    #    res[2]=fm4[0]*limber.real*WDr
+    #    res[3]=fm4[1]*limber.real*WDr
+    
     return np.vstack([chi_list, res]).T
 
 
@@ -547,7 +573,7 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
             try:
                 Il_tab = np.loadtxt(output_dir+Il_fn.format(lterm, which, int(ell1)))
             except FileNotFoundError:
-                Il_tab = get_Am_and_Il(chi_list, ell1, which, Newton, True, time_dict, r0, ddr, normW, rmin,\
+                Il_tab = get_Am_and_Il(chi_list, ell1, lterm, which, Newton, True, time_dict, r0, ddr, normW, rmin,\
                                     rmax, cp_tr, b, k, kmax, kmin, True)
         else:
             Il_tab = 0 
@@ -565,7 +591,7 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
                 Am_tab = np.loadtxt(output_dir+Am_fn.format(lterm, which, \
                     int(ell1), Am_new))
             except (ValueError, FileNotFoundError):
-                Am_tab = get_Am_and_Il(chi_list, ell1, which, Newton, False, time_dict, r0, ddr, normW, rmin,\
+                Am_tab = get_Am_and_Il(chi_list, ell1, lterm, which, Newton, False, time_dict, r0, ddr, normW, rmin,\
                                     rmax, cp_tr, b, k, kmax, kmin, True)
         else:
             Am_tab = 0

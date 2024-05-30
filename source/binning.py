@@ -40,11 +40,14 @@ def find_B(bl1, l1, bin1, bin2, bin3, wigner):
     return B, Xi, ind1
 
 
-def load_bl(l1, which, lterm, Newton):
+def load_bl(l1, which, lterm, Newton, rad):
     if Newton:
         name=output_dir+"bl/bl_{}_{}_newton_ell{}.npy"
     else:
-        name=output_dir+"bl/bl_{}_{}_ell{}.npy"
+        if which in ['F2', 'G2', 'dv2'] and rad:
+            name=output_dir+"bl/bl_{}_{}_rad_ell{}.npy"
+        else:
+            name=output_dir+"bl/bl_{}_{}_ell{}.npy"
     
     if which=='all':
         if lterm!='nopot':
@@ -70,7 +73,7 @@ def load_bl(l1, which, lterm, Newton):
     return bl
 
 
-def get_binned_B(ell, which, lterm, Newton=0):
+def get_binned_B(ell, which, lterm, Newton=0, rad=0):
     Nbin = len(ell[:-1])
     wigner=np.load(output_dir+'wigner.npy', allow_pickle=True)
 
@@ -88,7 +91,7 @@ def get_binned_B(ell, which, lterm, Newton=0):
                 Xi = 0
                 ind1=0
                 for l1 in range(2, ellmax):
-                    bl=load_bl(l1, which, lterm, Newton)
+                    bl=load_bl(l1, which, lterm, Newton, rad)
                     res=find_B(bl, l1, bin1, bin2, bin3, wigner[ind1:])
                     B+=res[0]
                     Xi+=res[1]
@@ -100,7 +103,10 @@ def get_binned_B(ell, which, lterm, Newton=0):
     if Newton:
         np.save(output_dir+"bl/bl_{}_{}_newton_binned.npy".format(lterm, which), np.array(B_list))
     else:
-        np.save(output_dir+"bl/bl_{}_{}_binned.npy".format(lterm, which), np.array(B_list))
+        if rad:
+            np.save(output_dir+"bl/bl_{}_{}_rad_binned.npy".format(lterm, which), np.array(B_list))
+        else:
+            np.save(output_dir+"bl/bl_{}_{}_binned.npy".format(lterm, which), np.array(B_list))
 
     np.save(output_dir+'Xi', np.array(Xi_list))
 

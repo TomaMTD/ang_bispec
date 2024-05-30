@@ -244,12 +244,12 @@ def main(argv):
                     if argv[ell_start]=='all':
                         for ell in ell_list: #np.float64(argv[ell_start:]):
                             print(' Il_ell={}'.format(int(ell)))
-                            get_Am_and_Il(chi_list, ell, wh, Newton, rad, time_dict, r0, ddr, normW, rmin,\
+                            get_Am_and_Il(chi_list, ell, lt, wh, Newton, rad, time_dict, r0, ddr, normW, rmin,\
                                     rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin, True)
                     else:
                         for ell in np.float64(argv[ell_start:]):
                             print(' Il_ell={}'.format(int(ell)))
-                            get_Am_and_Il(chi_list, ell, wh, Newton, rad, time_dict, r0, ddr, normW, rmin,\
+                            get_Am_and_Il(chi_list, ell, lt, wh, Newton, rad, time_dict, r0, ddr, normW, rmin,\
                                     rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin, True)
  
                 elif argv[ell_start-1] == 'bl':
@@ -263,7 +263,7 @@ def main(argv):
 
                     if argv[ell_start] == 'bin':
                         print('Binning bispectrum...')
-                        get_binned_B(ell_list, wh, lt, Newton)
+                        get_binned_B(ell_list, wh, lt, Newton, rad)
 
                     else:
                         if argv[ell_start] == 'equi':

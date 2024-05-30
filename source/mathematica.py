@@ -354,10 +354,7 @@ def Il(nu_p, z, ell):
 @njit
 def hyp21(nu_p, z, ell):
     if z<0.5:
-        a1, a2, b1 = (nu_p-1.)/2, ell+nu_p/2., ell+3./2.
-        
-        res = np.pi**2*2.**(nu_p-1.)*mygammaRatio(ell+nu_p/2.,ell+3./2.)\
-        /mygamma((3.-nu_p)/2.)*z**ell*myhyp21_basic(a1, a2, b1, z**2)
+        res=Il(nu_p, z, ell)
     elif z<1:
         t=(1.-z**2)**2/4./z**2
         res=np.pi*z**(-nu_p/2.)*(np.sqrt(np.pi)*mygammaRatio(ell+nu_p/2., ell+2.-nu_p/2.)\
