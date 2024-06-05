@@ -11,6 +11,10 @@ from mathematica import *
 ############################################################################# integrand for Cl
 @njit
 def theintegrand(rvar, chi, nu_p, ell, r_list, f_of_r):
+    '''
+    This function computes the integrand for a single frequency p: 2pi^2/r^2 * I_me(nu_p, r, chi)*f(r)
+    '''
+
     result = np.zeros((len(rvar), 2), dtype=np.float64)
     tvar=rvar/chi
 
@@ -25,6 +29,10 @@ def theintegrand(rvar, chi, nu_p, ell, r_list, f_of_r):
 
 @njit
 def theintegrand_sum(rvar, chi, ell, n, r_list, f_of_rp, N, kmax, kmin, kpow, b):
+    '''
+    Function summing theintegrand over the frequency before integration: sum_p theintegrand_p
+    '''
+
     res = np.zeros((len(rvar[:,0])), dtype=np.complex128)
     for p in range(-N//2, N//2+1):
         eta_p = 2.*np.pi*p/np.log(kmax/kmin)
@@ -43,6 +51,13 @@ def theintegrand_sum_quadratic(rvar, chi, ell, n, r_list, f_of_rp, N, kmax, kmin
     return res
 
 def get_Cl_sum(integrand, chi, ell, n, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b):
+    '''
+    Computes the generalised power spectrum for a given chi, ell and n
+
+    integration of integrand which can be theintegrand_sum or theintegrand_sum_quadratic and division by 4pi
+    returns  pi/2 \int dr/r^2 I_me(nu_p, r, chi) * f(r)
+            = \int dr f(r) \sum_p \int dk k^{nu_p-1} jl(k chi) jl(k r)
+    '''
     print('  n={}'.format(n))
     if n==2:
         f_of_rp=y1
@@ -56,6 +71,15 @@ def get_Cl_sum(integrand, chi, ell, n, r_list, y, y1, rmin, rmax, N, kmax, kmin,
     return val/4./np.pi
 
 def get_all_Cln(which, qterm, lterm, chi_list, ell, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b):
+    '''
+    Main function to compute the generalised power spectrum
+    Computes the generalised power spectrum for all chi's and n's given ell. The result is normalised 
+    by "stuff2=\mathcal N^2"
+
+
+    returns \mathcal N^2 * \int dr f(r) \sum_p \int dk k^{nu_p-1} jl(k chi) jl(k r)
+    '''
+
     print(' C_ell={}'.format(int(ell)))
 
     if gauge=='new' and lterm!='pot':

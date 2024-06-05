@@ -40,30 +40,7 @@ def find_B(bl1, l1, bin1, bin2, bin3, wigner):
     return B, Xi, ind1
 
 
-def load_bl(l1, which, lterm, Newton, rad):
-    if Newton:
-        name=output_dir+"bl/bl_{}_{}_newton_ell{}.npy"
-    else:
-        if which in ['F2', 'G2', 'dv2'] and rad:
-            name=output_dir+"bl/bl_{}_{}_rad_ell{}.npy"
-        else:
-            name=output_dir+"bl/bl_{}_{}_ell{}.npy"
-    
-    if which=='all':
-        if lterm!='nopot':
-            which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d', \
-                'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p']
-        else:
-            which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d', \
-                'd1vd2v', 'd1vd0d', 'd1vdod']
-
-    elif which=='rsd':
-        which_list=['G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d']
-    elif which=='pot':
-        which_list=['d0pd3v', 'd0pd1d', 'd1vd2p']
-    else:
-        which_list=[which]
-
+def load_bl(l1, which_list, name):
     for ind,w in enumerate(which_list):
         if ind==0:
             bl=np.load(name.format(lterm, w, l1))
@@ -76,6 +53,32 @@ def load_bl(l1, which, lterm, Newton, rad):
 def get_binned_B(ell, which, lterm, Newton=0, rad=0):
     Nbin = len(ell[:-1])
     wigner=np.load(output_dir+'wigner.npy', allow_pickle=True)
+
+    if Newton: name=output_dir+"bl/bl_{}_{}_newton_ell{}.npy"
+    else: name=output_dir+"bl/bl_{}_{}_ell{}.npy"
+
+    if rad: rad_key = '_rad'
+    else: rad_key=''
+    
+    if which=='all':
+        if lterm!='nopot':
+            which_list=['F2{}'.format(rad_key), 'G2{}'.format(rad_key), 'dv2{}'.format(rad_key), \
+                    'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d', \
+                'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p']
+        else:
+            which_list=['F2'.format(rad_key), 'G2'.format(rad_key), 'dv2{}'.format(rad_key), \
+                    'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d', \
+                'd1vd2v', 'd1vd0d', 'd1vdod']
+
+    elif which=='rsd':
+        which_list=['G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d']
+    elif which=='pot':
+        which_list=['d0pd3v', 'd0pd1d', 'd1vd2p']
+    elif which in ['F2', 'G2', 'dv2']:
+        which_list=[which+rad_key]
+    else:
+        which_list=[which]
+
 
     B_list=np.array([])
     Xi_list=np.array([])
@@ -91,7 +94,7 @@ def get_binned_B(ell, which, lterm, Newton=0, rad=0):
                 Xi = 0
                 ind1=0
                 for l1 in range(2, ellmax):
-                    bl=load_bl(l1, which, lterm, Newton, rad)
+                    bl=load_bl(l1, which_list, name)
                     res=find_B(bl, l1, bin1, bin2, bin3, wigner[ind1:])
                     B+=res[0]
                     Xi+=res[1]

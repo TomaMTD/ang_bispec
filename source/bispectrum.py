@@ -8,6 +8,9 @@ from mathematica import *
 from lincosmo import *
 
 def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, Dr=0, ar=0):
+    '''
+    Loading the generalised power spectra and summing over qterm and lterm
+    '''
     if which in ['d2p', 'd0p']:
         stuff=2./3./omega_m/H0**2
         if which=='d2p': which='d2v'
@@ -258,8 +261,16 @@ def integrand_Am_F2(r, chi, ell, which, r_list, \
         ar, Dr, fr, vr, wr, Omr, Hr, mathcalR, r0, ddr, normW, \
         f0_tab, fm2_tab,\
         cp_tr, bphi, Nphi, eta):
+    '''
+    For all multiplet n and m, this function computes the integrand of the pure relativistic \
+            terms coming from the k1^-2 and k1^-4 terms of the kernel
+    
+    returns Am2=2/pi * D^2(r)W(r) f^{(-2)}_{nm}(r) \int dk jl(k chi)*jl(k r)
+            Am4=2/pi * D^2(r)W(r) f^{(-4)}_{nm}(r) \int dk k^{-2} jl(k chi)*jl(k r)
+            
+    '''
     t_list=r[:,0]/chi
-    Am4=np.zeros(len(t_list), dtype=np.float64)
+    Am4=np.zeros(len(t_list), dtype=np.complex128)
     Am2=np.zeros(len(t_list), dtype=np.float64)
     out=np.zeros((5, len(t_list)), dtype=np.float64)
     
@@ -278,17 +289,18 @@ def integrand_Am_F2(r, chi, ell, which, r_list, \
         else:
             fact=1.
             Am2[ind]=t**(ell+2.)
-        Am4[ind]=fact*(Il(-1+0.j, t+0.j, ell)).real/4/np.pi
+        Am4[ind]=fact*Il(-1+0.j, t+0.j, ell)
     
     fm2=fm2_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
     fm4=fm4_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
     Am2=Am2/(1.+2.*ell)/r[:,0]**2
     WDr=Drr**2*W(r[:,0], r0, ddr, normW) 
+
     out[0]=chi*fm2[0]*Am2*WDr
     out[1]=chi*fm2[1]*Am2*WDr
     out[2]=chi*fm2[2]*Am2*WDr
-    out[3]=chi*fm4[0]*Am4.real*WDr
-    out[4]=chi*fm4[1]*Am4.real*WDr
+    out[3]=chi*fm4[0]*Am4.real*WDr/2/np.pi**2
+    out[4]=chi*fm4[1]*Am4.real*WDr/2/np.pi**2
 #    out=chi*np.array([fm2[0]*Am2, fm2[1]*Am2, fm2[2]*Am2, fm4[0]*Am4, fm4[1]*Am4])\
         #        *Drr**2*W(r[:,0], r0, ddr, normW) 
     return out.T
@@ -300,7 +312,7 @@ def integrand_Am_G2(r, chi, ell, which, r_list, \
         f0_tab, fm2_tab,\
         cp_tr, bphi, Nphi, eta):
     t_list=r[:,0]/chi
-    Am4=np.zeros(len(t_list), dtype=np.float64)
+    Am4=np.zeros(len(t_list), dtype=np.complex128)
     Am2=np.zeros(len(t_list), dtype=np.float64)
     out=np.zeros((5, len(t_list)), dtype=np.float64)
     
@@ -312,7 +324,7 @@ def integrand_Am_G2(r, chi, ell, which, r_list, \
         else:
             fact=1.
             Am2[ind]=t**(ell+2.)
-        Am4[ind]=fact*(Il(-1+0.j, t+0.j, ell)).real/4/np.pi
+        Am4[ind]=fact*(Il(-1+0.j, t+0.j, ell))
 
     f00=np.interp(r[:,0], r_list, f0_tab[0])
     f01=np.interp(r[:,0], r_list, f0_tab[1])
@@ -326,8 +338,8 @@ def integrand_Am_G2(r, chi, ell, which, r_list, \
     out[0]=chi*f00*Am2
     out[1]=chi*f01*Am2
     out[2]=chi*f02*Am2
-    out[3]=chi*fm20*Am4
-    out[4]=chi*fm21*Am4
+    out[3]=chi*fm20*Am4.real/2/np.pi**2
+    out[4]=chi*fm21*Am4.real/2/np.pi**2
 
     #out=chi*np.array([f00*Am2, f01*Am2, f02*Am2, fm20*Am4, fm21*Am4])
     return out.T
@@ -337,20 +349,27 @@ def integrand_Il_F2(r, chi, ell, which, r_list, \
         ar, Dr, fr, vr, wr, Omr, Hr, mathcalR, r0, ddr, normW, \
         f0_tab, fm2_tab,\
         cp_tr, bphi, Nphi, eta):
+    '''
+    For all multiplet n and m, this function computes the integrand of the radiation term \
+            \partial \log T_{phi_0} / \partial \log k = \sum_p c_p k^{b+i\eta_p}
+    
+    returns 2/pi * D^2(r)W(r) f^{(R)}_{nm}(r) \sum_p c_p * \int dk k**(nu_p-1) jl(k*chi)jl(k*r)
+    '''
+
     t_list=r[:,0]/chi
     out=np.zeros((4, len(t_list)), dtype=np.float64)
     
-    ar=np.interp(r[:,0],  r_list, ar)
-    Dr=np.interp(r[:,0],  r_list, Dr)
-    fr=np.interp( r[:,0], r_list, fr)
-    vr=np.interp( r[:,0], r_list, vr)
-    wr=np.interp( r[:,0], r_list, wr)
-    Omr=np.interp(r[:,0], r_list, Omr)
-    Hr=np.interp( r[:,0], r_list, Hr)
-    Wr=W(r[:,0], r0, ddr, normW)
+    arr=np.interp(r[:,0],  r_list, ar)
+    Drr=np.interp(r[:,0],  r_list, Dr)
+    frr=np.interp( r[:,0], r_list, fr)
+    vrr=np.interp( r[:,0], r_list, vr)
+    wrr=np.interp( r[:,0], r_list, wr)
+    Omrr=np.interp(r[:,0], r_list, Omr)
+    Hrr=np.interp( r[:,0], r_list, Hr)
+    Wrr=W(r[:,0], r0, ddr, normW)
 
-    fm2=fm2R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar)
-    fm4=fm4R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar)
+    fm2=fm2R_nm(which, Drr, frr, vrr, wrr, Omrr, Hrr, arr)
+    fm4=fm4R_nm(which, Drr, frr, vrr, wrr, Omrr, Hrr, arr)
 
     Ilm2=np.zeros(len(t_list), dtype=np.complex128)
     Ilm4=np.zeros(len(t_list), dtype=np.complex128)
@@ -365,14 +384,14 @@ def integrand_Il_F2(r, chi, ell, which, r_list, \
             Ilm2[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu, t, chi, ell, t1min)
             Ilm4[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu-2., t, chi, ell, t1min)
 
-    WDr=Dr**2*Wr
+    WDr=Drr**2*Wrr
     out[0]=fm2[0]*Ilm2.real*WDr
     out[1]=fm2[1]*Ilm2.real*WDr
     out[2]=fm4[0]*Ilm4.real*WDr
     out[3]=fm4[1]*Ilm4.real*WDr
 
     #out=np.array([fm2[0]*Ilm2 , fm2[1]*Ilm2, fm4[0]*Ilm4, fm4[1]*Ilm4])*Dr**2*Wr
-    return out.T/2./np.pi**2
+    return out.T /2./np.pi**2
 
 @njit
 def integrand_Il_G2(r, chi, ell, which, r_list, \
@@ -402,6 +421,28 @@ def integrand_Il_G2(r, chi, ell, which, r_list, \
 
 def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr, normW, rmin, rmax, \
         cp_tr, bphi, Nphi, kmax, kmin, save=True):
+    '''
+    Computes the r and k integrals of the pure relativistic terms coming from the k1^-2 and k1^-4 terms of the kernel. 
+    ell1 is fixed. All multiplet of n, m are computed as function of chi
+    
+    if rad==False: 
+        computes the relativistic terms. Those terms lead to a function of chi that can be \
+        expressed as an integral over r1:
+
+        returns integration of the function integrand_Am_F2 over r for all chi_list values and multiplication by chi^2:
+            2/pi* chi^2 * \int dr D^2(r)W(r) f^{(-2)}_{nm}(r) \int dk jl(k chi)*jl(k r)
+            and         
+            2/pi* chi^2 * \int dr D^2(r)W(r) f^{(-4)}_{nm}(r) \int dk k^{-2} jl(k chi)*jl(k r)
+
+    else radiation is on:
+        computes the radiation term. Those terms lead to a function of chi that can be \
+        expressed as an integral over r1:
+
+        returns integration of the function integrand_Il_F2 over r for all chi_list values and multiplication by chi^2:
+            2/pi* chi^2 * \int dr D^2(r)W(r) f^{(R)}_{nm}(r) \sum_p c_p * \int dk k**(nu_p-1) jl(k*chi)jl(k*r)
+    
+    '''
+
 
     eta=2.*np.pi/np.log(kmax/kmin)
     fm2_tab, f0_tab=0, 0
@@ -456,7 +497,7 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
 
     res=np.zeros((fdim, len(chi_list)))
     #if ell1<100:
-    for ind, chi in enumerate(chi_list):
+    for ind, chi in enumerate(chi_list[:1]):
         if ind%10==0: print('   {}/{}'.format(ind, len(chi_list)))
 
         val, err = cubature.cubature(integ, ndim=1, fdim=fdim, xmin=[rmin], xmax=[rmax],\
@@ -467,7 +508,15 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
                                         f0_tab, fm2_tab,\
                                         cp_tr, bphi, Nphi, eta), relerr=relerr, \
                                              maxEval=1e5, abserr=0, vectorized=True)
+        
+#        print(integ)
+#        print(integ(np.array([3400])[:,None], chi, ell1, which, time_dict['r_list'],time_dict['ar'], time_dict['Dr'], time_dict['fr'],\
+#                time_dict['vr'], time_dict['wr'], time_dict['Omr'],time_dict['Hr'], time_dict['mathcalR'],\
+#                r0, ddr, normW,f0_tab, fm2_tab,cp_tr, bphi, Nphi, eta))
+
         res[:,ind]=val*chi**2
+
+
 
         if save: 
             np.savetxt(output_dir+fn.format(lterm, which, int(ell1)), np.vstack([chi_list, res]).T) 
@@ -500,49 +549,59 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
 
 
 ################################################################################ spherical bispectrum
-def final_integrand(r, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl3n2_chi=0,\
+def final_integrand(chi, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl3n2_chi=0,\
                         r_list=0, A0_tab=0, A2_tab=0, A4_tab=0, Am_tab=0, Il_tab=0):
-    r=r[:,0]
-    Cl2_0 = np.interp(r, Cl2n1_chi[:,0], Cl2n1_chi[:,1])
-    Cl3_0 = np.interp(r, Cl3n1_chi[:,0], Cl3n1_chi[:,1])
+    '''
+    The sum over n and m is now explicitely computed. The result is a function of chi which will be integrated over.
+
+    returns 2/pi* chi^2 * \sum_{mn} C_{\ell2}^{(n)}(chi) C_{\ell3}^{(m)}(chi) 
+                
+                \int dr D^2(r)W(r) f^{(X)}_{nm}(r) \int dk k^(X)*jl(k chi)*jl(k r) where X is an integer
+            or
+                \int dr D^2(r)W(r) f^{(R)}_{nm}(r) \sum_p c_p * \int dk k**(nu_p-1) jl(k*chi)jl(k*r) for radiation
+    '''
+
+    chi=chi[:,0]
+    Cl2_0 = np.interp(chi, Cl2n1_chi[:,0], Cl2n1_chi[:,1])
+    Cl3_0 = np.interp(chi, Cl3n1_chi[:,0], Cl3n1_chi[:,1])
 
     if which in ['F2', 'G2', 'dv2']:
         if which == 'F2':
-            A00 = np.interp(r, r_list, A0_tab[0])
-            A01 = np.interp(r, r_list, A0_tab[1])
-            A02 = np.interp(r, r_list, A0_tab[2])
-            A03 = np.interp(r, r_list, A0_tab[3])
+            A00 = np.interp(chi, r_list, A0_tab[0])
+            A01 = np.interp(chi, r_list, A0_tab[1])
+            A02 = np.interp(chi, r_list, A0_tab[2])
+            A03 = np.interp(chi, r_list, A0_tab[3])
         else :
             A00, A01, A02, A03 = 0, 0, 0, 0
 
-        Cl2_p2 = np.interp(r, Cl2n1_chi[:,0], Cl2n1_chi[:,3])
-        Cl2_m2 = np.interp(r, Cl2n1_chi[:,0], Cl2n1_chi[:,2])
-        Cl3_m2 = np.interp(r, Cl3n1_chi[:,0], Cl3n1_chi[:,2])
-        Cl3_p2 = np.interp(r, Cl3n1_chi[:,0], Cl3n1_chi[:,3])
+        Cl2_p2 = np.interp(chi, Cl2n1_chi[:,0], Cl2n1_chi[:,3])
+        Cl2_m2 = np.interp(chi, Cl2n1_chi[:,0], Cl2n1_chi[:,2])
+        Cl3_m2 = np.interp(chi, Cl3n1_chi[:,0], Cl3n1_chi[:,2])
+        Cl3_p2 = np.interp(chi, Cl3n1_chi[:,0], Cl3n1_chi[:,3])
 
         if not Newton or (Newton and which!='F2'):
-            Am = np.interp(r, Am_tab[:,0], Am_tab[:,1])*Cl2_0*Cl3_0+\
-                 np.interp(r, Am_tab[:,0], Am_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)+\
-                 np.interp(r, Am_tab[:,0], Am_tab[:,3])*(Cl3_0*Cl2_m2+Cl3_m2*Cl2_0)+\
-                 np.interp(r, Am_tab[:,0], Am_tab[:,4])*Cl2_0*Cl3_0 +\
-                 np.interp(r, Am_tab[:,0], Am_tab[:,5])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
+            Am = np.interp(chi, Am_tab[:,0], Am_tab[:,1])*Cl2_0*Cl3_0+\
+                 np.interp(chi, Am_tab[:,0], Am_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)+\
+                 np.interp(chi, Am_tab[:,0], Am_tab[:,3])*(Cl3_0*Cl2_m2+Cl3_m2*Cl2_0)+\
+                 np.interp(chi, Am_tab[:,0], Am_tab[:,4])*Cl2_0*Cl3_0 +\
+                 np.interp(chi, Am_tab[:,0], Am_tab[:,5])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
         else:
             Am=0
 
-        A20 = np.interp(r, r_list, A2_tab[0])
-        A21 = np.interp(r, r_list, A2_tab[1])
-        A40 = np.interp(r, r_list, A4_tab[0])
+        A20 = np.interp(chi, r_list, A2_tab[0])
+        A21 = np.interp(chi, r_list, A2_tab[1])
+        A40 = np.interp(chi, r_list, A4_tab[0])
 
         if rad and not Newton:
             if which=='F2':
-                Il_res=np.interp(r, Il_tab[:,0], Il_tab[:,1])*Cl2_0*Cl3_0+\
-                       np.interp(r, Il_tab[:,0], Il_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)+\
-                       np.interp(r, Il_tab[:,0], Il_tab[:,3])*Cl2_0*Cl3_0+\
-                       np.interp(r, Il_tab[:,0], Il_tab[:,4])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
+                Il_res=np.interp(chi, Il_tab[:,0], Il_tab[:,1])*Cl2_0*Cl3_0+\
+                       np.interp(chi, Il_tab[:,0], Il_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)+\
+                       np.interp(chi, Il_tab[:,0], Il_tab[:,3])*Cl2_0*Cl3_0+\
+                       np.interp(chi, Il_tab[:,0], Il_tab[:,4])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
             else:
     
-                Il_res=np.interp(r, Il_tab[:,0], Il_tab[:,1])*Cl2_0*Cl3_0+\
-                       np.interp(r, Il_tab[:,0], Il_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
+                Il_res=np.interp(chi, Il_tab[:,0], Il_tab[:,1])*Cl2_0*Cl3_0+\
+                       np.interp(chi, Il_tab[:,0], Il_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
         else:
             Il_res=0
 
@@ -550,12 +609,12 @@ def final_integrand(r, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl
                           + (A02+A20)*(Cl2_0*Cl3_m2+Cl3_0*Cl2_m2) + Am + Il_res
 
     else:
-        A00 = np.interp(r, r_list, A0_tab)
+        A00 = np.interp(chi, r_list, A0_tab)
         if which=='d2vd2v':
             out = A00*Cl2_0*Cl3_0 
         else:
-            Cl2_0_2 = np.interp(r, Cl2n2_chi[:,0], Cl2n2_chi[:,1])
-            Cl3_0_2 = np.interp(r, Cl3n2_chi[:,0], Cl3n2_chi[:,1])
+            Cl2_0_2 = np.interp(chi, Cl2n2_chi[:,0], Cl2n2_chi[:,1])
+            Cl3_0_2 = np.interp(chi, Cl3n2_chi[:,0], Cl3n2_chi[:,1])
             out = A00*(Cl2_0*Cl3_0_2+Cl3_0*Cl2_0_2)
     return out
 
@@ -563,6 +622,14 @@ def final_integrand(r, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl
 ################################################################################ spherical bispectrum
 
 def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin):
+    '''
+    Main function to compute de bispectrum assuming the generalised power spectra have already been computed.
+    Power spectra are loaded with the function sum_qterm_and_linear_term
+
+    Relativistic effects (including radiation) are either loaded (if already computed) or computed 
+    thanks to the function get_Am_and_Il 
+    ...
+    '''
 
     if which in ['F2', 'G2', 'dv2']:
         Cl2n_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell2)
@@ -677,9 +744,14 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
                                      args=(which, Newton, rad, Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi, time_dict['r_list'], A0_tab),\
                                      relerr=relerr, maxEval=0, abserr=0, vectorized=True)
             val/=2.
+
+    # The factor 2/pi in the def of Cl is not included in general_ps. We also add here the factor 2
     return val[0]*8./np.pi**2
 
 def spherical_bispectrum(which, Newton, rad, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin):
+    '''
+    Function computing the permutations
+    '''
     #print(which, lterm, ell1, ell2, ell3)
     return   spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time_dict,\
                 r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin)\

@@ -280,6 +280,10 @@ def tmin_fct(ell, nu_p):
 
 @njit
 def myhyp21_basic(a1, a2, b1, z):
+    '''
+    This function is an implementation of the serie representation of the 2F1 function: eq (A.2) of 1705.05022
+    '''
+
     par1=1+0.j
     s=0.j
     i=0.j
@@ -346,6 +350,10 @@ def mygammaRatio(z1, z2):
 
 @njit
 def Il(nu_p, z, ell):
+    '''
+    Simple implementation of I_Assassi_Simonovic_Zaldarriaga defined in eq (2.19) of 1705.05022
+    '''
+
     a1, a2, b1 = (nu_p-1.)/2, ell+nu_p/2., ell+3./2.
     res = np.pi**2*2.**(nu_p-1.)*mygammaRatio(ell+nu_p/2.,ell+3./2.)\
     /mygamma((3.-nu_p)/2.)*z**ell*myhyp21_basic(a1, a2, b1, z**2)
@@ -353,6 +361,10 @@ def Il(nu_p, z, ell):
 
 @njit
 def hyp21(nu_p, z, ell):
+    '''
+    Efficient implementation of I_Assassi_Simonovic_Zaldarriaga, see appendix B. of 1705.05022
+    '''
+
     if z<0.5:
         res=Il(nu_p, z, ell)
     elif z<1:
@@ -369,6 +381,11 @@ def hyp21(nu_p, z, ell):
 
 @njit
 def myhyp21(nu_p, t, chi, ell, t1min):
+    '''
+    returns the result of 4pi * \int dk k**(nu-1) jl(k*chi)jl(k*r) = chi**(-nu_p) * I_Assassi_Simonovic_Zaldarriaga
+                                                                   = 2pi^2 / r^2 * I_me
+    '''
+
     if t.real>1:
         fact=t**(-nu_p)
         t=1./t
