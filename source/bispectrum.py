@@ -447,8 +447,8 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
     eta=2.*np.pi/np.log(kmax/kmin)
     fm2_tab, f0_tab=0, 0
     
-    if rad: print('     Computing I_ell={}'.format(ell1))
-    else: print('     Computing A_ell={}'.format(ell1))
+    if rad: print('     Computing I_ell={}'.format(int(ell1)))
+    else: print('     Computing A_ell={}'.format(int(ell1)))
 
     if rad:
         fn = 'Il/Il_{}_{}_ell{}.txt'
@@ -497,7 +497,7 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
 
     res=np.zeros((fdim, len(chi_list)))
     #if ell1<100:
-    for ind, chi in enumerate(chi_list[:1]):
+    for ind, chi in enumerate(chi_list):
         if ind%10==0: print('   {}/{}'.format(ind, len(chi_list)))
 
         val, err = cubature.cubature(integ, ndim=1, fdim=fdim, xmin=[rmin], xmax=[rmax],\

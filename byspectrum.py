@@ -243,12 +243,12 @@ def main(argv):
 
                     if argv[ell_start]=='all':
                         for ell in ell_list: #np.float64(argv[ell_start:]):
-                            print(' Il_ell={}'.format(int(ell)))
+                            #print(' Il_ell={}'.format(int(ell)))
                             get_Am_and_Il(chi_list, ell, lt, wh, Newton, rad, time_dict, r0, ddr, normW, rmin,\
                                     rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin, True)
                     else:
                         for ell in np.float64(argv[ell_start:]):
-                            print(' Il_ell={}'.format(int(ell)))
+                            #print(' Il_ell={}'.format(int(ell)))
                             get_Am_and_Il(chi_list, ell, lt, wh, Newton, rad, time_dict, r0, ddr, normW, rmin,\
                                     rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin, True)
  
