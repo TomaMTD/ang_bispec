@@ -40,8 +40,9 @@ def find_B(bl1, l1, bin1, bin2, bin3, wigner):
     return B, Xi, ind1
 
 
-def load_bl(l1, which_list, name):
+def load_bl(l1, lterm, which_list, name):
     for ind,w in enumerate(which_list):
+        print(name.format(lterm, w, l1))
         if ind==0:
             bl=np.load(name.format(lterm, w, l1))
         else:
@@ -79,7 +80,6 @@ def get_binned_B(ell, which, lterm, Newton=0, rad=0):
     else:
         which_list=[which]
 
-
     B_list=np.array([])
     Xi_list=np.array([])
     for i in range(Nbin):
@@ -94,7 +94,7 @@ def get_binned_B(ell, which, lterm, Newton=0, rad=0):
                 Xi = 0
                 ind1=0
                 for l1 in range(2, ellmax):
-                    bl=load_bl(l1, which_list, name)
+                    bl=load_bl(l1, lterm, which_list, name)
                     res=find_B(bl, l1, bin1, bin2, bin3, wigner[ind1:])
                     B+=res[0]
                     Xi+=res[1]
