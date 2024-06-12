@@ -74,7 +74,7 @@ def set_bias(k, fctk):
 #    print(' bias: {}'.format(b))
 #    return b
  
-def P_of_k(k, Pk, gauge, which, rad, time_dict, r0, ddr, normW):
+def P_of_k(k, Pk, gauge, rad): #, which, rad, time_dict, r0, ddr, normW):
     if not rad:
         if gauge in ['sync']:
             out=Pk 
@@ -86,7 +86,7 @@ def P_of_k(k, Pk, gauge, which, rad, time_dict, r0, ddr, normW):
     return out
 
 def quadratic_terms(qterm, k, Pk, gauge, lterm, which, time_dict, r0, ddr, normW):
-    B=P_of_k(k, Pk, gauge, which, 0, time_dict, r0, ddr, normW)
+    B=P_of_k(k, Pk, gauge, rad) #, which, 0, time_dict, r0, ddr, normW)
     
     #print('     qterm={}'.format(qterm))
     if which=='d2v':
@@ -156,7 +156,7 @@ def compute(k, Pk, fct_k, b):
 
 def get_cp_of_r(k, Pk, gauge, lterm, which, qterm, rad, time_dict, r0, ddr, normW):
     if which in ['FG2', 'F2', 'G2', 'dv2']: 
-        fct_k = P_of_k(k, Pk, gauge, which, rad, time_dict, r0, ddr, normW) 
+        fct_k = P_of_k(k, Pk, gauge, rad) #, which, rad, time_dict, r0, ddr, normW) 
         np.save(output_dir+'fct_k'.format(which, lterm, qterm), np.vstack([k, fct_k]).T)
     else: 
         fct_k = quadratic_terms(qterm, k, Pk, gauge, lterm, which, time_dict, r0, ddr, normW) 

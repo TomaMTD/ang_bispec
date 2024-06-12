@@ -42,12 +42,10 @@ def find_B(bl1, l1, bin1, bin2, bin3, wigner):
 
 def load_bl(l1, lterm, which_list, name):
     for ind,w in enumerate(which_list):
-        print(name.format(lterm, w, l1))
         if ind==0:
             bl=np.load(name.format(lterm, w, l1))
         else:
             bl+=np.load(name.format(lterm, w, l1))
-
     return bl
 
 
