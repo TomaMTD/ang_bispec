@@ -403,7 +403,7 @@ def integrand_Il_G2(r, chi, ell, which, r_list, \
  
     Ilm2=np.zeros(len(t_list), dtype=np.complex128)
     for p in range(-Nphi//2, Nphi//2+1):
-        nu=bphi+1j*p*eta
+        nu=1.+bphi+1j*p*eta
         if ell>=5: 
             t1min = tmin_fct(ell, nu)
         else: 
@@ -473,6 +473,8 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
         if which=='F2' :
             if not Newton:
                 integ , fdim = integrand_Am_F2, 5
+            else:
+                return 0
         else:
             if Newton: Hr=0
             else: Hr=time_dict['Hr']
