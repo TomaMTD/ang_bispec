@@ -301,7 +301,6 @@ def main(argv):
                             ell1=int(argv[ell_start+1])
 
                             try:
-                                raise(FileNotFoundError)
                                 bl=np.load(name+'_ell{}.npy'.format(ell1))
                                 lenght=len(bl)
                                 ind=0
