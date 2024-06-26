@@ -65,7 +65,7 @@ def get_binned_B(ell, which, lterm, Newton=0, rad=0):
                     'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d', \
                 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p']
         else:
-            which_list=['F2'.format(rad_key), 'G2'.format(rad_key), 'dv2{}'.format(rad_key), \
+            which_list=['F2{}'.format(rad_key), 'G2{}'.format(rad_key), 'dv2{}'.format(rad_key), \
                     'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d', \
                 'd1vd2v', 'd1vd0d', 'd1vdod']
 

@@ -354,7 +354,7 @@ def Il(nu_p, z, ell):
     Simple implementation of I_Assassi_Simonovic_Zaldarriaga defined in eq (2.19) of 1705.05022
     '''
 
-    a1, a2, b1 = (nu_p-1.)/2, ell+nu_p/2., ell+3./2.
+    a1, a2, b1 = (nu_p-1.)/2., ell+nu_p/2., ell+3./2.
     res = np.pi**2*2.**(nu_p-1.)*mygammaRatio(ell+nu_p/2.,ell+3./2.)\
     /mygamma((3.-nu_p)/2.)*z**ell*myhyp21_basic(a1, a2, b1, z**2)
     return res
@@ -368,6 +368,13 @@ def hyp21(nu_p, z, ell):
     if z<0.5:
         res=Il(nu_p, z, ell)
     elif z<1:
+        #t=-(1.-z**2)**2/4./z**2
+        #res=np.pi**(3./2.)*z**(-nu_p/2.)/mygamma((3.-nu_p)/2.)*\
+        #        (mygammaRatio(ell+nu_p/2., ell+2.-nu_p/2.)*mygammaRatio(1.-nu_p/2, nu_p/2.-1.)\
+        #            *myhyp21_basic(ell/2.+nu_p/4., nu_p/4.-(ell+1.)/2., nu_p/2., t)+\
+        #    (-t/4.)**(1.-nu_p/2)*myhyp21_basic(ell/2.-nu_p/4.+1., 1./2.-nu_p/4.-ell/2.,2.-nu_p/2., t))
+        #
+
         t=(1.-z**2)**2/4./z**2
         res=np.pi*z**(-nu_p/2.)*(np.sqrt(np.pi)*mygammaRatio(ell+nu_p/2., ell+2.-nu_p/2.)\
                                  *mygammaRatio(1.-nu_p/2, 3./2.-nu_p/2.)*\

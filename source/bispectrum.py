@@ -281,26 +281,31 @@ def integrand_Am_F2(r, chi, ell, which, r_list, \
     Omrr=np.interp(r[:,0], r_list, Omr)
     Hrr=np.interp(r[:,0], r_list, Hr)
 
+    if ell>=5: 
+        t1min = tmin_fct(ell, -1.)
+    else: 
+        t1min=0
+
     for ind,t in enumerate(t_list):
         if t>1:
             Am2[ind]=t**(-ell+1.)
-            fact=t
-            t=1./t
+            #fact=t
+            #t=1./t
         else:
-            fact=1.
+            #fact=1.
             Am2[ind]=t**(ell+2.)
-        Am4[ind]=fact*Il(-1+0.j, t+0.j, ell)
+        Am4[ind]=myhyp21(-1.+0.j, t, chi, ell, t1min) #chi*fact*Il(-1+0.j, t+0.j, ell) #
     
     fm2=fm2_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
     fm4=fm4_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
     Am2=Am2/(1.+2.*ell)/r[:,0]**2
     WDr=Drr**2*W(r[:,0], r0, ddr, normW) 
 
-    out[0]=chi*fm2[0]*Am2*WDr
-    out[1]=chi*fm2[1]*Am2*WDr
-    out[2]=chi*fm2[2]*Am2*WDr
-    out[3]=chi*fm4[0]*Am4.real*WDr/2/np.pi**2
-    out[4]=chi*fm4[1]*Am4.real*WDr/2/np.pi**2
+    out[0]=chi*Am2*WDr*fm2[0] 
+    out[1]=chi*Am2*WDr*fm2[1] 
+    out[2]=chi*Am2*WDr*fm2[2] 
+    out[3]=Am4.real*fm4[0]*WDr/2/np.pi**2
+    out[4]=Am4.real*fm4[1]*WDr/2/np.pi**2
 #    out=chi*np.array([fm2[0]*Am2, fm2[1]*Am2, fm2[2]*Am2, fm4[0]*Am4, fm4[1]*Am4])\
         #        *Drr**2*W(r[:,0], r0, ddr, normW) 
     return out.T
@@ -383,6 +388,8 @@ def integrand_Il_F2(r, chi, ell, which, r_list, \
         for ind, t in enumerate(t_list):
             Ilm2[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu, t, chi, ell, t1min)
             Ilm4[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu-2., t, chi, ell, t1min)
+    # here we have computed 
+    # 2pi^2/r^2 \sum c_p I_me(1.+bphi+1j*p*eta, r1, chi)
 
     WDr=Drr**2*Wrr
     out[0]=fm2[0]*Ilm2.real*WDr
@@ -390,8 +397,7 @@ def integrand_Il_F2(r, chi, ell, which, r_list, \
     out[2]=fm4[0]*Ilm4.real*WDr
     out[3]=fm4[1]*Ilm4.real*WDr
 
-    #out=np.array([fm2[0]*Ilm2 , fm2[1]*Ilm2, fm4[0]*Ilm4, fm4[1]*Ilm4])*Dr**2*Wr
-    return out.T /2./np.pi**2
+    return out.T/2/np.pi**2 
 
 @njit
 def integrand_Il_G2(r, chi, ell, which, r_list, \
@@ -415,7 +421,6 @@ def integrand_Il_G2(r, chi, ell, which, r_list, \
     out[0]=np.interp(r[:,0], r_list, fm2_tab[0])*Ilm2.real
     out[1]=np.interp(r[:,0], r_list, fm2_tab[1])*Ilm2.real
 
-    #out=np.array([np.interp(r[:,0], r_list, fm2_tab[0])*Ilm2 , np.interp(r[:,0], r_list, fm2_tab[1])*Ilm2])
     return out.T/2./np.pi**2
 
 
@@ -499,16 +504,17 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
 
     res=np.zeros((fdim, len(chi_list)))
     #if ell1<100:
+
     for ind, chi in enumerate(chi_list):
         if ind%10==0: print('   {}/{}'.format(ind, len(chi_list)))
 
         val, err = cubature.cubature(integ, ndim=1, fdim=fdim, xmin=[rmin], xmax=[rmax],\
-                                     args=(chi, ell1, which, time_dict['r_list'], \
-                                        time_dict['ar'], time_dict['Dr'], time_dict['fr'], \
-                                        time_dict['vr'], time_dict['wr'], time_dict['Omr'], \
-                                        time_dict['Hr'], time_dict['mathcalR'], r0, ddr, normW, \
+                                     args=(chi, ell1, which, time_dict['r_list'],\
+                                        time_dict['ar'], time_dict['Dr'], time_dict['fr'],\
+                                        time_dict['vr'], time_dict['wr'], time_dict['Omr'],\
+                                        time_dict['Hr'], time_dict['mathcalR'], r0, ddr, normW,\
                                         f0_tab, fm2_tab,\
-                                        cp_tr, bphi, Nphi, eta), relerr=relerr, \
+                                        cp_tr, bphi, Nphi, eta), relerr=relerr,\
                                              maxEval=1e5, abserr=0, vectorized=True)
         
 #        print(integ)
