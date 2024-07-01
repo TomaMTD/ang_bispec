@@ -194,7 +194,7 @@ def main(argv):
                 print('computing integrand tab of chi qterm={}'.format(qt))
                 #b_list[ind]=set_bias(gauge, lt, which, qt, False)
 #y[:,:,ind]=get_cp_of_r(r_list, tr['k'], Pk, gauge, lt, which, qt, False, ra, a, Ha, D, f, r0, ddr, normW, b_list[ind])
-                y[:,:,ind], b_list[ind]=get_cp_of_r(tr['k'], Pk, gauge, lt, which, qt, 0, time_dict, r0, ddr, normW)
+                y[:,:,ind], b_list[ind]=get_cp_of_r(tr['k'], Pk, gauge, lt, which, qt, 0, Newton, time_dict, r0, ddr, normW)
                 np.save(output_dir+'cp_of_r', y)
                 
                 for ell in np.float64(argv[ell_start:]):
@@ -202,15 +202,15 @@ def main(argv):
                         y1[:,:,ind]=mathcalD(r_list, y[:,:,ind], ell)
 
                     if len(qterm_list)==1:
-                        get_all_Cln(which, qt, lt, chi_list, ell, r_list, y[:,:,0], y1[:,:,0], rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list[0])
+                        get_all_Cln(which, qt, lt, Newton, chi_list, ell, r_list, y[:,:,0], y1[:,:,0], rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list[0])
                     elif compute_all_separate:
-                        get_all_Cln(which, qt, lt, chi_list, ell, r_list, y[:,:,ind], y1[:,:,ind], rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list[ind])
+                        get_all_Cln(which, qt, lt, Newton, chi_list, ell, r_list, y[:,:,ind], y1[:,:,ind], rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list[ind])
                     else:
                         compute_all=True
 
             if compute_all:
                 for ell in np.float64(argv[ell_start:]):
-                    get_all_Cln(which, qterm, lt, chi_list, ell, r_list, y, y1, rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list)
+                    get_all_Cln(which, qterm, lt, Newton, chi_list, ell, r_list, y, y1, rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list)
 
     else:
         if which=='all' and not argv[ell_start]=='bin':
@@ -237,7 +237,7 @@ def main(argv):
                 print('computing {} for which={} lterm={} ell={}'.format(argv[ell_start-1], wh, lt, argv[ell_start]))
 
                 if argv[ell_start-1] == 'Il':
-                    cp_tr, b = get_cp_of_r(tr['k'], tr['dTdk'], gauge, lt, wh, 0, 1, time_dict\
+                    cp_tr, b = get_cp_of_r(tr['k'], tr['dTdk'], gauge, lt, wh, 0, 1, 0, time_dict\
                             , r0, ddr, normW)
                     np.savetxt(output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
 
@@ -254,7 +254,7 @@ def main(argv):
  
                 elif argv[ell_start-1] == 'bl':
                     if rad and wh in ['F2', 'G2', 'dv2']:
-                        cp_tr, b = get_cp_of_r(tr['k'], tr['dTdk'], gauge, lt, wh, 0, rad, time_dict\
+                        cp_tr, b = get_cp_of_r(tr['k'], tr['dTdk'], gauge, lt, wh, 0, 1, 0, time_dict\
                             , r0, ddr, normW)
                         cp_tr=cp_tr[:,0]
                         np.savetxt(output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)

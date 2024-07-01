@@ -154,7 +154,7 @@ def compute(k, Pk, fct_k, b):
         res[p+Nk//2] = get_cp(p, b, k, Nk, kmin, kmax, fct_k)
     return res
 
-def get_cp_of_r(k, Pk, gauge, lterm, which, qterm, rad, time_dict, r0, ddr, normW):
+def get_cp_of_r(k, Pk, gauge, lterm, which, qterm, rad, Newton, time_dict, r0, ddr, normW):
     if which in ['FG2', 'F2', 'G2', 'dv2']: 
         fct_k = P_of_k(k, Pk, gauge, rad) #, which, rad, time_dict, r0, ddr, normW) 
         np.save(output_dir+'fct_k'.format(which, lterm, qterm), np.vstack([k, fct_k]).T)
@@ -164,7 +164,7 @@ def get_cp_of_r(k, Pk, gauge, lterm, which, qterm, rad, time_dict, r0, ddr, norm
 
     b=set_bias(k, fct_k)
     if not rad:
-        fct_r = mathcalB(which, lterm, qterm, time_dict, r0, ddr, normW)
+        fct_r = mathcalB(which, lterm, qterm, Newton, time_dict, r0, ddr, normW)
         np.save(output_dir+'fct_r_{}_lterm{}_qterm{}'.format(which, lterm, qterm), fct_r)
         return compute(k, Pk, fct_k, b)[:,None]*fct_r, b
     else:

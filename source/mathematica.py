@@ -76,7 +76,7 @@ def d5W_(x, z0, Dz, normW=1):
     return res/normW
 
 #sp.diff(x**3*sp.diff(D*f*W , x, 2), x, 3)
-def mathcalB(which, lterm, qterm, time_dict, z0, Dz, normW):
+def mathcalB(which, lterm, qterm, Newton, time_dict, z0, Dz, normW):
 
     sp.init_printing(pretty_print=False)
     def display_no_args(expr):
@@ -201,7 +201,10 @@ def mathcalB(which, lterm, qterm, time_dict, z0, Dz, normW):
     elif lterm=='rsd':
         B = -sp.diff(D*f*W , x, 2)
     elif lterm=='pot':
-        B = W*D*((1.-R)/a+3*f*H**2)
+        if not Newton:
+            B = W*D*((1.-R)/a+3*f*H**2)
+        else:
+            B = W*D*((1.-R)/a)
     elif lterm=='doppler':
         B = sp.diff(H*D*W*f*R , x, 1)
     else:

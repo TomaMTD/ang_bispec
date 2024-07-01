@@ -70,7 +70,7 @@ def get_Cl_sum(integrand, chi, ell, n, r_list, y, y1, rmin, rmax, N, kmax, kmin,
                                      relerr=relerr, maxEval=1e5, abserr=0, vectorized=True)
     return val/4./np.pi
 
-def get_all_Cln(which, qterm, lterm, chi_list, ell, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b):
+def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b):
     '''
     Main function to compute the generalised power spectrum
     Computes the generalised power spectrum for all chi's and n's given ell. The result is normalised 
@@ -89,18 +89,21 @@ def get_all_Cln(which, qterm, lterm, chi_list, ell, r_list, y, y1, rmin, rmax, N
     else:
         stuff2=1.
 
+    if lterm=='pot' and Newton: key_pot='_newton'
+    else: key_pot=''
+
     if which in ['FG2', 'F2', 'G2']:
         res=np.zeros((len(chi_list), 4))
-        cl_name = output_dir+'cln/Cln_{}_ell{}.txt'.format(lterm, int(ell))
+        cl_name = output_dir+'cln/Cln_{}{}_ell{}.txt'.format(lterm, key_pot, int(ell))
         integrand=theintegrand_sum
     else:
         if qterm==0:
             res=np.zeros((len(chi_list), 2))
-            cl_name = output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lterm, int(ell))
+            cl_name = output_dir+'cln/Cln_{}_{}{}_ell{}.txt'.format(which, lterm, key_pot, int(ell))
             integrand=theintegrand_sum_quadratic
         else:
             res=np.zeros((len(chi_list), 2))
-            cl_name = output_dir+'cln/Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qterm, lterm, int(ell))
+            cl_name = output_dir+'cln/Cln_{}_qterm{}_{}{}_ell{}.txt'.format(which, qterm, lterm, key_pot, int(ell))
             integrand=theintegrand_sum 
 
     print(' ') 

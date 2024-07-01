@@ -289,12 +289,12 @@ def integrand_Am_F2(r, chi, ell, which, r_list, \
     for ind,t in enumerate(t_list):
         if t>1:
             Am2[ind]=t**(-ell+1.)
-            #fact=t
-            #t=1./t
+            fact=t
+            t=1./t
         else:
-            #fact=1.
+            fact=1.
             Am2[ind]=t**(ell+2.)
-        Am4[ind]=myhyp21(-1.+0.j, t, chi, ell, t1min) #chi*fact*Il(-1+0.j, t+0.j, ell) #
+        Am4[ind]=chi*fact*Il(-1+0.j, t+0.j, ell) #myhyp21(-1.+0.j, t, chi, ell, t1min) #
     
     fm2=fm2_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
     fm4=fm4_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
