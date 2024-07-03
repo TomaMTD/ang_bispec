@@ -1,5 +1,6 @@
 import numpy as np
 import os, sys
+from art import text2art
 from classy import Class
 from scipy import integrate
 import time
@@ -15,6 +16,10 @@ from mathematica import *
 from general_ps import *
 from bispectrum import *
 from binning import *
+
+
+text = text2art("Angular BISPECTRUM", font='small')  # Vous pouvez changer 'block' pour d'autres styles disponibles
+print(text)
 
 def main(argv):
     global Newton, which, lterm, qterm, chi_ind, rad
@@ -88,7 +93,7 @@ def main(argv):
         indlist=[]
 
         for ell in range(2, 128*2, 1):
-            for w in ['d3v', 'd2v']: #['FG2', 'd1v', 'd1d']:#, 'd3v', 'd2v']:
+            for w in ['FG2', 'd1v', 'd1d', 'd3v', 'd2v']:
 
                 if w=='d3v':
                     ql=[1, 2, 3, 4]

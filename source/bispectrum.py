@@ -28,6 +28,7 @@ def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, D
 
     if which in ['F2', 'G2', 'dv2']:
         for ind, lt in enumerate(lterm):
+            if lt=='pot': lt='pot_newton'
             if ind==0:
                 Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))
             else:
@@ -57,6 +58,7 @@ def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, D
     else:
         ind=0
         for lt in lterm:
+            if lt=='pot': lt='pot_newton'
             try: 
                 #                print(output_dir+'cln/Cln_{}_{}_ell{}.txt not found, try qterm...'.format(which, lt, int(ell)))
                 if which[:2]=='d2':
@@ -106,9 +108,9 @@ def alpha_chi(r, index, which, Dr, fr, vr, wr, Omr):
             res=np.zeros((len(r)), dtype=np.float64)
     else:
         if index==0:
-            res=2.*fr-6./7.*wr
+            res=-0.5*(2.*fr-6./7.*wr)
         elif index==1:
-            res=-15.*Omr*fr
+            res=0.5*15.*Omr*fr
         else:
             res=np.zeros((len(r)), dtype=np.float64)
     
@@ -127,9 +129,9 @@ def beta_chi(r, index, which, Dr, fr, vr, wr, Omr):
             res=np.zeros((len(r)), dtype=np.float64)
     else:
         if index==0:
-            res=2*fr
+            res=-fr
         elif index==1:
-            res=-6.*Omr*fr
+            res=3.*Omr*fr
         else:
             res=np.zeros((len(r)), dtype=np.float64)
     return  res
@@ -154,14 +156,14 @@ def epsilon_chi(r, index, which, Dr, fr, vr, wr, Omr):
     if which=='F2':
         res=np.zeros((len(r)), dtype=np.float64)
     else:
-        res=-9./2.*Omr*fr
+        res=9./4.*Omr*fr
     return  res
 
 ############################################################################# definition of fnm as function of chi
 #@njit
 def f0_nm(r, which, Dr, fr, vr, wr, Omr, Hr):
     res=np.zeros((4, len(r)), dtype=np.float64)
-    res[0]= (beta_chi(r, 0, which, Dr, fr, vr, wr, Omr) - alpha_chi(r, 0, which, Dr, fr, vr, wr, Omr))/2.
+    res[0]=(beta_chi(r, 0, which, Dr, fr, vr, wr, Omr) - alpha_chi(r, 0, which, Dr, fr, vr, wr, Omr))/2.
     res[1]=(alpha_chi(r, 0, which, Dr, fr, vr, wr, Omr) - beta_chi(r, 0, which, Dr, fr, vr, wr, Omr))/4.
     res[2]=Hr**2/2.*(beta_chi(r, 1, which, Dr, fr, vr, wr, Omr)/2. - alpha_chi(r, 1, which, Dr, fr, vr, wr, Omr))
     res[3]=Hr**4/4.*alpha_chi(r, 2, which, Dr, fr, vr, wr, Omr)
@@ -244,7 +246,10 @@ def fm2R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar):
 @njit
 def fm4R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar):
     res=np.zeros((2, len(fr)))
-    res[0]= 3.*fr*(fr+3.*Omr/2.)
+    if which=='F2':
+        res[0]= 3.*fr*(fr+3.*Omr/2.)
+    else:
+        res[0]= 3.*(fr-1)*(fr+3.*Omr/2.)
     res[1]=-res[0]/2.
     return res*Hr**4 * Dr/ar
 
@@ -281,10 +286,10 @@ def integrand_Am_F2(r, chi, ell, which, r_list, \
     Omrr=np.interp(r[:,0], r_list, Omr)
     Hrr=np.interp(r[:,0], r_list, Hr)
 
-    if ell>=5: 
-        t1min = tmin_fct(ell, -1.)
-    else: 
-        t1min=0
+    #if ell>=5: 
+    #    t1min = tmin_fct(ell, -1.)
+    #else: 
+    #    t1min=0
 
     for ind,t in enumerate(t_list):
         if t>1:
@@ -405,9 +410,10 @@ def integrand_Il_G2(r, chi, ell, which, r_list, \
         f0_tab, fm2_tab,\
         cp_tr, bphi, Nphi, eta):
     t_list=r[:,0]/chi
-    out=np.zeros((2, len(t_list)), dtype=np.float64)
+    out=np.zeros((4, len(t_list)), dtype=np.float64)
  
     Ilm2=np.zeros(len(t_list), dtype=np.complex128)
+    Ilm4=np.zeros(len(t_list), dtype=np.complex128)
     for p in range(-Nphi//2, Nphi//2+1):
         nu=1.+bphi+1j*p*eta
         if ell>=5: 
@@ -417,9 +423,12 @@ def integrand_Il_G2(r, chi, ell, which, r_list, \
         
         for ind, t in enumerate(t_list):
             Ilm2[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu, t, chi, ell, t1min)
+            Ilm4[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu-2., t, chi, ell, t1min)
     
     out[0]=np.interp(r[:,0], r_list, fm2_tab[0])*Ilm2.real
     out[1]=np.interp(r[:,0], r_list, fm2_tab[1])*Ilm2.real
+    out[2]=np.interp(r[:,0], r_list, f0_tab[0])*Ilm4.real
+    out[3]=np.interp(r[:,0], r_list, f0_tab[1])*Ilm4.real
 
     return out.T/2./np.pi**2
 
@@ -456,28 +465,38 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
     else: print('     Computing A_ell={}'.format(int(ell1)))
 
     if rad:
+        fdim=4
         fn = 'Il/Il_{}_{}_ell{}.txt'
         
         fm2_tab=fm2R_nm(which, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'],\
-                                time_dict['Omr'], time_dict['Hr'], time_dict['ar'])*time_dict['Dr']**2*time_dict['Wr']
+                                time_dict['Omr'], time_dict['Hr'], time_dict['ar'])\
+                                *time_dict['Dr']**2*time_dict['Wr']
+        f0_tab=fm4R_nm(which, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'],\
+                                time_dict['Omr'], time_dict['Hr'], time_dict['ar'])\
+                                *time_dict['Dr']**2*time_dict['Wr']
         if which=='F2':
-            integ, fdim = integrand_Il_F2, 4
+            integ = integrand_Il_F2
         elif which=='G2':
-            integ, fdim = integrand_Il_G2, 2
-            fm2_tab = np.gradient(np.gradient(fm2_tab, \
+            integ = integrand_Il_G2
+            fm2_tab = -np.gradient(np.gradient(fm2_tab, \
+                            time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
+            f0_tab = -np.gradient(np.gradient(f0_tab, \
                             time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
         elif which=='dv2':
-            integ, fdim = integrand_Il_G2, 2
+            integ = integrand_Il_G2
             fm2_tab = np.gradient(fm2_tab*\
+                        time_dict['mathcalR']*time_dict['Hr'], time_dict['r_list'], axis=1)
+            f0_tab = np.gradient(f0_tab*\
                         time_dict['mathcalR']*time_dict['Hr'], time_dict['r_list'], axis=1)
 
     else:
+        fdim=5
         if not Newton: fn = 'Am/Am_{}_{}_ell{}.txt'
         else: fn = 'Am/Am_{}_{}_ell{}_newton.txt'
  
         if which=='F2' :
             if not Newton:
-                integ , fdim = integrand_Am_F2, 5
+                integ = integrand_Am_F2
             else:
                 return 0
         else:
@@ -490,7 +509,7 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
             fm2_tab=fm2_nm(time_dict['r_list'], which, time_dict['Dr'],\
                     time_dict['fr'], time_dict['vr'], time_dict['wr'],\
                     time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
-    
+            
             if which=='G2':
                 f0_tab =np.gradient(np.gradient(f0_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
                 fm2_tab=np.gradient(np.gradient(fm2_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
@@ -500,13 +519,13 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
                 f0_tab =np.gradient(f0_tab, time_dict['r_list'], axis=1)
                 fm2_tab=np.gradient(fm2_tab, time_dict['r_list'], axis=1)
     
-            integ, fdim = integrand_Am_G2, 5
+            integ = integrand_Am_G2
 
     res=np.zeros((fdim, len(chi_list)))
     #if ell1<100:
 
     for ind, chi in enumerate(chi_list):
-        if ind%10==0: print('   {}/{}'.format(ind, len(chi_list)))
+        if ind%10==0 and rad: print('   {}/{}'.format(ind, len(chi_list)))
 
         val, err = cubature.cubature(integ, ndim=1, fdim=fdim, xmin=[rmin], xmax=[rmax],\
                                      args=(chi, ell1, which, time_dict['r_list'],\
@@ -517,14 +536,7 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
                                         cp_tr, bphi, Nphi, eta), relerr=relerr,\
                                              maxEval=1e5, abserr=0, vectorized=True)
         
-#        print(integ)
-#        print(integ(np.array([3400])[:,None], chi, ell1, which, time_dict['r_list'],time_dict['ar'], time_dict['Dr'], time_dict['fr'],\
-#                time_dict['vr'], time_dict['wr'], time_dict['Omr'],time_dict['Hr'], time_dict['mathcalR'],\
-#                r0, ddr, normW,f0_tab, fm2_tab,cp_tr, bphi, Nphi, eta))
-
         res[:,ind]=val*chi**2
-
-
 
         if save: 
             np.savetxt(output_dir+fn.format(lterm, which, int(ell1)), np.vstack([chi_list, res]).T) 
@@ -601,15 +613,15 @@ def final_integrand(chi, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, 
         A40 = np.interp(chi, r_list, A4_tab[0])
 
         if rad and not Newton:
-            if which=='F2':
-                Il_res=np.interp(chi, Il_tab[:,0], Il_tab[:,1])*Cl2_0*Cl3_0+\
+            #if which=='F2':
+            Il_res=np.interp(chi, Il_tab[:,0], Il_tab[:,1])*Cl2_0*Cl3_0+\
                        np.interp(chi, Il_tab[:,0], Il_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)+\
                        np.interp(chi, Il_tab[:,0], Il_tab[:,3])*Cl2_0*Cl3_0+\
                        np.interp(chi, Il_tab[:,0], Il_tab[:,4])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
-            else:
+            #else:
     
-                Il_res=np.interp(chi, Il_tab[:,0], Il_tab[:,1])*Cl2_0*Cl3_0+\
-                       np.interp(chi, Il_tab[:,0], Il_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
+            #    Il_res=np.interp(chi, Il_tab[:,0], Il_tab[:,1])*Cl2_0*Cl3_0+\
+            #           np.interp(chi, Il_tab[:,0], Il_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
         else:
             Il_res=0
 
@@ -689,9 +701,6 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
                                      time_dict['r_list'],\
                                      A0_tab, A2_tab, A4_tab, Am_tab, Il_tab), \
                                      relerr=relerr, maxEval=0, abserr=0, vectorized=True)
-        if which=='G2':
-            val*=-1.
-
     else:
 
         if which=='d2vd2v':
