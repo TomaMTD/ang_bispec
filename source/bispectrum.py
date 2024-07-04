@@ -466,7 +466,7 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
 
     if rad:
         fdim=4
-        fn = 'Il/Il_{}_{}_ell{}.txt'
+        fn = 'Il/Il_{}_ell{}.txt'
         
         fm2_tab=fm2R_nm(which, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'],\
                                 time_dict['Omr'], time_dict['Hr'], time_dict['ar'])\
@@ -491,8 +491,8 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
 
     else:
         fdim=5
-        if not Newton: fn = 'Am/Am_{}_{}_ell{}.txt'
-        else: fn = 'Am/Am_{}_{}_ell{}_newton.txt'
+        if not Newton: fn = 'Am/Am_{}_ell{}.txt'
+        else: fn = 'Am/Am_{}_ell{}_newton.txt'
  
         if which=='F2' :
             if not Newton:
@@ -539,7 +539,7 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
         res[:,ind]=val*chi**2
 
         if save: 
-            np.savetxt(output_dir+fn.format(lterm, which, int(ell1)), np.vstack([chi_list, res]).T) 
+            np.savetxt(output_dir+fn.format(which, int(ell1)), np.vstack([chi_list, res]).T) 
 
     # Limber seems not to work ...
     #else:
@@ -655,17 +655,17 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
         Cl2n_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell2)
         Cl3n_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell3)
 
-        Il_fn='Il/Il_{}_{}_ell{}.txt'
+        Il_fn='Il/Il_{}_ell{}.txt'
         if not Newton and rad:
             try:
-                Il_tab = np.loadtxt(output_dir+Il_fn.format(lterm, which, int(ell1)))
+                Il_tab = np.loadtxt(output_dir+Il_fn.format(which, int(ell1)))
             except FileNotFoundError:
                 Il_tab = get_Am_and_Il(chi_list, ell1, lterm, which, Newton, True, time_dict, r0, ddr, normW, rmin,\
                                     rmax, cp_tr, b, k, kmax, kmin, True)
         else:
             Il_tab = 0 
         
-        Am_fn='Am/Am_{}_{}_ell{}{}.txt'
+        Am_fn='Am/Am_{}_ell{}{}.txt'
         if not Newton:
             Am_new=''
             Hr = time_dict['Hr']
@@ -675,7 +675,7 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
         
         if not Newton or (Newton and which!='F2'):
             try:
-                Am_tab = np.loadtxt(output_dir+Am_fn.format(lterm, which, \
+                Am_tab = np.loadtxt(output_dir+Am_fn.format(which, \
                     int(ell1), Am_new))
             except (ValueError, FileNotFoundError):
                 Am_tab = get_Am_and_Il(chi_list, ell1, lterm, which, Newton, False, time_dict, r0, ddr, normW, rmin,\
