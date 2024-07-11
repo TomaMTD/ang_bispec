@@ -83,6 +83,7 @@ def main(argv):
         y=get_cp_of_r(tr['k'], Pk, gauge, lterm, which, qterm, rad, time_dict, r0, ddr, normW, b)
         y1=mathcalD(r_list, y, ell)
 
+
         plot_integrand(ell, 0, r_list, y, y1, rmin, rmax, len(tr['k']), kmax, kmin, 0, b)
 
 
@@ -258,6 +259,7 @@ def main(argv):
                                     rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin, True)
  
                 elif argv[ell_start-1] == 'bl':
+
                     if rad and wh in ['F2', 'G2', 'dv2']:
                         cp_tr, b = get_cp_of_r(tr['k'], tr['dTdk'], gauge, lt, wh, 0, 1, 0, time_dict\
                             , r0, ddr, normW)
@@ -265,12 +267,13 @@ def main(argv):
                         np.savetxt(output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
                     else:
                         cp_tr, b = 0, 0
-
+ 
                     if argv[ell_start] == 'bin':
                         print('Binning bispectrum...')
                         get_binned_B(ell_list, wh, lt, Newton, rad)
 
                     else:
+   
                         if argv[ell_start] == 'equi':
                             shape_name = '_equi'
                         elif argv[ell_start] == 'squ':

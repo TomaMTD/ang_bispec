@@ -3,6 +3,7 @@ import os, sys
 import time
 from numba import njit
 import cubature
+from scipy.integrate import simpson
 
 from param import *
 from mathematica import *
@@ -15,7 +16,7 @@ def theintegrand(rvar, chi, nu_p, ell, r_list, f_of_r):
     This function computes the integrand for a single frequency p: 2pi^2/r^2 * I_me(nu_p, r, chi)*f(r)
     '''
 
-    result = np.zeros((len(rvar), 2), dtype=np.float64)
+    result = np.zeros((len(rvar)), dtype=np.float64)
     tvar=rvar/chi
 
     if ell>=5: t1min = tmin_fct(ell, nu_p)
@@ -23,8 +24,8 @@ def theintegrand(rvar, chi, nu_p, ell, r_list, f_of_r):
     
     for ind, t in enumerate(tvar[:,0]):
 
-        res=myhyp21(nu_p, t, chi, ell, t1min) * np.interp(rvar[ind,0], r_list, f_of_r)
-        result[ind] = [res.real, res.imag]
+        res=myhyp21(nu_p, t, chi, ell, t1min) * f_of_r[ind] 
+        result[ind] = res.real 
     return result 
 
 @njit
@@ -32,15 +33,15 @@ def theintegrand_sum(rvar, chi, ell, n, r_list, f_of_rp, N, kmax, kmin, kpow, b)
     '''
     Function summing theintegrand over the frequency before integration: sum_p theintegrand_p
     '''
-
-    res = np.zeros((len(rvar[:,0])), dtype=np.complex128)
+    res = np.zeros((len(rvar[:,0])), dtype=np.float64)
     for p in range(-N//2, N//2+1):
         eta_p = 2.*np.pi*p/np.log(kmax/kmin)
         nu_p = 1.+b+n+1j*eta_p + kpow
     
         val = theintegrand(rvar, chi, nu_p, ell, r_list, f_of_rp[p+N//2])
-        res+=val[:,0]+val[:,1]*1j
-    return res.real
+        res+=val 
+    return res
+
 
 @njit
 def theintegrand_sum_quadratic(rvar, chi, ell, n, r_list, f_of_rp, N, kmax, kmin, kpow, b_list):
@@ -49,6 +50,8 @@ def theintegrand_sum_quadratic(rvar, chi, ell, n, r_list, f_of_rp, N, kmax, kmin
         res+=theintegrand_sum(rvar, chi, ell, n, r_list, f_of_rp[:,:,ind], N, kmax, kmin, kpow, b)
 
     return res
+
+
 
 def get_Cl_sum(integrand, chi, ell, n, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b):
     '''
@@ -65,9 +68,9 @@ def get_Cl_sum(integrand, chi, ell, n, r_list, y, y1, rmin, rmax, N, kmax, kmin,
     else:
         f_of_rp=y
 
-    val, err = cubature.cubature(integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
-                         args=(chi, ell, n, r_list, f_of_rp, N, kmax, kmin, kpow, b), \
-                                     relerr=relerr, maxEval=1e5, abserr=0, vectorized=True)
+    evaluation=integrand(r_list[:,None], chi, ell, n, r_list, f_of_rp, N, kmax, kmin, kpow, b)
+    val=simpson(evaluation, x=r_list)
+
     return val/4./np.pi
 
 def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b):
@@ -108,16 +111,13 @@ def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, y, y1, rmin,
 
     print(' ') 
     print('integration {}'.format(cl_name)) 
-    #if #not os.path.isfile(cl_name) or force:
-    if os.path.isfile(cl_name):
+    if os.path.isfile(cl_name) and not force:
         res=np.loadtxt(cl_name)
     else:
         res[:,0]=chi_list
 
     a=time.time()
-    for ind, chi in enumerate(chi_list):
-        ind_chi = np.where(chi==res[:,0])[0][0]
-        print('  {}/{} chi={:.2f}, time {:.2f}'.format(ind_chi, len(res[:,0]), chi, time.time()-a))
+    for ind_chi, chi in enumerate(chi_list):
 
         if res[ind_chi,1]!=0 and not force: 
             print('     already computed -> jump')
@@ -142,6 +142,7 @@ def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, y, y1, rmin,
                 os.system("awk -i inplace '{{if (NR=={}) $4=\"{:.18e}\"; print $0}}' {}".format(ind_chi+1, res[ind_chi,3], cl_name))
         else:
             np.savetxt(cl_name, res) 
+        print('  {}/{} chi={:.2f}, time {:.2f}'.format(ind_chi, len(res[:,0]), chi, time.time()-a))
     else:
         res=np.loadtxt(cl_name)
     return res

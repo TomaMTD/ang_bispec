@@ -86,7 +86,7 @@ def P_of_k(k, Pk, gauge, rad): #, which, rad, time_dict, r0, ddr, normW):
     return out
 
 def quadratic_terms(qterm, k, Pk, gauge, lterm, which, time_dict, r0, ddr, normW):
-    B=P_of_k(k, Pk, gauge, rad) #, which, 0, time_dict, r0, ddr, normW)
+    B=P_of_k(k, Pk, gauge, rad=False) #, which, 0, time_dict, r0, ddr, normW)
     
     #print('     qterm={}'.format(qterm))
     if which=='d2v':
