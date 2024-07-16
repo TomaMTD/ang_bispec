@@ -32,49 +32,7 @@ def set_bias(k, fctk):
     print(' bias: {:.2f}'.format(b))
     return b
 
-#def set_bias(gauge, lterm, which, qterm, rad):
-#    if not rad:
-#        if which in ['FG2', 'F2', 'G2']:
-#            b=-0.5
-#        else:
-#            if which in ['d2v', 'd1v', 'd3v']:
-#                if lterm=='density':
-#                    b=-0.9
-#                else:
-#                    if qterm==1:
-#                        b=-2.1
-#                    elif qterm==2:
-#                        b=-2.3
-#                    else:
-#                        b=-2.5
-#
-#            elif which=='d1d':
-#                if lterm=='density':
-#                    if qterm==1:
-#                        b=0.8
-#                    else:
-#                        b=0.9
-#                else:
-#                    b=-0.5
-#
-#            elif which=='d0d':
-#                if lterm=='density':
-#                    b=1.1 #0.9
-#                else:
-#                    b=-0.5 #-0.3
-#
-#            else: print('!!!!!!!!!!!!!!! bias not set')
-# 
-#    else:
-#        if which == 'F2':
-#            b = 0.3
-#        else:
-#            b = 0.6
-#
-#    print(' bias: {}'.format(b))
-#    return b
- 
-def P_of_k(k, Pk, gauge, rad): #, which, rad, time_dict, r0, ddr, normW):
+def P_of_k(k, Pk, gauge, rad): 
     if not rad:
         if gauge in ['sync']:
             out=Pk 
@@ -86,9 +44,8 @@ def P_of_k(k, Pk, gauge, rad): #, which, rad, time_dict, r0, ddr, normW):
     return out
 
 def quadratic_terms(qterm, k, Pk, gauge, lterm, which, time_dict, r0, ddr, normW):
-    B=P_of_k(k, Pk, gauge, rad=False) #, which, 0, time_dict, r0, ddr, normW)
+    B=P_of_k(k, Pk, gauge, rad=False) 
     
-    #print('     qterm={}'.format(qterm))
     if which=='d2v':
         if lterm=='density':
             B*=k**2
@@ -156,7 +113,7 @@ def compute(k, Pk, fct_k, b):
 
 def get_cp_of_r(k, Pk, gauge, lterm, which, qterm, rad, Newton, time_dict, r0, ddr, normW):
     if which in ['FG2', 'F2', 'G2', 'dv2']: 
-        fct_k = P_of_k(k, Pk, gauge, rad) #, which, rad, time_dict, r0, ddr, normW) 
+        fct_k = P_of_k(k, Pk, gauge, rad) 
         np.save(output_dir+'fct_k'.format(which, lterm, qterm), np.vstack([k, fct_k]).T)
     else: 
         fct_k = quadratic_terms(qterm, k, Pk, gauge, lterm, which, time_dict, r0, ddr, normW) 

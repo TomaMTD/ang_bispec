@@ -28,7 +28,7 @@ def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, D
 
     if which in ['F2', 'G2', 'dv2']:
         for ind, lt in enumerate(lterm):
-            if lt=='pot': lt='pot_newton'
+            if lt=='pot' and Newton: lt='pot_newton'
             if ind==0:
                 Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))
             else:
@@ -58,7 +58,7 @@ def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, D
     else:
         ind=0
         for lt in lterm:
-            if lt=='pot': lt='pot_newton'
+            if lt=='pot' and Newton: lt='pot_newton'
             try: 
                 #                print(output_dir+'cln/Cln_{}_{}_ell{}.txt not found, try qterm...'.format(which, lt, int(ell)))
                 if which[:2]=='d2':
