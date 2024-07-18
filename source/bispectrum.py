@@ -1,6 +1,7 @@
 import numpy as np
 from numba import njit
 import cubature
+from scipy.integrate import simpson
 
 from param import *
 from fftlog import *
@@ -521,25 +522,42 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
     
             integ = integrand_Am_G2
 
-    res=np.zeros((fdim, len(chi_list)))
+    try : 
+        res=(np.loadtxt(output_dir+fn.format(which, int(ell1)))[:,1:]).T
+    except (OSError, FileNotFoundError, EOFError, ValueError): 
+        res=np.zeros((fdim, len(chi_list)))
     #if ell1<100:
 
     for ind, chi in enumerate(chi_list):
         if ind%10==0 and rad: print('   {}/{}'.format(ind, len(chi_list)))
-
-        val, err = cubature.cubature(integ, ndim=1, fdim=fdim, xmin=[rmin], xmax=[rmax],\
-                                     args=(chi, ell1, which, time_dict['r_list'],\
-                                        time_dict['ar'], time_dict['Dr'], time_dict['fr'],\
-                                        time_dict['vr'], time_dict['wr'], time_dict['Omr'],\
-                                        time_dict['Hr'], time_dict['mathcalR'], r0, ddr, normW,\
-                                        f0_tab, fm2_tab,\
-                                        cp_tr, bphi, Nphi, eta), relerr=relerr,\
-                                             maxEval=1e5, abserr=0, vectorized=True)
         
-        res[:,ind]=val*chi**2
+        if res[0,ind]!=0 and not force: 
+            print('     already computed -> jump chi_ind='+str(ind))
+            continue
+        else:
 
-        if save: 
-            np.savetxt(output_dir+fn.format(which, int(ell1)), np.vstack([chi_list, res]).T) 
+
+            evaluation=integ(time_dict['r_list'][:,None], chi, ell1, which, time_dict['r_list'],\
+                                            time_dict['ar'], time_dict['Dr'], time_dict['fr'],\
+                                            time_dict['vr'], time_dict['wr'], time_dict['Omr'],\
+                                            time_dict['Hr'], time_dict['mathcalR'], r0, ddr, normW,\
+                                            f0_tab, fm2_tab,\
+                                            cp_tr, bphi, Nphi, eta) 
+            val=simpson(evaluation.T, x=time_dict['r_list'])
+
+            #val, err = cubature.cubature(integ, ndim=1, fdim=fdim, xmin=[rmin], xmax=[rmax],\
+            #                             args=(chi, ell1, which, time_dict['r_list'],\
+            #                                time_dict['ar'], time_dict['Dr'], time_dict['fr'],\
+            #                                time_dict['vr'], time_dict['wr'], time_dict['Omr'],\
+            #                                time_dict['Hr'], time_dict['mathcalR'], r0, ddr, normW,\
+            #                                f0_tab, fm2_tab,\
+            #                                cp_tr, bphi, Nphi, eta), relerr=relerr,\
+            #                                     maxEval=1e5, abserr=0, vectorized=True)
+            
+            res[:,ind]=val*chi**2
+
+            if save: 
+                np.savetxt(output_dir+fn.format(which, int(ell1)), np.vstack([chi_list, res]).T) 
 
     # Limber seems not to work ...
     #else:
