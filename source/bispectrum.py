@@ -20,7 +20,7 @@ def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, D
 
     if not isinstance(lterm, list):
         if lterm=='all':
-            lterm=['density', 'rsd', 'pot', 'doppler']
+            lterm=['density', 'rsd', 'pot', 'doppler', 'dpot']
             #print(' ONLY DENSITY AND RSD AS LINEAR TERM')
         elif lterm=='nopot':
             lterm=['density', 'rsd', 'doppler'] 
@@ -271,8 +271,8 @@ def integrand_Am_F2(r, chi, ell, which, r_list, \
     For all multiplet n and m, this function computes the integrand of the pure relativistic \
             terms coming from the k1^-2 and k1^-4 terms of the kernel
     
-    returns Am2=2/pi * D^2(r)W(r) f^{(-2)}_{nm}(r) \int dk jl(k chi)*jl(k r)
-            Am4=2/pi * D^2(r)W(r) f^{(-4)}_{nm}(r) \int dk k^{-2} jl(k chi)*jl(k r)
+    returns Am2=2/pi * D^2(r)W_tilde(r) f^{(-2)}_{nm}(r) \int dk jl(k chi)*jl(k r)
+            Am4=2/pi * D^2(r)W_tilde(r) f^{(-4)}_{nm}(r) \int dk k^{-2} jl(k chi)*jl(k r)
             
     '''
     t_list=r[:,0]/chi
@@ -305,7 +305,7 @@ def integrand_Am_F2(r, chi, ell, which, r_list, \
     fm2=fm2_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
     fm4=fm4_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
     Am2=Am2/(1.+2.*ell)/r[:,0]**2
-    WDr=Drr**2*W(r[:,0], r0, ddr, normW) 
+    WDr=Drr**2*W_tilde(r[:,0], r0, ddr, r_list, Hr, ar, normW) 
 
     out[0]=chi*Am2*WDr*fm2[0] 
     out[1]=chi*Am2*WDr*fm2[1] 
@@ -313,7 +313,7 @@ def integrand_Am_F2(r, chi, ell, which, r_list, \
     out[3]=Am4.real*fm4[0]*WDr/2/np.pi**2
     out[4]=Am4.real*fm4[1]*WDr/2/np.pi**2
 #    out=chi*np.array([fm2[0]*Am2, fm2[1]*Am2, fm2[2]*Am2, fm4[0]*Am4, fm4[1]*Am4])\
-        #        *Drr**2*W(r[:,0], r0, ddr, normW) 
+        #        *Drr**2*W_tilde(r[:,0], r0, ddr, normW) 
     return out.T
 
 
@@ -364,7 +364,7 @@ def integrand_Il_F2(r, chi, ell, which, r_list, \
     For all multiplet n and m, this function computes the integrand of the radiation term \
             \partial \log T_{phi_0} / \partial \log k = \sum_p c_p k^{b+i\eta_p}
     
-    returns 2/pi * D^2(r)W(r) f^{(R)}_{nm}(r) \sum_p c_p * \int dk k**(nu_p-1) jl(k*chi)jl(k*r)
+    returns 2/pi * D^2(r)W_tilde(r) f^{(R)}_{nm}(r) \sum_p c_p * \int dk k**(nu_p-1) jl(k*chi)jl(k*r)
     '''
 
     t_list=r[:,0]/chi
@@ -377,7 +377,7 @@ def integrand_Il_F2(r, chi, ell, which, r_list, \
     wrr=np.interp( r[:,0], r_list, wr)
     Omrr=np.interp(r[:,0], r_list, Omr)
     Hrr=np.interp( r[:,0], r_list, Hr)
-    Wrr=W(r[:,0], r0, ddr, normW)
+    Wrr=W_tilde(r[:,0], r0, ddr, r_list, Hr, ar, normW)
 
     fm2=fm2R_nm(which, Drr, frr, vrr, wrr, Omrr, Hrr, arr)
     fm4=fm4R_nm(which, Drr, frr, vrr, wrr, Omrr, Hrr, arr)
@@ -445,16 +445,16 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
         expressed as an integral over r1:
 
         returns integration of the function integrand_Am_F2 over r for all chi_list values and multiplication by chi^2:
-            2/pi* chi^2 * \int dr D^2(r)W(r) f^{(-2)}_{nm}(r) \int dk jl(k chi)*jl(k r)
+            2/pi* chi^2 * \int dr D^2(r)W_tilde(r) f^{(-2)}_{nm}(r) \int dk jl(k chi)*jl(k r)
             and         
-            2/pi* chi^2 * \int dr D^2(r)W(r) f^{(-4)}_{nm}(r) \int dk k^{-2} jl(k chi)*jl(k r)
+            2/pi* chi^2 * \int dr D^2(r)W_tilde(r) f^{(-4)}_{nm}(r) \int dk k^{-2} jl(k chi)*jl(k r)
 
     else radiation is on:
         computes the radiation term. Those terms lead to a function of chi that can be \
         expressed as an integral over r1:
 
         returns integration of the function integrand_Il_F2 over r for all chi_list values and multiplication by chi^2:
-            2/pi* chi^2 * \int dr D^2(r)W(r) f^{(R)}_{nm}(r) \sum_p c_p * \int dk k**(nu_p-1) jl(k*chi)jl(k*r)
+            2/pi* chi^2 * \int dr D^2(r)W_tilde(r) f^{(R)}_{nm}(r) \sum_p c_p * \int dk k**(nu_p-1) jl(k*chi)jl(k*r)
     
     '''
 
@@ -568,7 +568,7 @@ def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr,
     #    wr=np.interp( chi_list, time_dict['r_list'], time_dict['wr'])
     #    Omr=np.interp(chi_list, time_dict['r_list'], time_dict['Omr'])
     #    Hr=np.interp( chi_list, time_dict['r_list'], time_dict['Hr'])
-    #    Wr=W(chi_list, r0, ddr, normW)
+    #    Wr=W_tilde(chi_list, r0, ddr, normW)
     #
     #    fm2=fm2R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar)
     #    fm4=fm4R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar)
@@ -594,9 +594,9 @@ def final_integrand(chi, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, 
 
     returns 2/pi* chi^2 * \sum_{mn} C_{\ell2}^{(n)}(chi) C_{\ell3}^{(m)}(chi) 
                 
-                \int dr D^2(r)W(r) f^{(X)}_{nm}(r) \int dk k^(X)*jl(k chi)*jl(k r) where X is an integer
+                \int dr D^2(r)W_tilde(r) f^{(X)}_{nm}(r) \int dk k^(X)*jl(k chi)*jl(k r) where X is an integer
             or
-                \int dr D^2(r)W(r) f^{(R)}_{nm}(r) \sum_p c_p * \int dk k**(nu_p-1) jl(k*chi)jl(k*r) for radiation
+                \int dr D^2(r)W_tilde(r) f^{(R)}_{nm}(r) \sum_p c_p * \int dk k**(nu_p-1) jl(k*chi)jl(k*r) for radiation
     '''
 
     chi=chi[:,0]

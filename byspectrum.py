@@ -57,14 +57,20 @@ def main(argv):
 
     rmin, rmax = get_distance(zmin)[0], get_distance(zmax)[0]
     print('rmin={} rmax={}'.format(rmin, rmax))
-    normW = 1./4.*bb*(1. + 1./np.tanh((Wrmax - Wrmin)/bb))*2./bb*(Wrmax-Wrmin)
 
     tr, Pk = get_power(0, gauge)
     kmin, kmax = np.min(tr['k']), np.max(tr['k'])
 
-    time_dict = interp_growth(r0, ddr, normW, rmin, rmax)
+    time_dict = interp_growth(r0, ddr, rmin, rmax)
     r_list = time_dict["r_list"]
+    normW = time_dict["normW"]
     np.save(output_dir+'time_dict', time_dict)
+
+    # norm of W not W_tilde
+    # print(1./4.*bb*(1. + 1./np.tanh((Wrmax - Wrmin)/bb))*2./bb*(Wrmax-Wrmin))
+
+
+
 
     if Nchi>0:
         chi_list=np.linspace(rmin, rmax, Nchi)
@@ -105,7 +111,7 @@ def main(argv):
                 else:
                     ql=[1]
 
-                for l in ['density', 'rsd', 'pot', 'doppler']:
+                for l in ['density', 'rsd', 'pot', 'dpot', 'doppler']:
                     #for q in ql:
                     #clname=output_dir+'Cln_{}_qterm{}_{}_ell{}.txt'.format(w, q, l, int(ell))
                     if w == 'FG2':
@@ -159,7 +165,7 @@ def main(argv):
         print(elllist)
         print(indlist)
 
-    elif argv[ell_start-1] == 'cl':
+    elif argv[ell_start-1] in ['cl', 'cln', 'Cl', 'Cln']:
         if which in ['FG2', 'F2', 'G2']:
             qterm_list=[0]
         else:
@@ -184,7 +190,7 @@ def main(argv):
         compute_all=False
 
         if lterm=='all':
-            lterm_list=['density', 'pot', 'rsd', 'doppler']
+            lterm_list=['density', 'pot', 'dpot', 'rsd', 'doppler']
         else:
             lterm_list=[lterm]
         
@@ -229,7 +235,7 @@ def main(argv):
             which_list=[which]
 
         if lterm=='each':
-            lterm_list=['density', 'rsd', 'pot', 'doppler']
+            lterm_list=['density', 'rsd', 'pot', 'dpot', 'doppler']
         else:
             lterm_list=[lterm]
 

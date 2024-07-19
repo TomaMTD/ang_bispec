@@ -43,7 +43,7 @@ def P_of_k(k, Pk, gauge, rad):
         out=Pk
     return out
 
-def quadratic_terms(qterm, k, Pk, gauge, lterm, which, time_dict, r0, ddr, normW):
+def quadratic_terms(qterm, k, Pk, gauge, lterm, which):
     B=P_of_k(k, Pk, gauge, rad=False) 
     
     if which=='d2v':
@@ -116,7 +116,7 @@ def get_cp_of_r(k, Pk, gauge, lterm, which, qterm, rad, Newton, time_dict, r0, d
         fct_k = P_of_k(k, Pk, gauge, rad) 
         np.save(output_dir+'fct_k'.format(which, lterm, qterm), np.vstack([k, fct_k]).T)
     else: 
-        fct_k = quadratic_terms(qterm, k, Pk, gauge, lterm, which, time_dict, r0, ddr, normW) 
+        fct_k = quadratic_terms(qterm, k, Pk, gauge, lterm, which) 
         np.save(output_dir+'fct_k_{}_lterm{}_qterm{}'.format(which, lterm, qterm), np.vstack([k, fct_k]).T)
 
     b=set_bias(k, fct_k)

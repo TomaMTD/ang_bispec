@@ -85,9 +85,9 @@ def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, y, y1, rmin,
 
     print(' C_ell={}'.format(int(ell)))
 
-    if gauge=='new' and lterm!='pot':
+    if gauge=='new' and lterm not in ['pot', 'dpot']:
         stuff2=(2./3./omega_m/H0**2)**2
-    elif lterm=='pot':
+    elif lterm in ['pot', 'dpot']:
         stuff2=(2./3./omega_m/H0**2)
     else:
         stuff2=1.

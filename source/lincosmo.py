@@ -82,14 +82,21 @@ def growth_fct():
         np.savetxt(output_dir+'growth.txt', np.vstack([apy, ra, Ha, Oma, Dpy, fpy, vpy, wpy]).T, header='a r H Om D f v w')
     return apy[::-1], ra[::-1], Ha[::-1], Oma[::-1], Dpy[::-1], fpy[::-1], vpy[::-1], wpy[::-1]
 
-def interp_growth(r0, ddr, normW, rmin, rmax):
+def interp_growth(r0, ddr, rmin, rmax):
     a, ra, Ha, Oma, D, f, v, w = growth_fct()
     r_list=ra[np.logical_and(ra<=rmax, ra>=rmin)]
-    Wr = W(r_list, r0, ddr, normW)
     dHr = np.interp(r_list, ra, dotH_(1./a-1.))
     Hr = np.interp(r_list, ra, Ha)
+    ar = np.interp(r_list, ra, a)
+
+    normW= integrate.quad(W_tilde, a=rmin, b=rmax, \
+            args=(r0, ddr, r_list, Hr, ar,),\
+            epsrel=1e-10, epsabs=0)[0]
+
+    Wr = W_tilde(r_list, r0, ddr, r_list, Hr, ar, normW)
+    WWr = W(r_list, r0, ddr, normW)
     return {'r_list': r_list,\
-            'ar'    : np.interp(r_list, ra, a),\
+            'ar'    : ar,\
             'Hr'    : Hr,\
             'Omr'   : np.interp(r_list, ra, Oma),\
             'Dr'    : np.interp(r_list, ra, D),\
@@ -98,7 +105,9 @@ def interp_growth(r0, ddr, normW, rmin, rmax):
             'wr'    : np.interp(r_list, ra, w),\
             'dHr'   : dHr,\
             'Wr'    : Wr,\
-            'mathcalR': dHr/Hr**2+2./Hr/r_list}
+            'WWr'    : WWr,\
+            'mathcalR': dHr/Hr**2+2./Hr/r_list,
+            'normW': normW}
 
 ############################################################################# power spectrum
 def trans(z, gauge):
@@ -172,10 +181,10 @@ def powerspectrum(k,delta_cdm):
 def get_power(z, gauge):
 
     tr = trans(z, gauge)
-    if gauge=='new' or lterm=='pot':
-        Pk = powerspectrum(tr['k'],np.array([tr['k'], tr['phi']]))
-    else:
-        Pk = powerspectrum(tr['k'],np.array([tr['k'], tr['d_m']] ))
+    #if gauge=='new' or lterm=='pot':
+    Pk = powerspectrum(tr['k'],np.array([tr['k'], tr['phi']]))
+    #else:
+    #    Pk = powerspectrum(tr['k'],np.array([tr['k'], tr['d_m']] ))
     return tr, Pk
 
 
