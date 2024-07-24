@@ -416,7 +416,7 @@ def integrand_Il_G2(r, chi, ell, which, r_list, \
     Ilm2=np.zeros(len(t_list), dtype=np.complex128)
     Ilm4=np.zeros(len(t_list), dtype=np.complex128)
     for p in range(-Nphi//2, Nphi//2+1):
-        nu=1.+bphi+1j*p*eta
+        nu=-1.+bphi+1j*p*eta
         if ell>=5: 
             t1min = tmin_fct(ell, nu)
         else: 
