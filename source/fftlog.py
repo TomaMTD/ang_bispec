@@ -3,7 +3,7 @@ from numba import njit
 import os
 from mathematica import *
 from lincosmo import *
-from param import *
+from param_used import *
 
 #import sys, importlib
 #importlib.import_module(sys.argv[-1])
@@ -32,19 +32,16 @@ def set_bias(k, fctk):
     print(' bias: {:.2f}'.format(b))
     return b
 
-def P_of_k(k, Pk, gauge, rad): 
+def P_of_k(k, Pk, rad): 
     if not rad:
-        if gauge in ['sync']:
-            out=Pk 
-        else:
-            out=Pk*k**4 
+        out=Pk*k**4 
 
     else:
         out=Pk
     return out
 
-def quadratic_terms(qterm, k, Pk, gauge, lterm, which):
-    B=P_of_k(k, Pk, gauge, rad=False) 
+def quadratic_terms(qterm, k, Pk, lterm, which):
+    B=P_of_k(k, Pk, rad=False) 
     
     if which=='d2v':
         if lterm=='density':
@@ -111,12 +108,12 @@ def compute(k, Pk, fct_k, b):
         res[p+Nk//2] = get_cp(p, b, k, Nk, kmin, kmax, fct_k)
     return res
 
-def get_cp_of_r(k, Pk, gauge, lterm, which, qterm, rad, Newton, time_dict, r0, ddr, normW):
+def get_cp_of_r(k, Pk, lterm, which, qterm, rad, Newton, time_dict, r0, ddr, normW):
     if which in ['FG2', 'F2', 'G2', 'dv2']: 
-        fct_k = P_of_k(k, Pk, gauge, rad) 
-        np.save(output_dir+'fct_k'.format(which, lterm, qterm), np.vstack([k, fct_k]).T)
+        fct_k = P_of_k(k, Pk, rad)
+        np.save(output_dir+'fct_k'.format('FG2_dv2', qterm), np.vstack([k, fct_k]).T)
     else: 
-        fct_k = quadratic_terms(qterm, k, Pk, gauge, lterm, which) 
+        fct_k = quadratic_terms(qterm, k, Pk, lterm, which) 
         np.save(output_dir+'fct_k_{}_lterm{}_qterm{}'.format(which, lterm, qterm), np.vstack([k, fct_k]).T)
 
     b=set_bias(k, fct_k)

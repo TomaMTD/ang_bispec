@@ -1,67 +1,97 @@
 import numpy as np
-import os, sys
+import os, sys, argparse
 from art import text2art
 from classy import Class
 from scipy import integrate
 import time
 from numba import njit
 import cubature
-from sympy.physics.wigner import wigner_3j
 
 sys.path.insert(1, '/home/tmontandon/software/byspectrum/source')
 from param import *
-from fftlog import *
-from lincosmo import *
-from mathematica import *
-from general_ps import *
-from bispectrum import *
-from binning import *
-
 
 text = text2art("Angular BISPECTRUM", font='small')  # Vous pouvez changer 'block' pour d'autres styles disponibles
 print(text)
 
-def main(argv):
-    global Newton, which, lterm, qterm, chi_ind, rad
-    ell_start=2
-    for ind,arg in enumerate(argv):
-        if '-' in arg:
-            if arg[1:] in ['which', 'w']:
-                print('change parameter: which={}'.format(argv[ind+1]))
-                which=argv[ind+1]
-                ell_start+=2
-            elif arg[1:] in ['lterm', 'l']:
-                print('change parameter: lterm={}'.format(argv[ind+1]))
-                lterm=argv[ind+1]
-                ell_start+=2
-            elif arg[1:] in ['qterm', 'q']:
-                print('change parameter: qterm={}'.format(argv[ind+1]))
-                qterm=int(argv[ind+1])
-                ell_start+=2
-            elif arg[1:] in ['N', 'Newton']:
-                print('change parameter: Newton={}'.format(argv[ind+1]))
-                Newton=int(argv[ind+1])
-                ell_start+=2
-            elif arg[1:] in ['r', 'rad']:
-                print('change parameter: rad={}'.format(argv[ind+1]))
-                rad=int(argv[ind+1])
-                ell_start+=2
-            elif arg[1:] in ['chi_i', 'i', 'chi_ind']:
-                print('change parameter: chi_ind={}'.format(argv[ind+1]))
-                chi_ind=int(argv[ind+1])
-                ell_start+=2
+def arguments():
+    global output_dir
+    parser = argparse.ArgumentParser(description="Script pour traiter des paramètres")
+    parser.add_argument('-w', '--which', default=which, type=str, help='second order terms')
+    parser.add_argument('-l', '--lterm', default=lterm, type=str, help='linear terms')
+    parser.add_argument('-q', '--qterm', default=qterm, type=int, help='-1, 0, 1, 2, 3, 4 only for which neq F2 G2')
+    parser.add_argument('-N', '--Newton', default=Newton, type=int, help='Newtonian gravity: 0=No, 1=Yes')
+    parser.add_argument('-r', '--rad',default=rad, type=int, help='Radiation: 0=No, 1=Yes')
+    parser.add_argument('-z0'    , default=z0, type=float, help='center of redshift bin')
+    parser.add_argument('-dz'    , default=dz, type=float, help='half width of redshift bin')
+    parser.add_argument('-bb'    , default=bb, type=float, help='How fast is the window function decaying')
+    parser.add_argument('-f'     , '--force', default=force, type=int, help='Wether you and to overwrite all output (force computation)')
+    parser.add_argument('-Nchi'  , default=Nchi, type=int, help='Number of r/chi value to evaluate cl, Am and Il')
+    parser.add_argument('-ell'   , default=ell, type=int, help='')
+    parser.add_argument('-ellmax',default=ellmax, type=int, help='')
+    parser.add_argument('-o', '--output_dir', default=output_dir+'/', type=str, help='Wether you and to overwrite all output (force computation)')
+    parser.add_argument('-m', '--mode', default='bl', type=str, help='Computation mode: [cl, Il, bl, bin]')
+    parser.add_argument('-config', '--configuration', default='all', type=str, help='what triangle configuration to compute')
 
-    Wrmin, Wrmax = get_distance(z0-dz)[0], get_distance(z0+dz)[0]
+    parser.add_argument('-h100'     , type=float,default=h100) 
+    parser.add_argument('-omega_b'  , type=float,default=omega_b) 
+    parser.add_argument('-omega_cdm', type=float,default=omega_cdm) 
+    parser.add_argument('-omega_m'  , type=float,default=omega_m)
+    parser.add_argument('-omega_r'  , type=float,default=omega_r)
+    parser.add_argument('-omega_k'  , type=float,default=omega_k)
+    parser.add_argument('-omega_l'  , type=float,default=omega_l)
+    parser.add_argument('-A_s'      , type=float,default=A_s) 
+    parser.add_argument('-n_s'      , type=float,default=n_s)
+    parser.add_argument('-k_pivot'  , type=float,default=k_pivot) 
+    parser.add_argument('-c'        , type=float,default=c) 
+    parser.add_argument('-H0'       , type=float,default=H0) 
+    parser.add_argument('-chi_ind'  , type=float,default=-1) 
+    parser.add_argument('-relerr'   , type=float,default=relerr) 
+    parser.add_argument('-bins'   , type=list,default=bins) 
+
+    argv=parser.parse_args()
+    if argv.output_dir[-1]!='/': argv.output_dir+='/'
+    return argv
+
+def write_args(argv):
+    with open('param_used.py', 'w') as file:
+        for key, value in vars(argv).items():
+            if isinstance(value, str):
+                file.write(f"{key} = '{value}'\n")
+            else:
+                file.write(f"{key} = {value}\n")
+        file.write("h = {}\n".format(h100/100))
+
+def ensure_directory_exists(path):
+    """checks wether the output path exists"""
+    if not os.path.exists(path):
+        os.makedirs(path)
+        os.makedirs(path+'/Am')
+        os.makedirs(path+'/Il')
+        os.makedirs(path+'/bl')
+        os.makedirs(path+'/cln')
+        print(f"output dir created : {path}")
+
+def main(argv):
+    import lincosmo 
+    import fftlog
+    import general_ps
+    import bispectrum
+    import binning
+    
+    ensure_directory_exists(argv.output_dir)
+    if argv.force!=0: print('-force is activated, overwritting files')
+
+    Wrmin, Wrmax = lincosmo.get_distance(argv.z0-argv.dz)[0], lincosmo.get_distance(argv.z0+argv.dz)[0]
     r0=(Wrmin+Wrmax)/2.
     ddr=(-Wrmin+Wrmax)
 
-    rmin, rmax = get_distance(zmin)[0], get_distance(zmax)[0]
-    print('rmin={} rmax={}'.format(rmin, rmax))
+    rmin, rmax = lincosmo.get_distance(argv.z0-2.*argv.dz)[0], lincosmo.get_distance(argv.z0+2.*argv.dz)[0]
+    print('Window function limits: rmin={:.0f} rmax={:.0f}'.format(rmin, rmax))
 
-    tr, Pk = get_power(0, gauge)
+    tr, Pk = lincosmo.get_power(0)
     kmin, kmax = np.min(tr['k']), np.max(tr['k'])
 
-    time_dict = interp_growth(r0, ddr, rmin, rmax)
+    time_dict = lincosmo.interp_growth(r0, ddr, rmin, rmax)
     r_list = time_dict["r_list"]
     normW = time_dict["normW"]
     np.save(output_dir+'time_dict', time_dict)
@@ -69,31 +99,29 @@ def main(argv):
     # norm of W not W_tilde
     # print(1./4.*bb*(1. + 1./np.tanh((Wrmax - Wrmin)/bb))*2./bb*(Wrmax-Wrmin))
 
-
-
-
-    if Nchi>0:
-        chi_list=np.linspace(rmin, rmax, Nchi)
+    if argv.Nchi>0:
+        chi_list=np.linspace(rmin, rmax, argv.Nchi)
     else:
         chi_list=np.copy(r_list)
 
-    if chi_ind>-1:
-        chi_list=np.array([chi_list[chi_ind]])
+    if argv.chi_ind>-1:
+        chi_list=np.array([chi_list[argv.chi_ind]])
 
-    #which=argv[2]
-    if argv[ell_start-1] == 'debug':
-        ell = np.float64(argv[ell_start])
+    if argv.ellmax<=argv.ell:
+        ell_list=[argv.ell]
+    else:
+        if argv.configuration in ['equi', 'squ', 'folded']:
+            if argv.ell%2!=0: argv.ell+=1
+            ell_list=np.arange(argv.ell, argv.ellmax, 2)
+        else:
+            ell_list=np.arange(argv.ell, argv.ellmax, 1)
 
-        b=set_bias(gauge, lterm, which, qterm)
-#y=get_cp_of_r(r_list, tr['k'], Pk, gauge, lterm, which, qterm, False, ra, a, Ha, D, f, r0, ddr, normW, b)
-        y=get_cp_of_r(tr['k'], Pk, gauge, lterm, which, qterm, rad, time_dict, r0, ddr, normW, b)
-        y1=mathcalD(r_list, y, ell)
+    if argv.lterm=='each':
+        lterm_list=['density', 'pot', 'dpot', 'rsd', 'doppler']
+    else:
+        lterm_list=[argv.lterm]
 
-
-        plot_integrand(ell, 0, r_list, y, y1, rmin, rmax, len(tr['k']), kmax, kmin, 0, b)
-
-
-    elif argv[ell_start-1] == 'search':
+    if argv.mode == 'search':
         wlist=[]
         llist=[]
         elllist=[]
@@ -165,191 +193,194 @@ def main(argv):
         print(elllist)
         print(indlist)
 
-    elif argv[ell_start-1] in ['cl', 'cln', 'Cl', 'Cln']:
-        if which in ['FG2', 'F2', 'G2']:
+    elif argv.mode in ['cl', 'cln', 'Cl', 'Cln']:
+        if argv.which in ['FG2', 'F2', 'G2']:
             qterm_list=[0]
         else:
-            if which=='d2v':
+            if argv.which=='d2v':
                 qterm_list=[1,2,3]
-            elif which in ['d1v', 'd1d']:
+            elif argv.which in ['d1v', 'd1d']:
                 qterm_list=[1,2]
-            elif which in ['d0d']:
+            elif argv.which in ['d0d']:
                 qterm_list=[1]
-            elif which=='d3v':
+            elif argv.which=='d3v':
                 qterm_list=[1,2,3,4]
             else:
                 qterm_list=[0]
 
-        if qterm in qterm_list :
-            qterm_list = [qterm]
+        if argv.which=='all':
+            which_list=['FG2', 'd2v', 'd1v', 'd3v', 'd1d']
+        else:
+            which_list=[argv.which]
+
+        if argv.qterm in qterm_list :
+            qterm_list = [argv.qterm]
         
-        if qterm==-1:
+        if argv.qterm==-1:
             compute_all_separate=True
         else:
             compute_all_separate=False
         compute_all=False
-
-        if lterm=='all':
-            lterm_list=['density', 'pot', 'dpot', 'rsd', 'doppler']
-        else:
-            lterm_list=[lterm]
         
-        for lt in lterm_list:
-            b_list=np.zeros((len(qterm_list)))
-            y=np.zeros((len(tr['k'])+1, len(r_list), len(qterm_list)), dtype=complex)
-            y1=np.zeros((len(tr['k'])+1, len(r_list), len(qterm_list)), dtype=complex)
-
-            if lt=='density' and which in ['FG2', 'F2', 'G2']: kpow=2.
-            else: kpow=0
-
-            for ind, qt in enumerate(qterm_list):
-                print('computing integrand tab of chi qterm={}'.format(qt))
-                #b_list[ind]=set_bias(gauge, lt, which, qt, False)
-#y[:,:,ind]=get_cp_of_r(r_list, tr['k'], Pk, gauge, lt, which, qt, False, ra, a, Ha, D, f, r0, ddr, normW, b_list[ind])
-                y[:,:,ind], b_list[ind]=get_cp_of_r(tr['k'], Pk, gauge, lt, which, qt, 0, Newton, time_dict, r0, ddr, normW)
-                np.save(output_dir+'cp_of_r', y)
-                
-                for ell in np.float64(argv[ell_start:]):
-                    if which in ['FG2', 'F2', 'G2']:
-                        y1[:,:,ind]=mathcalD(r_list, y[:,:,ind], ell)
-
-                    if len(qterm_list)==1:
-                        get_all_Cln(which, qt, lt, Newton, chi_list, ell, r_list, y[:,:,0], y1[:,:,0], rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list[0])
-                    elif compute_all_separate:
-                        get_all_Cln(which, qt, lt, Newton, chi_list, ell, r_list, y[:,:,ind], y1[:,:,ind], rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list[ind])
-                    else:
-                        compute_all=True
-
-            if compute_all:
-                for ell in np.float64(argv[ell_start:]):
-                    get_all_Cln(which, qterm, lt, Newton, chi_list, ell, r_list, y, y1, rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list)
-
-    else:
-        if which=='all' and not argv[ell_start]=='bin':
-            if argv[ell_start-1] == 'bl' and not rad:
-                which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v',\
-                            'dv2', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p', 'davd1v'] #RG2
-            else:
-                which_list=['F2', 'G2', 'dv2']
+        print('Computing generalised power spectra for:')
+        print('     which={}'.format(which_list))
+        print('     lterm={}'.format(lterm_list))
+        if argv.ell>1:
+            print('     ell={}'.format(argv.ell))
         else:
-            which_list=[which]
-
-        if lterm=='each':
-            lterm_list=['density', 'rsd', 'pot', 'dpot', 'doppler']
-        else:
-            lterm_list=[lterm]
-
-        if argv[ell_start] in ['equi', 'squ', 'all', 'bin']:
-            ell_list=equi
-        else:
-            ell_list=[int(c) for c in argv[ell_start:]]
- 
+            print('     ell=[{}, {}]'.format(argv.ell, argv.ellmax))
+            
         for wh in which_list:
             for lt in lterm_list:
-                print('computing {} for which={} lterm={} ell={}'.format(argv[ell_start-1], wh, lt, argv[ell_start]))
+                b_list=np.zeros((len(qterm_list)))
+                y=np.zeros((len(tr['k'])+1, len(r_list), len(qterm_list)), dtype=complex)
+                y1=np.zeros((len(tr['k'])+1, len(r_list), len(qterm_list)), dtype=complex)
 
-                if argv[ell_start-1] == 'Il':
-                    cp_tr, b = get_cp_of_r(tr['k'], tr['dTdk'], gauge, lt, wh, 0, 1, 0, time_dict\
-                            , r0, ddr, normW)
-                    np.savetxt(output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
+                if lt=='density' and wh in ['FG2', 'F2', 'G2']: kpow=2.
+                else: kpow=0
 
-                    if argv[ell_start]=='all':
-                        for ell in ell_list: #np.float64(argv[ell_start:]):
-                            #print(' Il_ell={}'.format(int(ell)))
-                            get_Am_and_Il(chi_list, ell, lt, wh, Newton, rad, time_dict, r0, ddr, normW, rmin,\
-                                    rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin, True)
-                    else:
-                        for ell in np.float64(argv[ell_start:]):
-                            #print(' Il_ell={}'.format(int(ell)))
-                            get_Am_and_Il(chi_list, ell, lt, wh, Newton, rad, time_dict, r0, ddr, normW, rmin,\
-                                    rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin, True)
+                for ind, qt in enumerate(qterm_list):
+                    print('computing integrand tab of chi qterm={}'.format(qt))
+                    y[:,:,ind], b_list[ind]=fftlog.get_cp_of_r(tr['k'], Pk, lt, wh, qt, 0, argv.Newton, time_dict, r0, ddr, normW)
+                    np.save(argv.output_dir+'cp_of_r', y)
+                    
+                    for ell in ell_list:
+                        if wh in ['FG2', 'F2', 'G2']:
+                            y1[:,:,ind]=fftlog.mathcalD(r_list, y[:,:,ind], ell)
+
+                        if len(qterm_list)==1:
+                            general_ps.get_all_Cln(wh, qt, lt, argv.Newton, chi_list, ell, r_list, \
+                                    y[:,:,0], y1[:,:,0], rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list[0])
+                        elif compute_all_separate:
+                            general_ps.get_all_Cln(wh, qt, lt, argv.Newton, chi_list, ell, r_list, \
+                                    y[:,:,ind], y1[:,:,ind], rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list[ind])
+                        else:
+                            compute_all=True
+
+                if compute_all:
+                    for ell in ell_list:
+                        general_ps.get_all_Cln(wh, qterm, lt, argv.Newton, chi_list, ell, r_list, y, y1, \
+                                rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list)
+
+    else:
+        if argv.which=='all' and not argv.mode=='bin':
+            if argv.mode == 'bl' and not argv.rad:
+                if argv.lterm == 'noproj': which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v']
+                else: which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v',\
+                            'dv2', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p', 'davd1v'] #RG2
+            else:
+                if argv.lterm == 'noproj': which_list=['F2', 'G2']
+                else: which_list=['F2', 'G2', 'dv2']
+        else:
+            which_list=[argv.which]
+
+        for wh in which_list:
+            if argv.mode in ['Il', 'Am']:
+                cp_tr, b = fftlog.get_cp_of_r(tr['k'], tr['dTdk'], '', wh, 0, 1, 0, time_dict\
+                        , r0, ddr, normW)
+                np.savetxt(argv.output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
+
+                for ell in ell_list: 
+                    bispectrum.get_Am_and_Il(chi_list, ell, wh, argv.Newton, argv.rad, time_dict,\
+                            r0, ddr, normW, rmin,\
+                            rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin, True)
+
+            else:
+                for lt in lterm_list:
+                    print('computing {} for which={} lterm={} ell={}'.format(argv.mode, wh, lt, argv.configuration))
+
+                    if argv.mode == 'bin':
+                       print('Binning bispectrum...')
+                       binning.get_binned_B(argv.bins, wh, lt, argv.Newton, argv.rad)
+
+                    elif argv.mode == 'bl':
+                        if argv.rad and wh in ['F2', 'G2', 'dv2']:
+                            cp_tr, b = fftlog.get_cp_of_r(tr['k'], tr['dTdk'], lt, wh, 0, 1, 0, time_dict\
+                                , r0, ddr, normW)
+                            cp_tr=cp_tr[:,0]
+                            np.savetxt(argv.output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
+                        else:
+                            cp_tr, b = 0, 0
  
-                elif argv[ell_start-1] == 'bl':
-
-                    if rad and wh in ['F2', 'G2', 'dv2']:
-                        cp_tr, b = get_cp_of_r(tr['k'], tr['dTdk'], gauge, lt, wh, 0, 1, 0, time_dict\
-                            , r0, ddr, normW)
-                        cp_tr=cp_tr[:,0]
-                        np.savetxt(output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
-                    else:
-                        cp_tr, b = 0, 0
- 
-                    if argv[ell_start] == 'bin':
-                        print('Binning bispectrum...')
-                        get_binned_B(ell_list, wh, lt, Newton, rad)
-
-                    else:
    
-                        if argv[ell_start] == 'equi':
+                        if argv.configuration == 'equi':
                             shape_name = '_equi'
-                        elif argv[ell_start] == 'squ':
+                        elif argv.configuration == 'squ':
                             shape_name = '_squ'
+                        elif argv.configuration == 'folded':
+                            shape_name = '_folded'
                         else:
                             shape_name=''
 
-                        if rad and wh in ['F2', 'G2', 'dv2']:
-                            name=output_dir+"bl/bl_{}_{}_rad{}".format(lt, wh, shape_name)
-                        elif Newton:
-                            name=output_dir+"bl/bl_{}_{}_newton{}".format(lt, wh, shape_name)
+                        if argv.rad and wh in ['F2', 'G2', 'dv2']:
+                            name=argv.output_dir+"bl/bl_{}_{}_rad{}".format(lt, wh, shape_name)
+                        elif argv.Newton:
+                            name=argv.output_dir+"bl/bl_{}_{}_newton{}".format(lt, wh, shape_name)
                         else:
-                            name=output_dir+"bl/bl_{}_{}{}".format(lt, wh, shape_name)
+                            name=argv.output_dir+"bl/bl_{}_{}{}".format(lt, wh, shape_name)
                         
                         print(' bispectrum file={}'.format(name))
-                        if argv[ell_start] in ['equi', 'squ']:
+                        if argv.configuration in ['equi', 'squ', 'folded']:
                             fich = open(name+'.txt', "w")
-
                             for ell in ell_list:
-                                if argv[ell_start] == 'squ':
-                                    bl=spherical_bispectrum(wh, Newton, rad, lt, int(argv[ell_start+1]), ell, ell,\
+                                if argv.configuration == 'squ':
+                                    bl, wigner=bispectrum.spherical_bispectrum(wh, argv.Newton, argv.rad, lt, argv.ell, ell, ell,\
                                             time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
                                             len(tr['k']), kmax, kmin)
-                                    fich.write('{} {} {} {:.16e} \n'.format(int(argv[ell_start+1]), ell, ell, bl))
+                                    if bl!=0: fich.write('{} {} {} {:.16e} {:.16e} \n'.format(argv.ell, ell, ell, bl, wigner))
+                                elif argv.configuration == 'folded':
+                                    bl, wigner=bispectrum.spherical_bispectrum(wh, argv.Newton, argv.rad, lt, ell, ell, argv.ellmax,\
+                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
+                                            len(tr['k']), kmax, kmin)
+                                    if bl!=0: fich.write('{} {} {} {:.16e} {:.16e} \n'.format(argv.ellmax, ell, ell, bl, wigner))
                                 else:
-                                    bl=spherical_bispectrum(wh, Newton, rad, lt, ell, ell, ell,\
+                                    bl, wigner=bispectrum.spherical_bispectrum(wh, argv.Newton, argv.rad, lt, ell, ell, ell,\
                                             time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
                                             len(tr['k']), kmax, kmin)
-                                    fich.write('{} {} {} {:.16e} \n'.format(ell, ell, ell, bl))
+                                    if bl!=0: fich.write('{} {} {} {:.16e} {:.16e} \n'.format(ell, ell, ell, bl, wigner))
 
                         else:     
                             bl=np.array([])
-                            ell1=int(argv[ell_start+1])
+                            wigner=np.array([])
+                            ell1=argv.ell
 
                             try:
                                 bl=np.load(name+'_ell{}.npy'.format(ell1))
                                 lenght=len(bl)
                                 ind=0
-                                for ell2 in range(ell1, ellmax):
-                                    print('     ell2={}/{}'.format(ell2, ellmax))
-                                    for ell3 in range(ell2, ellmax):
+                                for ell2 in range(ell1, argv.ellmax):
+                                    print('     ell2={}/{}'.format(ell2, argv.ellmax))
+                                    for ell3 in range(ell2, argv.ellmax):
                                         if ind<lenght: 
                                             ind+=1
                                             continue
                                         else:
-                                            wigner_test = float(wigner_3j(ell1, ell2, ell3, 0,0,0))==0
-                                            if wigner_test:
-                                                bl=np.append(bl, 0.)
-                                            else:
-                                                bl=np.append(bl, spherical_bispectrum(wh, Newton, rad, lt, ell1, ell2,\
+                                            toadd = bispectrum.spherical_bispectrum(wh, argv.Newton, argv.rad, \
+                                                        lt, ell1, ell2,\
                                                         ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, \
-                                                        cp_tr, b, len(tr['k']), kmax, kmin))
+                                                        cp_tr, b, len(tr['k']), kmax, kmin)
 
+                                            bl=np.append(bl, toadd[0])
+                                            wigner=np.append(wigner, toadd[1])
                                             np.save(name+'_ell{}'.format(ell1), bl)
+                                            np.save(output_dir+'wigner_ellmax{}_ell{}'.format(argv.ellmax, ell1), wigner)
 
                             except (OSError, FileNotFoundError, EOFError, ValueError):
-                                for ell2 in range(ell1, ellmax):
-                                    print('     ell2={}/{}'.format(ell2, ellmax))
-                                    for ell3 in range(ell2, ellmax):
-                                        wigner_test = float(wigner_3j(ell1, ell2, ell3, 0,0,0))==0
-                                        if wigner_test:
-                                            bl=np.append(bl, 0.)
-                                        else:
-                                            bl=np.append(bl, spherical_bispectrum(wh, Newton, rad, lt, ell1, ell2, ell3,\
+                                for ell2 in range(ell1, argv.ellmax):
+                                    print('     ell2={}/{}'.format(ell2, argv.ellmax))
+                                    for ell3 in range(ell2, argv.ellmax):
+                                        toadd=bispectrum.spherical_bispectrum(wh, argv.Newton, argv.rad, lt, \
+                                                    ell1, ell2, ell3,\
                                                             time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b,\
-                                                    len(tr['k']), kmax, kmin))
+                                                    len(tr['k']), kmax, kmin)
+                                        bl=np.append(bl, toadd[0])
+                                        wigner=np.append(wigner, toadd[1])
 
                                         np.save(name+'_ell{}'.format(ell1), bl)
-                    
+                                        np.save(output_dir+'wigner_ellmax{}_ell{}'.format(argv.ellmax, ell1), wigner)
     return 0
 
 if __name__ == "__main__":
-    r=main(sys.argv)
+    argv=arguments()
+    write_args(argv)
+    r=main(argv)

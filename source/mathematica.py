@@ -3,7 +3,8 @@ import numba
 from numba import njit
 import sympy as sp
 from sympy.physics.wigner import wigner_3j
-from param import *
+#from param import *
+from param_used import *
 
 
 def Al123(ell1, ell2, ell3):

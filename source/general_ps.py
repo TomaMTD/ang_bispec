@@ -5,7 +5,7 @@ from numba import njit
 import cubature
 from scipy.integrate import simpson
 
-from param import *
+from param_used import *
 from mathematica import *
 
 
@@ -83,9 +83,7 @@ def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, y, y1, rmin,
     returns \mathcal N^2 * \int dr f(r) \sum_p \int dk k^{nu_p-1} jl(k chi) jl(k r)
     '''
 
-    print(' C_ell={}'.format(int(ell)))
-
-    if gauge=='new' and lterm not in ['pot', 'dpot']:
+    if lterm not in ['pot', 'dpot']:
         stuff2=(2./3./omega_m/H0**2)**2
     elif lterm in ['pot', 'dpot']:
         stuff2=(2./3./omega_m/H0**2)
@@ -112,7 +110,9 @@ def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, y, y1, rmin,
     print(' ') 
     print('integration {}'.format(cl_name)) 
     if os.path.isfile(cl_name) and not force:
-        res=np.loadtxt(cl_name)
+        res_test=np.loadtxt(cl_name)
+        if len(res_test)==0: res[:,0]=chi_list
+        else: res=res_test
     else:
         res[:,0]=chi_list
 

@@ -2,11 +2,12 @@ import numpy as np
 from numba import njit
 import cubature
 from scipy.integrate import simpson
+from sympy.physics.wigner import wigner_3j
 
-from param import *
 from fftlog import *
 from mathematica import *
 from lincosmo import *
+from param_used import *
 
 def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, Dr=0, ar=0):
     '''
@@ -21,9 +22,10 @@ def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, D
     if not isinstance(lterm, list):
         if lterm=='all':
             lterm=['density', 'rsd', 'pot', 'doppler', 'dpot']
-            #print(' ONLY DENSITY AND RSD AS LINEAR TERM')
         elif lterm=='nopot':
             lterm=['density', 'rsd', 'doppler'] 
+        elif lterm=='noproj':
+            lterm=['density', 'rsd', 'pot', 'dpot']
         else:
             lterm=[lterm]
 
@@ -434,7 +436,7 @@ def integrand_Il_G2(r, chi, ell, which, r_list, \
     return out.T/2./np.pi**2
 
 
-def get_Am_and_Il(chi_list, ell1, lterm, which, Newton, rad, time_dict, r0, ddr, normW, rmin, rmax, \
+def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW, rmin, rmax, \
         cp_tr, bphi, Nphi, kmax, kmin, save=True):
     '''
     Computes the r and k integrals of the pure relativistic terms coming from the k1^-2 and k1^-4 terms of the kernel. 
@@ -668,7 +670,6 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
     thanks to the function get_Am_and_Il 
     ...
     '''
-
     if which in ['F2', 'G2', 'dv2']:
         Cl2n_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell2)
         Cl3n_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell3)
@@ -678,7 +679,7 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
             try:
                 Il_tab = np.loadtxt(output_dir+Il_fn.format(which, int(ell1)))
             except FileNotFoundError:
-                Il_tab = get_Am_and_Il(chi_list, ell1, lterm, which, Newton, True, time_dict, r0, ddr, normW, rmin,\
+                Il_tab = get_Am_and_Il(chi_list, ell1, which, Newton, True, time_dict, r0, ddr, normW, rmin,\
                                     rmax, cp_tr, b, k, kmax, kmin, True)
         else:
             Il_tab = 0 
@@ -696,7 +697,7 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
                 Am_tab = np.loadtxt(output_dir+Am_fn.format(which, \
                     int(ell1), Am_new))
             except (ValueError, FileNotFoundError):
-                Am_tab = get_Am_and_Il(chi_list, ell1, lterm, which, Newton, False, time_dict, r0, ddr, normW, rmin,\
+                Am_tab = get_Am_and_Il(chi_list, ell1, which, Newton, False, time_dict, r0, ddr, normW, rmin,\
                                     rmax, cp_tr, b, k, kmax, kmin, True)
         else:
             Am_tab = 0
@@ -714,11 +715,15 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
             A2_tab*=time_dict['Hr']
             A4_tab*=time_dict['Hr']
 
-        val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
-                                     args=(which, Newton, rad, Cl2n_chi, Cl3n_chi, 0, 0, \
-                                     time_dict['r_list'],\
-                                     A0_tab, A2_tab, A4_tab, Am_tab, Il_tab), \
-                                     relerr=relerr, maxEval=0, abserr=0, vectorized=True)
+#        val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
+#                                     args=(which, Newton, rad, Cl2n_chi, Cl3n_chi, 0, 0, \
+#                                     time_dict['r_list'],\
+#                                     A0_tab, A2_tab, A4_tab, Am_tab, Il_tab), \
+#                                     relerr=relerr, maxEval=0, abserr=0, vectorized=True)
+
+        evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2n_chi, Cl3n_chi, 0, 0, time_dict['r_list'], A0_tab, A2_tab, A4_tab, Am_tab, Il_tab)
+        val=simpson(evaluation.T, x=time_dict['r_list'])
+
     else:
 
         if which=='d2vd2v':
@@ -727,9 +732,12 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
             Cl2_chi = sum_qterm_and_linear_term('d2v', Newton, lterm, ell2)
             Cl3_chi = sum_qterm_and_linear_term('d2v', Newton, lterm, ell3)
 
-            val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
-                                     args=(which, Newton, rad, Cl2_chi, Cl3_chi, 0, 0, time_dict['r_list'], A0_tab),\
-                                     relerr=relerr, maxEval=0, abserr=0, vectorized=True)
+#            val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
+#                                     args=(which, Newton, rad, Cl2_chi, Cl3_chi, 0, 0, time_dict['r_list'], A0_tab),\
+#                                     relerr=relerr, maxEval=0, abserr=0, vectorized=True)
+
+            evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2_chi, Cl3_chi, 0, 0, time_dict['r_list'], A0_tab)
+            val=simpson(evaluation.T, x=time_dict['r_list'])
         else:
             if which in ['d2vd0d', 'd1vd1d', 'd1vd0d']:
                 A0_tab = time_dict['Dr']**2*time_dict['fr']*time_dict['Wr'] 
@@ -775,22 +783,30 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
             Cl3_2_chi = sum_qterm_and_linear_term(which[3:], Newton, lterm, ell3, time_dict['r_list'], \
                     time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
 
-            val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
-                                     args=(which, Newton, rad, Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi, time_dict['r_list'], A0_tab),\
-                                     relerr=relerr, maxEval=0, abserr=0, vectorized=True)
+#            val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
+#                                     args=(which, Newton, rad, Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi, time_dict['r_list'], A0_tab),\
+#                                     relerr=relerr, maxEval=0, abserr=0, vectorized=True)
+#
+            evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi, time_dict['r_list'], A0_tab)
+            val=simpson(evaluation.T, x=time_dict['r_list'])
+
             val/=2.
 
     # The factor 2/pi in the def of Cl is not included in general_ps. We also add here the factor 2
-    return val[0]*8./np.pi**2
+    return val*8./np.pi**2 #val[0]*8./np.pi**2
 
 def spherical_bispectrum(which, Newton, rad, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin):
     '''
     Function computing the permutations
     '''
     #print(which, lterm, ell1, ell2, ell3)
-    return   spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time_dict,\
+    wigner = float(wigner_3j(ell1, ell2, ell3, 0,0,0))
+    if wigner==0:
+        return 0, 0
+    else:
+        return  spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time_dict,\
                 r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin)\
             +spherical_bispectrum_perm1(which, Newton, rad, lterm, ell2, ell1, ell3, time_dict,\
                 r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin)\
             +spherical_bispectrum_perm1(which, Newton, rad, lterm, ell3, ell2, ell1, time_dict,\
-                r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin)
+                r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin), wigner
