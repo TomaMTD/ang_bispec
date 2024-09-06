@@ -219,7 +219,7 @@ def mathcalB(which, lterm, qterm, Newton, time_dict, z0, Dz, normW):
         else:
             B = H/a*W*D*((1.-R)/a)
     elif lterm=='dpot':
-        B = D*(f-1)/a*H/a*W
+        B = -D*(f-1)/a*H/a*W
     elif lterm=='doppler':
         B = sp.diff(H*D*H/a*W*f*R , x, 1)
     else:
