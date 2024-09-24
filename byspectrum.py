@@ -9,6 +9,7 @@ import cubature
 
 sys.path.insert(1, '/home/tmontandon/software/byspectrum/source')
 from param import *
+sys.path.insert(1, output_dir)
 
 text = text2art("Angular BISPECTRUM", font='small')  # Vous pouvez changer 'block' pour d'autres styles disponibles
 print(text)
@@ -28,7 +29,7 @@ def arguments():
     parser.add_argument('-Nchi'  , default=Nchi, type=int, help='Number of r/chi value to evaluate cl, Am and Il')
     parser.add_argument('-ell'   , default=ell, type=int, help='')
     parser.add_argument('-ellmax',default=ellmax, type=int, help='')
-    parser.add_argument('-o', '--output_dir', default=output_dir+'/', type=str, help='Wether you and to overwrite all output (force computation)')
+    parser.add_argument('-o', '--output_dir', default=output_dir+'/', type=str, help='path of output')
     parser.add_argument('-m', '--mode', default='bl', type=str, help='Computation mode: [cl, Il, bl, bin]')
     parser.add_argument('-config', '--configuration', default='all', type=str, help='what triangle configuration to compute')
 
@@ -53,7 +54,7 @@ def arguments():
     return argv
 
 def write_args(argv):
-    with open('param_used.py', 'w') as file:
+    with open(output_dir+'param_used.py', 'w') as file:
         for key, value in vars(argv).items():
             if isinstance(value, str):
                 file.write(f"{key} = '{value}'\n")
@@ -263,55 +264,56 @@ def main(argv):
                                 rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list)
 
     else:
-        if argv.which=='all' and not argv.mode=='bin':
-            if argv.mode == 'bl' and not argv.rad:
-                if argv.lterm == 'noproj': which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v']
-                else: which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v',\
-                            'dv2', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p', 'davd1v'] #RG2
-            else:
+        cp_tr, b = fftlog.get_cp_of_r(tr['k'], tr['dTdk'], '', 'FG2', 0, 1, 0, time_dict\
+            , r0, ddr, normW)
+        cp_tr=cp_tr[:,0]
+        np.savetxt(argv.output_dir+'cpTr.txt', cp_tr.T)
+
+        if argv.mode in ['Il', 'Am']:
+            if argv.which=='all' and not argv.mode=='bin':
                 if argv.lterm == 'noproj': which_list=['F2', 'G2']
                 else: which_list=['F2', 'G2', 'dv2']
-        else:
-            which_list=[argv.which]
+            else:
+                which_list=[argv.which]
 
-        for wh in which_list:
-            if argv.mode in ['Il', 'Am']:
-                cp_tr, b = fftlog.get_cp_of_r(tr['k'], tr['dTdk'], '', wh, 0, 1, 0, time_dict\
-                        , r0, ddr, normW)
-                np.savetxt(argv.output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
-
+            for wh in which_list:
                 for ell in ell_list: 
                     bispectrum.get_Am_and_Il(chi_list, ell, wh, argv.Newton, argv.rad, time_dict,\
                             r0, ddr, normW, rmin,\
                             rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin, True)
 
+        else:
+            if argv.Newton and argv.rad:
+                Newton_rad_list = [[0, 0], [1, 0], [0, 1]]
             else:
-                for lt in lterm_list:
-                    print('computing {} for which={} lterm={} ell={}'.format(argv.mode, wh, lt, argv.configuration))
+                Newton_rad_list = [[argv.Newton, argv.rad]]
 
-                    if argv.Newton and argv.rad:
-                        Newton_rad_list = [[0, 0], [1, 0], [0, 1]]
+            for Newton_rad in Newton_rad_list:
+                Newton, rad = Newton_rad[0], Newton_rad[1]
+
+                if argv.which=='all' and not argv.mode=='bin':
+                    if argv.mode == 'bl' and not argv.rad:
+                        if argv.lterm == 'noproj': which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v']
+                        else: which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v',\
+                                    'dv2', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p', 'davd1v'] #RG2
                     else:
-                        Newton_rad_list = [[argv.Newton, argv.rad]]
+                        if argv.lterm == 'noproj': which_list=['F2', 'G2']
+                        else: which_list=['F2', 'G2', 'dv2']
+                else:
+                    which_list=[argv.which]
 
-                    for Newton_rad in Newton_rad_list:
-                        Newton, rad = Newton_rad[0], Newton_rad[1]
+                for wh in which_list:
+                    for lt in lterm_list:
+                        print('computing {} for which={} lterm={} ell={} Newton={} rad={}'.format(argv.mode, wh, lt, argv.configuration, Newton, rad))
 
                         if argv.mode == 'bin':
                            print('Binning bispectrum...')
                            binning.get_binned_B(argv.bins, wh, lt, Newton, rad)
 
                         elif argv.mode == 'bl':
-                            if argv.rad and wh in ['F2', 'G2', 'dv2']:
-                                cp_tr, b = fftlog.get_cp_of_r(tr['k'], tr['dTdk'], lt, wh, 0, 1, 0, time_dict\
-                                    , r0, ddr, normW)
-                                cp_tr=cp_tr[:,0]
-                                np.savetxt(argv.output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
-                            else:
-                                cp_tr, b = 0, 0
- 
+
                             if argv.configuration=='esf':
-                                config_list=['equi', 'squ']#, 'folded']
+                                config_list=['equi', 'squ', 'folded']
                             else:
                                 config_list=[argv.configuration]
 
