@@ -291,8 +291,8 @@ def main(argv):
             for Newton_rad in Newton_rad_list:
                 Newton, rad = Newton_rad[0], Newton_rad[1]
 
-                if argv.which=='all' and not argv.mode=='bin':
-                    if argv.mode == 'bl' and not argv.rad:
+                if argv.which=='all':
+                    if argv.mode == 'bl' and not rad:
                         if argv.lterm == 'noproj': which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v']
                         else: which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v',\
                                     'dv2', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p', 'davd1v'] #RG2
