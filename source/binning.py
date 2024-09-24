@@ -151,6 +151,7 @@ def get_binned_B(ell, which, lterm, Newton=0, rad=0, isolate=False):
 
     if isolate and rad: isolate_key='_isolate'
     elif isolate and not Newton: isolate_key='_isolateGR'
+    else: isolate_key=''
     if Newton:
         np.save(output_dir+"bl/bl_{}_{}_newton_binned.npy".format(lterm, which), np.array(B_list))
     else:

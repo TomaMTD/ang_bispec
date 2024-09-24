@@ -113,6 +113,7 @@ def interp_growth(r0, ddr, rmin, rmax):
 ############################################################################# power spectrum
 def trans(z):
     if not os.path.isfile(output_dir+'class_transfer.npy') or force:
+        print('computing class')
         clss = Class()
         clss.set({'gauge': 'new', 'h': h,'omega_b': omega_b*h**2, 'omega_cdm': omega_cdm*h**2,
                   'output':'dTk,vTk','z_pk': 10, 'A_s': A_s , 'n_s': n_s,

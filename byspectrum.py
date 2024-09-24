@@ -110,7 +110,7 @@ def main(argv):
     if argv.ellmax<=argv.ell:
         ell_list=[argv.ell]
     else:
-        if argv.configuration in ['equi', 'squ', 'folded']:
+        if argv.configuration in ['equi', 'squ', 'folded', 'esf']:
             if argv.ell%2!=0: argv.ell+=1
             ell_list=np.arange(argv.ell, argv.ellmax, 2)
         else:
@@ -289,95 +289,108 @@ def main(argv):
                 for lt in lterm_list:
                     print('computing {} for which={} lterm={} ell={}'.format(argv.mode, wh, lt, argv.configuration))
 
-                    if argv.mode == 'bin':
-                       print('Binning bispectrum...')
-                       binning.get_binned_B(argv.bins, wh, lt, argv.Newton, argv.rad)
+                    if argv.Newton and argv.rad:
+                        Newton_rad_list = [[0, 0], [1, 0], [0, 1]]
+                    else:
+                        Newton_rad_list = [[argv.Newton, argv.rad]]
 
-                    elif argv.mode == 'bl':
-                        if argv.rad and wh in ['F2', 'G2', 'dv2']:
-                            cp_tr, b = fftlog.get_cp_of_r(tr['k'], tr['dTdk'], lt, wh, 0, 1, 0, time_dict\
-                                , r0, ddr, normW)
-                            cp_tr=cp_tr[:,0]
-                            np.savetxt(argv.output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
-                        else:
-                            cp_tr, b = 0, 0
+                    for Newton_rad in Newton_rad_list:
+                        Newton, rad = Newton_rad[0], Newton_rad[1]
+
+                        if argv.mode == 'bin':
+                           print('Binning bispectrum...')
+                           binning.get_binned_B(argv.bins, wh, lt, Newton, rad)
+
+                        elif argv.mode == 'bl':
+                            if argv.rad and wh in ['F2', 'G2', 'dv2']:
+                                cp_tr, b = fftlog.get_cp_of_r(tr['k'], tr['dTdk'], lt, wh, 0, 1, 0, time_dict\
+                                    , r0, ddr, normW)
+                                cp_tr=cp_tr[:,0]
+                                np.savetxt(argv.output_dir+'cpTr_{}.txt'.format(wh), cp_tr.T)
+                            else:
+                                cp_tr, b = 0, 0
  
-   
-                        if argv.configuration == 'equi':
-                            shape_name = '_equi'
-                        elif argv.configuration == 'squ':
-                            shape_name = '_squ'
-                        elif argv.configuration == 'folded':
-                            shape_name = '_folded'
-                        else:
-                            shape_name=''
+                            if argv.configuration=='esf':
+                                config_list=['equi', 'squ']#, 'folded']
+                            else:
+                                config_list=[argv.configuration]
 
-                        if argv.rad and wh in ['F2', 'G2', 'dv2']:
-                            name=argv.output_dir+"bl/bl_{}_{}_rad{}".format(lt, wh, shape_name)
-                        elif argv.Newton:
-                            name=argv.output_dir+"bl/bl_{}_{}_newton{}".format(lt, wh, shape_name)
-                        else:
-                            name=argv.output_dir+"bl/bl_{}_{}{}".format(lt, wh, shape_name)
-                        
-                        print(' bispectrum file={}'.format(name))
-                        if argv.configuration in ['equi', 'squ', 'folded']:
-                            fich = open(name+'.txt', "w")
-                            for ell in ell_list:
-                                if argv.configuration == 'squ':
-                                    bl, wigner=bispectrum.spherical_bispectrum(wh, argv.Newton, argv.rad, lt, argv.ell, ell, ell,\
-                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
-                                            len(tr['k']), kmax, kmin)
-                                    if bl!=0: fich.write('{} {} {} {:.16e} {:.16e} \n'.format(argv.ell, ell, ell, bl, wigner))
-                                elif argv.configuration == 'folded':
-                                    bl, wigner=bispectrum.spherical_bispectrum(wh, argv.Newton, argv.rad, lt, ell, ell, argv.ellmax,\
-                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
-                                            len(tr['k']), kmax, kmin)
-                                    if bl!=0: fich.write('{} {} {} {:.16e} {:.16e} \n'.format(argv.ellmax, ell, ell, bl, wigner))
+                            for config in config_list:
+                                if config == 'equi':
+                                    shape_name = '_equi'
+                                elif config == 'squ':
+                                    shape_name = '_squ'
+                                elif config == 'folded':
+                                    shape_name = '_folded'
                                 else:
-                                    bl, wigner=bispectrum.spherical_bispectrum(wh, argv.Newton, argv.rad, lt, ell, ell, ell,\
-                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
-                                            len(tr['k']), kmax, kmin)
-                                    if bl!=0: fich.write('{} {} {} {:.16e} {:.16e} \n'.format(ell, ell, ell, bl, wigner))
+                                    shape_name=''
 
-                        else:     
-                            bl=np.array([])
-                            wigner=np.array([])
-                            ell1=argv.ell
-
-                            try:
-                                bl=np.load(name+'_ell{}.npy'.format(ell1))
-                                lenght=len(bl)
-                                ind=0
-                                for ell2 in range(ell1, argv.ellmax):
-                                    print('     ell2={}/{}'.format(ell2, argv.ellmax))
-                                    for ell3 in range(ell2, argv.ellmax):
-                                        if ind<lenght: 
-                                            ind+=1
-                                            continue
-                                        else:
-                                            toadd = bispectrum.spherical_bispectrum(wh, argv.Newton, argv.rad, \
-                                                        lt, ell1, ell2,\
-                                                        ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, \
-                                                        cp_tr, b, len(tr['k']), kmax, kmin)
-
-                                            bl=np.append(bl, toadd[0])
-                                            wigner=np.append(wigner, toadd[1])
-                                            np.save(name+'_ell{}'.format(ell1), bl)
-                                            np.save(output_dir+'wigner_ellmax{}_ell{}'.format(argv.ellmax, ell1), wigner)
-
-                            except (OSError, FileNotFoundError, EOFError, ValueError):
-                                for ell2 in range(ell1, argv.ellmax):
-                                    print('     ell2={}/{}'.format(ell2, argv.ellmax))
-                                    for ell3 in range(ell2, argv.ellmax):
-                                        toadd=bispectrum.spherical_bispectrum(wh, argv.Newton, argv.rad, lt, \
-                                                    ell1, ell2, ell3,\
-                                                            time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b,\
+                                if rad and wh in ['F2', 'G2', 'dv2']:
+                                    name=argv.output_dir+"bl/bl_{}_{}_rad{}".format(lt, wh, shape_name)
+                                elif Newton:
+                                    name=argv.output_dir+"bl/bl_{}_{}_newton{}".format(lt, wh, shape_name)
+                                else:
+                                    name=argv.output_dir+"bl/bl_{}_{}{}".format(lt, wh, shape_name)
+                                
+                                print(' bispectrum file={}'.format(name))
+                                if config in ['equi', 'squ', 'folded']:
+                                    fich = open(name+'.txt', "w")
+                                    for ell in ell_list:
+                                        if config == 'squ':
+                                            bl, wigner=bispectrum.spherical_bispectrum(wh, Newton, rad, lt, argv.ell, ell, ell,\
+                                                    time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
                                                     len(tr['k']), kmax, kmin)
-                                        bl=np.append(bl, toadd[0])
-                                        wigner=np.append(wigner, toadd[1])
+                                            if bl!=0: fich.write('{} {} {} {:.16e} {:.16e} \n'.format(argv.ell, ell, ell, bl, wigner))
+                                        elif config == 'folded':
+                                            bl, wigner=bispectrum.spherical_bispectrum(wh, Newton, rad, lt, ell, ell, argv.ellmax,\
+                                                    time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
+                                                    len(tr['k']), kmax, kmin)
+                                            if bl!=0: fich.write('{} {} {} {:.16e} {:.16e} \n'.format(argv.ellmax, ell, ell, bl, wigner))
+                                        else:
+                                            bl, wigner=bispectrum.spherical_bispectrum(wh, Newton, rad, lt, ell, ell, ell,\
+                                                    time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
+                                                    len(tr['k']), kmax, kmin)
+                                            if bl!=0: fich.write('{} {} {} {:.16e} {:.16e} \n'.format(ell, ell, ell, bl, wigner))
 
-                                        np.save(name+'_ell{}'.format(ell1), bl)
-                                        np.save(output_dir+'wigner_ellmax{}_ell{}'.format(argv.ellmax, ell1), wigner)
+                                else:     
+                                    bl=np.array([])
+                                    wigner=np.array([])
+                                    ell1=argv.ell
+
+                                    try:
+                                        bl=np.load(name+'_ell{}.npy'.format(ell1))
+                                        lenght=len(bl)
+                                        ind=0
+                                        for ell2 in range(ell1, argv.ellmax):
+                                            print('     ell2={}/{}'.format(ell2, argv.ellmax))
+                                            for ell3 in range(ell2, argv.ellmax):
+                                                if ind<lenght: 
+                                                    ind+=1
+                                                    continue
+                                                else:
+                                                    toadd = bispectrum.spherical_bispectrum(wh, Newton, rad, \
+                                                                lt, ell1, ell2,\
+                                                                ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, \
+                                                                cp_tr, b, len(tr['k']), kmax, kmin)
+
+                                                    bl=np.append(bl, toadd[0])
+                                                    wigner=np.append(wigner, toadd[1])
+                                                    np.save(name+'_ell{}'.format(ell1), bl)
+                                                    np.save(output_dir+'wigner_ellmax{}_ell{}'.format(argv.ellmax, ell1), wigner)
+
+                                    except (OSError, FileNotFoundError, EOFError, ValueError):
+                                        for ell2 in range(ell1, argv.ellmax):
+                                            print('     ell2={}/{}'.format(ell2, argv.ellmax))
+                                            for ell3 in range(ell2, argv.ellmax):
+                                                toadd=bispectrum.spherical_bispectrum(wh, Newton, rad, lt, \
+                                                            ell1, ell2, ell3,\
+                                                                    time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b,\
+                                                            len(tr['k']), kmax, kmin)
+                                                bl=np.append(bl, toadd[0])
+                                                wigner=np.append(wigner, toadd[1])
+
+                                                np.save(name+'_ell{}'.format(ell1), bl)
+                                                np.save(output_dir+'wigner_ellmax{}_ell{}'.format(argv.ellmax, ell1), wigner)
     return 0
 
 if __name__ == "__main__":

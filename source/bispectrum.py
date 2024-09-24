@@ -31,11 +31,21 @@ def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, D
 
     if which in ['F2', 'G2', 'dv2']:
         for ind, lt in enumerate(lterm):
-            if lt=='pot' and Newton: lt='pot_newton'
-            if ind==0:
-                Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))
+            if lt=='pot' and not Newton: 
+                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))
+                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_{}_newton_ell{}.txt'.format(lt, int(ell)))
+                gr = Cl2_chi_R[:,1:]-Cl2_chi_N[:,1:]
+                if ind==0:
+                    Cl2_chi = Cl2_chi_N
+                    Cl2_chi[:,1:] += 2./3./omega_m/H0**2*gr
+                else:
+                    Cl2_chi[:,1:] += Cl2_chi_N[:,1:] + 2./3./omega_m/H0**2*gr
             else:
-                Cl2_chi[:,1:] += np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))[:,1:]
+                if lt=='pot' and Newton: lt='pot_newton'
+                if ind==0:
+                    Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))
+                else:
+                    Cl2_chi[:,1:] += np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))[:,1:]
 
     elif which=='d0d':
         Cl2_chi=sum_qterm_and_linear_term('F2', Newton, lterm, ell)
@@ -61,27 +71,38 @@ def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, D
     else:
         ind=0
         for lt in lterm:
-            if lt=='pot' and Newton: lt='pot_newton'
-            try: 
-                #                print(output_dir+'cln/Cln_{}_{}_ell{}.txt not found, try qterm...'.format(which, lt, int(ell)))
-                if which[:2]=='d2':
-                    qlist=[1, 2, 3]
-                elif which[:2]=='d1':
-                    qlist=[1, 2]
-                elif which[:2]=='d3': 
-                    qlist=[1, 2, 3, 4]
-                else: 
-                    print('{} not recognised'.format(which))
-                    exit()
+            #try: 
+            #    if lt=='pot' and Newton: lt='pot_newton'
+            #    #                print(output_dir+'cln/Cln_{}_{}_ell{}.txt not found, try qterm...'.format(which, lt, int(ell)))
+            #    if which[:2]=='d2':
+            #        qlist=[1, 2, 3]
+            #    elif which[:2]=='d1':
+            #        qlist=[1, 2]
+            #    elif which[:2]=='d3': 
+            #        qlist=[1, 2, 3, 4]
+            #    else: 
+            #        print('{} not recognised'.format(which))
+            #        exit()
  
-                for qt in qlist:
-                    if ind==0:
-                        Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))
-                    else:
-                        Cl2_chi[:,1] += np.loadtxt(output_dir+'cln/Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))[:,1]
+            #    for qt in qlist:
+            #        if ind==0:
+            #            Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))
+            #        else:
+            #            Cl2_chi[:,1] += np.loadtxt(output_dir+'cln/Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))[:,1]
 
 
-            except FileNotFoundError:
+            #except FileNotFoundError:
+            if lt=='pot' and not Newton: 
+                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))
+                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_{}_{}_newton_ell{}.txt'.format(which, lt, int(ell)))
+                gr = Cl2_chi_R[:,1:]-Cl2_chi_N[:,1:]
+                if ind==0:
+                    Cl2_chi = Cl2_chi_N
+                    Cl2_chi[:,1:] += 2./3./omega_m/H0**2*gr
+                else:
+                    Cl2_chi[:,1:] += Cl2_chi_N[:,1:] + 2./3./omega_m/H0**2*gr
+            else:
+                if lt=='pot' and Newton: lt='pot_newton'
                 if ind==0:
                     Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))
                 else:
@@ -111,9 +132,9 @@ def alpha_chi(r, index, which, Dr, fr, vr, wr, Omr):
             res=np.zeros((len(r)), dtype=np.float64)
     else:
         if index==0:
-            res=-0.5*(2.*fr-6./7.*wr)
+            res=fr-3./7.*wr
         elif index==1:
-            res=0.5*15.*Omr*fr
+            res=-0.5*15.*Omr*fr
         else:
             res=np.zeros((len(r)), dtype=np.float64)
     
@@ -132,9 +153,9 @@ def beta_chi(r, index, which, Dr, fr, vr, wr, Omr):
             res=np.zeros((len(r)), dtype=np.float64)
     else:
         if index==0:
-            res=-fr
+            res=fr
         elif index==1:
-            res=3.*Omr*fr
+            res=-12.*Omr*fr
         else:
             res=np.zeros((len(r)), dtype=np.float64)
     return  res
@@ -145,21 +166,13 @@ def gamma_chi(r, index, which, Dr, fr, vr, wr, Omr):
         if index==0:
             res=np.zeros((len(r)), dtype=np.float64)
         elif index==1:
-            res=-1./2.*(-fr**2+fr  - 3.*Omr)
-        elif index==1:
+            res=1./2.*(-fr**2+fr  - 3.*Omr)
+        elif index==2:
             res=1./4.*(18*fr**2+9.*(fr**2-fr)*Omr)
         else:
             res=np.zeros((len(r)), dtype=np.float64)
     else:
-        res=np.zeros((len(r)), dtype=np.float64)
-    return  res
-
-@njit
-def epsilon_chi(r, index, which, Dr, fr, vr, wr, Omr):
-    if which=='F2':
-        res=np.zeros((len(r)), dtype=np.float64)
-    else:
-        res=9./4.*Omr*fr
+        res=-9./4.*Omr*fr #np.zeros((len(r)), dtype=np.float64)
     return  res
 
 ############################################################################# definition of fnm as function of chi
@@ -224,9 +237,8 @@ def A4_chi(r, which, ell, Dr, fr, vr, wr, Omr, Hr, Wr, mathcalR):
 def fm2_nm(r, which, Dr, fr, vr, wr, Omr, Hr):
     H2 = Hr**2
     res=np.zeros((3, len(r)))
-    res[0]=(beta_chi(r, 1, which, Dr, fr, vr, wr, Omr) - alpha_chi(r, 1, which, Dr, fr, vr, wr, Omr))/2.-2.*gamma_chi(r, 1, which, Dr, fr, vr, wr, Omr)\
-            + 2.*epsilon_chi(r, 1, which, Dr, fr, vr, wr, Omr)
-    res[1]=(alpha_chi(r, 1, which, Dr, fr, vr, wr, Omr) - beta_chi(r, 1, which, Dr, fr, vr, wr, Omr) + 4.*epsilon_chi(r, 1, which, Dr, fr, vr, wr, Omr))/4.\
+    res[0]=(beta_chi(r, 1, which, Dr, fr, vr, wr, Omr) - alpha_chi(r, 1, which, Dr, fr, vr, wr, Omr))/2.-2.*gamma_chi(r, 1, which, Dr, fr, vr, wr, Omr)
+    res[1]=(alpha_chi(r, 1, which, Dr, fr, vr, wr, Omr) - beta_chi(r, 1, which, Dr, fr, vr, wr, Omr))/4.\
             +gamma_chi(r, 1, which, Dr, fr, vr, wr, Omr)
     res[2]=H2/2.*(beta_chi(r, 2, which, Dr, fr, vr, wr, Omr)/2. - alpha_chi(r, 2, which, Dr, fr, vr, wr, Omr))
     return res*H2
@@ -481,9 +493,9 @@ def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW,
             integ = integrand_Il_F2
         elif which=='G2':
             integ = integrand_Il_G2
-            fm2_tab = -np.gradient(np.gradient(fm2_tab, \
+            fm2_tab = np.gradient(np.gradient(fm2_tab, \
                             time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
-            f0_tab = -np.gradient(np.gradient(f0_tab, \
+            f0_tab = np.gradient(np.gradient(f0_tab, \
                             time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
         elif which=='dv2':
             integ = integrand_Il_G2
@@ -623,7 +635,7 @@ def final_integrand(chi, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, 
             Am = np.interp(chi, Am_tab[:,0], Am_tab[:,1])*Cl2_0*Cl3_0+\
                  np.interp(chi, Am_tab[:,0], Am_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)+\
                  np.interp(chi, Am_tab[:,0], Am_tab[:,3])*(Cl3_0*Cl2_m2+Cl3_m2*Cl2_0)+\
-                 np.interp(chi, Am_tab[:,0], Am_tab[:,4])*Cl2_0*Cl3_0 +\
+                 np.interp(chi, Am_tab[:,0], Am_tab[:,4])*Cl2_0*Cl3_0+\
                  np.interp(chi, Am_tab[:,0], Am_tab[:,5])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
         else:
             Am=0
@@ -645,8 +657,11 @@ def final_integrand(chi, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, 
         else:
             Il_res=0
 
-        out = A00*Cl2_0*Cl3_0 + (A03+A21+A40)*Cl2_m2*Cl3_m2 + A01*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)\
-                          + (A02+A20)*(Cl2_0*Cl3_m2+Cl3_0*Cl2_m2) + Am + Il_res
+        out =  A00*Cl2_0*Cl3_0 \
+              +(A03+A21+A40)*Cl2_m2*Cl3_m2 \
+              +A01*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)\
+              +(A02+A20)*(Cl2_0*Cl3_m2+Cl3_0*Cl2_m2) \
+              + Am + Il_res
 
     else:
         A00 = np.interp(chi, r_list, A0_tab)
@@ -691,7 +706,7 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
         else:
             Am_new='_newton'
             Hr = 0
-        
+
         if not Newton or (Newton and which!='F2'):
             try:
                 Am_tab = np.loadtxt(output_dir+Am_fn.format(which, \
@@ -757,8 +772,6 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
                 elif which in ['davd1v']:
                     A0_tab *= time_dict['Hr']*Al123(ell1, ell2, ell3)*np.sqrt(ell2*(ell2+1.)*ell3*(ell3+1.))
 
-            if which in ['d2vd0d', 'd1vd1d', 'd1vd2v', 'd0pd1d', 'd1vd2p', 'davd1v']:
-                A0_tab*=-1
 
             try:
                 A0_tab/=time_dict['r_list']**(int(which[1]) + int(which[4]))
@@ -770,6 +783,8 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
                     A0_tab/=time_dict['r_list']**(int(which[1]))
                 except ValueError:
                     A0_tab/=time_dict['r_list']**(int(which[4]))
+
+
 
             Cl2_1_chi = sum_qterm_and_linear_term(which[:3], Newton, lterm, ell2, time_dict['r_list'], \
                     time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
@@ -791,6 +806,10 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
             val=simpson(evaluation.T, x=time_dict['r_list'])
 
             val/=2.
+
+    #if which in ['G2', 'd2vd0d', 'd1vd1d', 'd1vd2v', 'd0pd1d', 'd1vd2p', 'davd1v']:
+    if which in ['G2', 'd2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v']:
+        val*=-1
 
     # The factor 2/pi in the def of Cl is not included in general_ps. We also add here the factor 2
     return val*8./np.pi**2 #val[0]*8./np.pi**2
