@@ -7,7 +7,8 @@ import time
 from numba import njit
 import cubature
 
-sys.path.insert(1, '/home/tmontandon/software/byspectrum/source')
+import path
+sys.path.insert(1, path.path+'/byspectrum/source')
 from param import *
 sys.path.insert(1, output_dir)
 
