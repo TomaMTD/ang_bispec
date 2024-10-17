@@ -758,6 +758,7 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
                 A0_tab = time_dict['Dr']**2*time_dict['fr']*time_dict['Wr'] 
                 if which in ['d1vd0d']:
                     A0_tab*=time_dict['Hr']*time_dict['mathcalR'] 
+
             elif which in ['d1vdod']:
                 A0_tab = time_dict['Dr']*time_dict['fr']*time_dict['Wr'] 
             elif which in ['d0pd3v', 'd0pd1d', 'd1vd2p']:
@@ -785,7 +786,6 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
                     A0_tab/=time_dict['r_list']**(int(which[4]))
 
 
-
             Cl2_1_chi = sum_qterm_and_linear_term(which[:3], Newton, lterm, ell2, time_dict['r_list'], \
                     time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
 
@@ -802,7 +802,8 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
 #                                     args=(which, Newton, rad, Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi, time_dict['r_list'], A0_tab),\
 #                                     relerr=relerr, maxEval=0, abserr=0, vectorized=True)
 #
-            evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi, time_dict['r_list'], A0_tab)
+            evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, \
+                    Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi, time_dict['r_list'], A0_tab)
             val=simpson(evaluation.T, x=time_dict['r_list'])
 
             val/=2.

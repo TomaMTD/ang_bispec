@@ -277,10 +277,11 @@ def main(argv):
                 which_list=[argv.which]
 
             for wh in which_list:
+                print('computing {} for which={} Newton={} rad={}'.format(argv.mode, wh, argv.Newton, argv.rad))
                 for ell in ell_list: 
                     bispectrum.get_Am_and_Il(chi_list, ell, wh, argv.Newton, argv.rad, time_dict,\
                             r0, ddr, normW, rmin,\
-                            rmax, cp_tr[:,0], b, len(tr['k']), kmax, kmin, True)
+                            rmax, cp_tr, b, len(tr['k']), kmax, kmin, True)
 
         else:
             if argv.Newton and argv.rad:
@@ -292,25 +293,40 @@ def main(argv):
                 Newton, rad = Newton_rad[0], Newton_rad[1]
 
                 if argv.which=='all':
-                    if argv.mode == 'bl' and not rad:
-                        if argv.lterm == 'noproj': which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v']
-                        else: which_list=['F2', 'G2', 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v',\
-                                    'dv2', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p', 'davd1v'] #RG2
+                    if argv.mode=='bin' or (argv.mode=='bl' and not rad):
+                        if argv.mode=='bin' and rad: rad_key='_rad'
+                        else: rad_key=''
+
+                        #if argv.lterm == 'noproj': which_list=['F2{}'.format(rad_key), 'G2{}'.format(rad_key), \
+                        #        'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v']
+                        #else: 
+                        which_list=['F2{}'.format(rad_key), 'G2{}'.format(rad_key), \
+                                'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v',\
+                                    'dv2{}'.format(rad_key), 'd1vd2v', 'd1vd0d', \
+                                    'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p', 'davd1v'] #RG2
                     else:
-                        if argv.lterm == 'noproj': which_list=['F2', 'G2']
-                        else: which_list=['F2', 'G2', 'dv2']
+                        #if argv.lterm == 'noproj': which_list=['F2', 'G2']
+                        #else: 
+                        which_list=['F2', 'G2', 'dv2']
+
+                elif argv.which=='newton': 
+                    if rad: rad_key='_rad'
+                    else: rad_key=''
+
+                    which_list=['F2{}'.format(rad_key), 'G2{}'.format(rad_key), \
+                                'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v']
                 else:
                     which_list=[argv.which]
 
-                for wh in which_list:
-                    for lt in lterm_list:
-                        print('computing {} for which={} lterm={} ell={} Newton={} rad={}'.format(argv.mode, wh, lt, argv.configuration, Newton, rad))
+                for lt in lterm_list:
+                    if argv.mode == 'bin':
+                       print('Binning bispectrum...')
+                       binning.get_binned_B(argv.bins, which_list, lt, Newton, rad)
 
-                        if argv.mode == 'bin':
-                           print('Binning bispectrum...')
-                           binning.get_binned_B(argv.bins, wh, lt, Newton, rad)
+                    elif argv.mode == 'bl':
+                        for wh in which_list:
+                            print('computing {} for which={} lterm={} ell={} Newton={} rad={}'.format(argv.mode, wh, lt, argv.configuration, Newton, rad))
 
-                        elif argv.mode == 'bl':
 
                             if argv.configuration=='esf':
                                 config_list=['equi', 'squ', 'folded']
