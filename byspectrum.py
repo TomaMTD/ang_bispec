@@ -298,17 +298,17 @@ def main(argv):
                         if argv.mode=='bin' and rad: rad_key='_rad'
                         else: rad_key=''
 
-                        #if argv.lterm == 'noproj': which_list=['F2{}'.format(rad_key), 'G2{}'.format(rad_key), \
-                        #        'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v']
-                        #else: 
-                        which_list=['F2{}'.format(rad_key), 'G2{}'.format(rad_key), \
+                        if argv.lterm == 'noproj': which_list=['F2{}'.format(rad_key), 'G2{}'.format(rad_key), \
+                                'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v']
+                        else: 
+                            which_list=['F2{}'.format(rad_key), 'G2{}'.format(rad_key), \
                                 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v',\
                                     'dv2{}'.format(rad_key), 'd1vd2v', 'd1vd0d', \
                                     'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p', 'davd1v'] #RG2
                     else:
-                        #if argv.lterm == 'noproj': which_list=['F2', 'G2']
-                        #else: 
-                        which_list=['F2', 'G2', 'dv2']
+                        if argv.lterm == 'noproj': which_list=['F2', 'G2']
+                        else: 
+                            which_list=['F2', 'G2', 'dv2']
 
                 elif argv.which=='newton': 
                     if rad: rad_key='_rad'
@@ -326,7 +326,8 @@ def main(argv):
 
                     elif argv.mode == 'bl':
                         for wh in which_list:
-                            print('computing {} for which={} lterm={} ell={} Newton={} rad={}'.format(argv.mode, wh, lt, argv.configuration, Newton, rad))
+                            print('computing {} for which={} lterm={} ell={} Newton={} rad={}'\
+                                    .format(argv.mode, wh, lt, argv.configuration, Newton, rad))
 
 
                             if argv.configuration=='esf':

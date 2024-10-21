@@ -25,27 +25,22 @@ def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, D
         elif lterm=='nopot':
             lterm=['density', 'rsd', 'doppler'] 
         elif lterm=='noproj':
-            lterm=['density', 'rsd', 'pot', 'dpot']
+            lterm=['density', 'rsd'] #, 'pot', 'dpot']
         else:
             lterm=[lterm]
 
     if which in ['F2', 'G2', 'dv2']:
         for ind, lt in enumerate(lterm):
-            if lt=='pot' and not Newton: 
-                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))
-                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_{}_newton_ell{}.txt'.format(lt, int(ell)))
-                gr = Cl2_chi_R[:,1:]-Cl2_chi_N[:,1:]
-                if ind==0:
-                    Cl2_chi = Cl2_chi_N
-                    Cl2_chi[:,1:] += 2./3./omega_m/H0**2*gr
-                else:
-                    Cl2_chi[:,1:] += Cl2_chi_N[:,1:] + 2./3./omega_m/H0**2*gr
+            if lt=='pot':  lt='pot_newton'
+            if ind==0:
+                Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))
             else:
-                if lt=='pot' and Newton: lt='pot_newton'
-                if ind==0:
-                    Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))
-                else:
-                    Cl2_chi[:,1:] += np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))[:,1:]
+                Cl2_chi[:,1:] += np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))[:,1:]
+
+            if lt=='density' and not Newton: 
+                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_pot_ell{}.txt'.format(int(ell)))
+                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_pot_newton_ell{}.txt'.format(int(ell)))
+                Cl2_chi[:,1:] += 2./3./omega_m/H0**2*(Cl2_chi_R[:,1:]-Cl2_chi_N[:,1:])
 
     elif which=='d0d':
         Cl2_chi=sum_qterm_and_linear_term('F2', Newton, lterm, ell)
@@ -92,21 +87,16 @@ def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, D
 
 
             #except FileNotFoundError:
-            if lt=='pot' and not Newton: 
-                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))
-                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_{}_{}_newton_ell{}.txt'.format(which, lt, int(ell)))
-                gr = Cl2_chi_R[:,1:]-Cl2_chi_N[:,1:]
-                if ind==0:
-                    Cl2_chi = Cl2_chi_N
-                    Cl2_chi[:,1:] += 2./3./omega_m/H0**2*gr
-                else:
-                    Cl2_chi[:,1:] += Cl2_chi_N[:,1:] + 2./3./omega_m/H0**2*gr
+            if lt=='pot': lt='pot_newton'
+            if ind==0:
+                Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))
             else:
-                if lt=='pot' and Newton: lt='pot_newton'
-                if ind==0:
-                    Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))
-                else:
-                    Cl2_chi[:,1] += np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))[:,1]
+                Cl2_chi[:,1] += np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))[:,1]
+
+            if lt=='density' and not Newton: 
+                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_{}_pot_ell{}.txt'.format(which, int(ell)))
+                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_{}_pot_newton_ell{}.txt'.format(which, int(ell)))
+                Cl2_chi[:,1:] += 2./3./omega_m/H0**2*(Cl2_chi_R[:,1:]-Cl2_chi_N[:,1:])
             ind+=1
         
         if which=='d1d' and not Newton:
