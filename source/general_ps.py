@@ -75,7 +75,7 @@ def get_Cl_sum(integrand, chi, ell, n, r_list, cp, fctr, rmin, rmax, N, kmax, km
         val=simpson(evaluation, x=r_list)
     else:
         #Pk = np.load(output_dir+'fct_k.npy')
-        val=2*np.pi**2 * (ell/chi)**(n+kpow-2) * np.interp(np.log(ell/chi), np.log(cp[:,0]), cp[:,1]) 
+        val=2*np.pi**2 * (ell/chi)**(n+kpow-2) * np.interp(np.log(ell/chi), np.log(cp[:,0]), cp[:,1])\
         * np.interp(chi, r_list, f_of_r.real) / chi**2
 
     return val/4./np.pi
