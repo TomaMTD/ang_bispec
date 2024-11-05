@@ -19,9 +19,9 @@ def get_cp(px, bx, x_list, N, xmin, xmax, fct_x):
 
 
 ############################################################################# get fftlog coef
-def mathcalD(x, y, ell):
-    dy=np.gradient(y, x, axis=1)
-    return -np.gradient(dy, x, axis=1)+2./x*dy+(ell*(ell+1)-2.)/x**2*y
+def mathcalD(x, y, ell, axis=1):
+    dy=np.gradient(y, x, axis=axis)
+    return -np.gradient(dy, x, axis=axis)+2./x*dy+(ell*(ell+1)-2.)/x**2*y
 
 def set_bias(k, fctk):
     b, ind = 0, 0
@@ -120,7 +120,7 @@ def get_cp_of_r(k, Pk, lterm, which, qterm, rad, Newton, time_dict, r0, ddr, nor
     if not rad:
         fct_r = mathcalB(which, lterm, qterm, Newton, time_dict, r0, ddr, normW)
         np.save(output_dir+'fct_r_{}_lterm{}_qterm{}'.format(which, lterm, qterm), fct_r)
-        return compute(k, Pk, fct_k, b)[:,None]*fct_r, b
+        return compute(k, Pk, fct_k, b), fct_r, b
     else:
-        return compute(k, Pk, fct_k, b)[:,None], b
+        return compute(k, Pk, fct_k, b), b
 

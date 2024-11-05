@@ -1,5 +1,5 @@
 ############################################################################# Parameters
-force=False #True
+force=False
 
 which='all' # for cl: FG2, d2v, d1v, d3v, d1d, d0d
             # for bl, F2, G2, d2vd2v, d1vd3v, d1vd1d, d2vd0d
@@ -26,6 +26,7 @@ configuration='equi' #
 
 Newton=False
 rad=True
+Limber=False
 
 relerr=1e-2
 

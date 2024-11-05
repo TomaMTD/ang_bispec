@@ -9,10 +9,13 @@ from mathematica import *
 from lincosmo import *
 from param_used import *
 
-def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, Dr=0, ar=0):
+def sum_qterm_and_linear_term(which, Newton, Limber, lterm, ell, r_list=0, Hr=0, fr=0, Dr=0, ar=0):
     '''
     Loading the generalised power spectra and summing over qterm and lterm
     '''
+    if Limber and ell>200: clndir=output_dir+'cln_Limber/'
+    else: clndir=output_dir+'cln/'
+
     if which in ['d2p', 'd0p']:
         stuff=2./3./omega_m/H0**2
         if which=='d2p': which='d2v'
@@ -33,27 +36,27 @@ def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, D
         for ind, lt in enumerate(lterm):
             if lt=='pot':  lt='pot_newton'
             if ind==0:
-                Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))
+                Cl2_chi = np.loadtxt(clndir+'Cln_{}_ell{}.txt'.format(lt, int(ell)))
             else:
-                Cl2_chi[:,1:] += np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))[:,1:]
+                Cl2_chi[:,1:] += np.loadtxt(clndir+'Cln_{}_ell{}.txt'.format(lt, int(ell)))[:,1:]
 
             if lt=='density' and not Newton: 
-                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_pot_ell{}.txt'.format(int(ell)))
-                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_pot_newton_ell{}.txt'.format(int(ell)))
+                Cl2_chi_R = np.loadtxt(clndir+'Cln_pot_ell{}.txt'.format(int(ell)))
+                Cl2_chi_N = np.loadtxt(clndir+'Cln_pot_newton_ell{}.txt'.format(int(ell)))
                 Cl2_chi[:,1:] += 2./3./omega_m/H0**2*(Cl2_chi_R[:,1:]-Cl2_chi_N[:,1:])
 
     elif which=='d0d':
-        Cl2_chi=sum_qterm_and_linear_term('F2', Newton, lterm, ell)
+        Cl2_chi=sum_qterm_and_linear_term('F2', Newton, Limber, lterm, ell)
         if not Newton:
             Cl2_chi[:,1]+=3.*np.interp(Cl2_chi[:,0], r_list, Hr)**2*np.interp(Cl2_chi[:,0], r_list, fr)\
                                     *Cl2_chi[:,2]
 
     elif which in ['d0p', 'dav']:
-        Cl2_chi=sum_qterm_and_linear_term('F2', Newton, lterm, ell)
+        Cl2_chi=sum_qterm_and_linear_term('F2', Newton, Limber, lterm, ell)
         Cl2_chi[:,1]=Cl2_chi[:,2]
 
     elif which=='dod':
-        Cl2_chi=sum_qterm_and_linear_term('F2', Newton, lterm, ell)
+        Cl2_chi=sum_qterm_and_linear_term('F2', Newton, Limber, lterm, ell)
         ff=np.interp(Cl2_chi[:,0], r_list, fr)
         HH=np.interp(Cl2_chi[:,0], r_list, Hr)
         if not Newton:
@@ -89,19 +92,19 @@ def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, D
             #except FileNotFoundError:
             if lt=='pot': lt='pot_newton'
             if ind==0:
-                Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))
+                Cl2_chi = np.loadtxt(clndir+'Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))
             else:
-                Cl2_chi[:,1] += np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))[:,1]
+                Cl2_chi[:,1] += np.loadtxt(clndir+'Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))[:,1]
 
             if lt=='density' and not Newton: 
-                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_{}_pot_ell{}.txt'.format(which, int(ell)))
-                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_{}_pot_newton_ell{}.txt'.format(which, int(ell)))
+                Cl2_chi_R = np.loadtxt(clndir+'Cln_{}_pot_ell{}.txt'.format(which, int(ell)))
+                Cl2_chi_N = np.loadtxt(clndir+'Cln_{}_pot_newton_ell{}.txt'.format(which, int(ell)))
                 Cl2_chi[:,1:] += 2./3./omega_m/H0**2*(Cl2_chi_R[:,1:]-Cl2_chi_N[:,1:])
             ind+=1
         
         if which=='d1d' and not Newton:
             Cl2_chi[:,1]+=3.*np.interp(Cl2_chi[:,0], r_list, Hr)**2*np.interp(Cl2_chi[:,0], r_list, fr)\
-                            *sum_qterm_and_linear_term('d1v', Newton, lterm, ell)[:,1]
+                            *sum_qterm_and_linear_term('d1v', Newton, Limber, lterm, ell)[:,1]
 
     #np.savetxt(output_dir+'cl_{}_{}_ell{}.txt'.format(which, lterm[0], int(ell)), Cl2_chi)
     Cl2_chi[:,1:]/=stuff
@@ -647,7 +650,7 @@ def final_integrand(chi, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, 
         else:
             Il_res=0
 
-        out =  A00*Cl2_0*Cl3_0 \
+        out = A00*Cl2_0*Cl3_0 \
               +(A03+A21+A40)*Cl2_m2*Cl3_m2 \
               +A01*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)\
               +(A02+A20)*(Cl2_0*Cl3_m2+Cl3_0*Cl2_m2) \
@@ -666,7 +669,7 @@ def final_integrand(chi, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, 
 
 ################################################################################ spherical bispectrum
 
-def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin):
+def spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin):
     '''
     Main function to compute de bispectrum assuming the generalised power spectra have already been computed.
     Power spectra are loaded with the function sum_qterm_and_linear_term
@@ -675,9 +678,12 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
     thanks to the function get_Am_and_Il 
     ...
     '''
+    
+    #if which not in ['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d']: Newton=False
+
     if which in ['F2', 'G2', 'dv2']:
-        Cl2n_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell2)
-        Cl3n_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell3)
+        Cl2n_chi = sum_qterm_and_linear_term(which, Newton, Limber, lterm, ell2)
+        Cl3n_chi = sum_qterm_and_linear_term(which, Newton, Limber, lterm, ell3)
 
         Il_fn='Il/Il_{}_ell{}.txt'
         if not Newton and rad:
@@ -734,8 +740,8 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
         if which=='d2vd2v':
             A0_tab = time_dict['Dr']**2*time_dict['fr']**2*time_dict['Wr']/time_dict['r_list']**4
 
-            Cl2_chi = sum_qterm_and_linear_term('d2v', Newton, lterm, ell2)
-            Cl3_chi = sum_qterm_and_linear_term('d2v', Newton, lterm, ell3)
+            Cl2_chi = sum_qterm_and_linear_term('d2v', Newton, Limber, lterm, ell2)
+            Cl3_chi = sum_qterm_and_linear_term('d2v', Newton, Limber, lterm, ell3)
 
 #            val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
 #                                     args=(which, Newton, rad, Cl2_chi, Cl3_chi, 0, 0, time_dict['r_list'], A0_tab),\
@@ -776,16 +782,16 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
                     A0_tab/=time_dict['r_list']**(int(which[4]))
 
 
-            Cl2_1_chi = sum_qterm_and_linear_term(which[:3], Newton, lterm, ell2, time_dict['r_list'], \
+            Cl2_1_chi = sum_qterm_and_linear_term(which[:3], Newton, Limber, lterm, ell2, time_dict['r_list'], \
                     time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
 
-            Cl3_1_chi = sum_qterm_and_linear_term(which[:3], Newton, lterm, ell3, time_dict['r_list'], \
+            Cl3_1_chi = sum_qterm_and_linear_term(which[:3], Newton, Limber, lterm, ell3, time_dict['r_list'], \
                     time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
                                                                                                                                                              
-            Cl2_2_chi = sum_qterm_and_linear_term(which[3:], Newton, lterm, ell2, time_dict['r_list'], \
+            Cl2_2_chi = sum_qterm_and_linear_term(which[3:], Newton, Limber, lterm, ell2, time_dict['r_list'], \
                     time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
 
-            Cl3_2_chi = sum_qterm_and_linear_term(which[3:], Newton, lterm, ell3, time_dict['r_list'], \
+            Cl3_2_chi = sum_qterm_and_linear_term(which[3:], Newton, Limber, lterm, ell3, time_dict['r_list'], \
                     time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
 
 #            val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
@@ -805,7 +811,7 @@ def spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time
     # The factor 2/pi in the def of Cl is not included in general_ps. We also add here the factor 2
     return val*8./np.pi**2 #val[0]*8./np.pi**2
 
-def spherical_bispectrum(which, Newton, rad, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin):
+def spherical_bispectrum(which, Newton, rad, Limber, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin):
     '''
     Function computing the permutations
     '''
@@ -814,9 +820,9 @@ def spherical_bispectrum(which, Newton, rad, lterm, ell1, ell2, ell3, time_dict,
     if wigner==0:
         return 0, 0
     else:
-        return  spherical_bispectrum_perm1(which, Newton, rad, lterm, ell1, ell2, ell3, time_dict,\
+        return  spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell1, ell2, ell3, time_dict,\
                 r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin)\
-            +spherical_bispectrum_perm1(which, Newton, rad, lterm, ell2, ell1, ell3, time_dict,\
+            +spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell2, ell1, ell3, time_dict,\
                 r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin)\
-            +spherical_bispectrum_perm1(which, Newton, rad, lterm, ell3, ell2, ell1, time_dict,\
+            +spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell3, ell2, ell1, time_dict,\
                 r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin), wigner
