@@ -56,13 +56,14 @@ def arguments():
     return argv
 
 def write_args(argv):
-    with open(output_dir+'param_used.py', 'w') as file:
-        for key, value in vars(argv).items():
-            if isinstance(value, str):
-                file.write(f"{key} = '{value}'\n")
-            else:
-                file.write(f"{key} = {value}\n")
-        file.write("h = {}\n".format(h100/100))
+    if not os.path.exists(output_dir+'param_used.py'):
+        with open(output_dir+'param_used.py', 'w') as file:
+            for key, value in vars(argv).items():
+                if isinstance(value, str):
+                    file.write(f"{key} = '{value}'\n")
+                else:
+                    file.write(f"{key} = {value}\n")
+            file.write("h = {}\n".format(h100/100))
 
 def ensure_directory_exists(path):
     """checks wether the output path exists"""
