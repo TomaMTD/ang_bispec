@@ -75,12 +75,15 @@ def get_Cl_sum(integrand, chi, ell, n, r_list, cp, fctr, rmin, rmax, N, kmax, km
         val=simpson(evaluation, x=r_list)
     else:
         #Pk = np.load(output_dir+'fct_k.npy')
-        val=2*np.pi**2 * (ell/chi)**(n+kpow-2) * np.interp(np.log(ell/chi), np.log(cp[:,0]), cp[:,1])\
-        * np.interp(chi, r_list, f_of_r.real) / chi**2
+        ell+=0.5
+        val=2*np.pi**2 * (ell/chi)**(n+kpow-2)\
+                * np.exp(np.interp(np.log(ell/chi), np.log(cp[:,0]), np.log(cp[:,1])))\
+                * np.interp(chi, r_list, f_of_r.real) / chi**2
 
     return val/4./np.pi
 
-def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, cp, fctr, rmin, rmax, N, kmax, kmin, kpow, b, Limber=False):
+def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, cp, fctr, rmin, rmax, N, kmax, kmin, \
+        kpow, b, Limber=False):
     '''
     Main function to compute the generalised power spectrum
     Computes the generalised power spectrum for all chi's and n's given ell. The result is normalised 
@@ -89,7 +92,6 @@ def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, cp, fctr, rm
 
     returns \mathcal N^2 * \int dr f(r) \sum_p \int dk k^{nu_p-1} jl(k chi) jl(k r)
     '''
-
     if lterm not in ['pot', 'dpot']:
         stuff2=(2./3./omega_m/H0**2)**2
     elif lterm in ['pot', 'dpot']:
@@ -99,19 +101,21 @@ def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, cp, fctr, rm
 
     if lterm in ['pot', 'all'] and Newton: key_pot='_newton'
     else: key_pot=''
+    if Limber: Limber_key='_Limber'
+    else: Limber_key=''
 
     if which in ['FG2', 'F2', 'G2', 'all']:
         res=np.zeros((len(chi_list), 4))
-        cl_name = output_dir+'cln/Cln_{}{}_ell{}.txt'.format(lterm, key_pot, int(ell))
+        cl_name = output_dir+'cln/Cln_{}{}_ell{}{}.txt'.format(lterm, key_pot, int(ell), Limber_key)
         integrand=theintegrand_sum
     else:
         if qterm==0:
             res=np.zeros((len(chi_list), 2))
-            cl_name = output_dir+'cln/Cln_{}_{}{}_ell{}.txt'.format(which, lterm, key_pot, int(ell))
+            cl_name = output_dir+'cln/Cln_{}_{}{}_ell{}.txt'.format(which, lterm, key_pot, int(ell), Limber_key)
             integrand=theintegrand_sum_quadratic
         else:
             res=np.zeros((len(chi_list), 2))
-            cl_name = output_dir+'cln/Cln_{}_qterm{}_{}{}_ell{}.txt'.format(which, qterm, lterm, key_pot, int(ell))
+            cl_name = output_dir+'cln/Cln_{}_qterm{}_{}{}_ell{}.txt'.format(which, qterm, lterm, key_pot, int(ell), Limber_key)
             integrand=theintegrand_sum 
 
     print(' ') 

@@ -56,14 +56,14 @@ def arguments():
     return argv
 
 def write_args(argv):
-    if not os.path.exists(output_dir+'param_used.py'):
-        with open(output_dir+'param_used.py', 'w') as file:
-            for key, value in vars(argv).items():
-                if isinstance(value, str):
-                    file.write(f"{key} = '{value}'\n")
-                else:
-                    file.write(f"{key} = {value}\n")
-            file.write("h = {}\n".format(h100/100))
+    #if not os.path.exists(output_dir+'param_used.py'):
+    with open(output_dir+'param_used.py', 'w') as file:
+        for key, value in vars(argv).items():
+            if isinstance(value, str):
+                file.write(f"{key} = '{value}'\n")
+            else:
+                file.write(f"{key} = {value}\n")
+        file.write("h = {}\n".format(h100/100))
 
 def ensure_directory_exists(path):
     """checks wether the output path exists"""
@@ -299,8 +299,8 @@ def main(argv):
                 Newton, rad = Newton_rad[0], Newton_rad[1]
 
                 if argv.which=='all':
-                    if argv.mode=='bin' or (argv.mode=='bl' and not argv.rad):
-                        if argv.mode=='bin' and argv.rad: rad_key='_rad'
+                    if argv.mode=='bin' or (argv.mode=='bl' and not rad):
+                        if argv.mode=='bin' and rad: rad_key='_rad'
                         else: rad_key=''
 
                         #if argv.lterm == 'noproj': which_list=['F2{}'.format(rad_key), 'G2{}'.format(rad_key), \
@@ -356,6 +356,7 @@ def main(argv):
                                     name=argv.output_dir+"bl/bl_{}_{}_newton{}".format(lt, wh, shape_name)
                                 else:
                                     name=argv.output_dir+"bl/bl_{}_{}{}".format(lt, wh, shape_name)
+                                if argv.Limber: name+='_Limber'
                                 
                                 print(' bispectrum file={}'.format(name))
                                 if config in ['equi', 'squ', 'folded']:

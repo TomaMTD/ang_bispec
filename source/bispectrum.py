@@ -13,8 +13,8 @@ def sum_qterm_and_linear_term(which, Newton, Limber, lterm, ell, r_list=0, Hr=0,
     '''
     Loading the generalised power spectra and summing over qterm and lterm
     '''
-    if Limber and ell>200: clndir=output_dir+'cln_Limber/'
-    else: clndir=output_dir+'cln/'
+    if Limber and ell>200: Limber='_Limber'
+    else: Limber=''
 
     if which in ['d2p', 'd0p']:
         stuff=2./3./omega_m/H0**2
@@ -36,13 +36,13 @@ def sum_qterm_and_linear_term(which, Newton, Limber, lterm, ell, r_list=0, Hr=0,
         for ind, lt in enumerate(lterm):
             if lt=='pot':  lt='pot_newton'
             if ind==0:
-                Cl2_chi = np.loadtxt(clndir+'Cln_{}_ell{}.txt'.format(lt, int(ell)))
+                Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_ell{}{}.txt'.format(lt, int(ell), Limber))
             else:
-                Cl2_chi[:,1:] += np.loadtxt(clndir+'Cln_{}_ell{}.txt'.format(lt, int(ell)))[:,1:]
+                Cl2_chi[:,1:] += np.loadtxt(output_dir+'cln/Cln_{}_ell{}{}.txt'.format(lt, int(ell), Limber))[:,1:]
 
             if lt=='density' and not Newton: 
-                Cl2_chi_R = np.loadtxt(clndir+'Cln_pot_ell{}.txt'.format(int(ell)))
-                Cl2_chi_N = np.loadtxt(clndir+'Cln_pot_newton_ell{}.txt'.format(int(ell)))
+                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_pot_ell{}{}.txt'.format(int(ell), Limber))
+                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_pot_newton_ell{}{}.txt'.format(int(ell), Limber))
                 Cl2_chi[:,1:] += 2./3./omega_m/H0**2*(Cl2_chi_R[:,1:]-Cl2_chi_N[:,1:])
 
     elif which=='d0d':
@@ -92,13 +92,13 @@ def sum_qterm_and_linear_term(which, Newton, Limber, lterm, ell, r_list=0, Hr=0,
             #except FileNotFoundError:
             if lt=='pot': lt='pot_newton'
             if ind==0:
-                Cl2_chi = np.loadtxt(clndir+'Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))
+                Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}{}.txt'.format(which, lt, int(ell), Limber))
             else:
-                Cl2_chi[:,1] += np.loadtxt(clndir+'Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))[:,1]
+                Cl2_chi[:,1] += np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}{}.txt'.format(which, lt, int(ell), Limber))[:,1]
 
             if lt=='density' and not Newton: 
-                Cl2_chi_R = np.loadtxt(clndir+'Cln_{}_pot_ell{}.txt'.format(which, int(ell)))
-                Cl2_chi_N = np.loadtxt(clndir+'Cln_{}_pot_newton_ell{}.txt'.format(which, int(ell)))
+                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_{}_pot_ell{}{}.txt'.format(which, int(ell), Limber))
+                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_{}_pot_newton_ell{}{}.txt'.format(which, int(ell), Limber))
                 Cl2_chi[:,1:] += 2./3./omega_m/H0**2*(Cl2_chi_R[:,1:]-Cl2_chi_N[:,1:])
             ind+=1
         
@@ -284,7 +284,6 @@ def integrand_Am_F2(r, chi, ell, which, r_list, \
     '''
     t_list=r[:,0]/chi
     Am4=np.zeros(len(t_list), dtype=np.complex128)
-    Am2=np.zeros(len(t_list), dtype=np.float64)
     out=np.zeros((5, len(t_list)), dtype=np.float64)
     
     Drr=np.interp(r[:,0], r_list, Dr)
@@ -294,29 +293,24 @@ def integrand_Am_F2(r, chi, ell, which, r_list, \
     Omrr=np.interp(r[:,0], r_list, Omr)
     Hrr=np.interp(r[:,0], r_list, Hr)
 
-    #if ell>=5: 
-    #    t1min = tmin_fct(ell, -1.)
-    #else: 
-    #    t1min=0
-
     for ind,t in enumerate(t_list):
         if t>1:
-            Am2[ind]=t**(-ell+1.)
             fact=t
             t=1./t
         else:
             fact=1.
-            Am2[ind]=t**(ell+2.)
-        Am4[ind]=chi*fact*Il(-1+0.j, t+0.j, ell) #myhyp21(-1.+0.j, t, chi, ell, t1min) #
+        Am4[ind]=chi*fact*Il(-1+0.j, t+0.j, ell) 
     
-    fm2=fm2_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
+    fm20=np.interp(r[:,0], r_list, fm2_tab[0]) 
+    fm21=np.interp(r[:,0], r_list, fm2_tab[1]) 
+    fm22=np.interp(r[:,0], r_list, fm2_tab[2]) 
+
     fm4=fm4_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
-    Am2=Am2/(1.+2.*ell)/r[:,0]**2
     WDr=Drr**2*W_tilde(r[:,0], r0, ddr, r_list, Hr, ar, normW) 
 
-    out[0]=chi*Am2*WDr*fm2[0] 
-    out[1]=chi*Am2*WDr*fm2[1] 
-    out[2]=chi*Am2*WDr*fm2[2] 
+    out[0]=fm20*Am4.real/2/np.pi**2
+    out[1]=fm21*Am4.real/2/np.pi**2
+    out[2]=fm22*Am4.real/2/np.pi**2
     out[3]=Am4.real*fm4[0]*WDr/2/np.pi**2
     out[4]=Am4.real*fm4[1]*WDr/2/np.pi**2
 #    out=chi*np.array([fm2[0]*Am2, fm2[1]*Am2, fm2[2]*Am2, fm4[0]*Am4, fm4[1]*Am4])\
@@ -386,10 +380,10 @@ def integrand_Il_F2(r, chi, ell, which, r_list, \
     Hrr=np.interp( r[:,0], r_list, Hr)
     Wrr=W_tilde(r[:,0], r0, ddr, r_list, Hr, ar, normW)
 
-    fm2=fm2R_nm(which, Drr, frr, vrr, wrr, Omrr, Hrr, arr)
+    fm20=np.interp(r[:,0], r_list, fm2_tab[0]) 
+    fm21=np.interp(r[:,0], r_list, fm2_tab[1]) 
     fm4=fm4R_nm(which, Drr, frr, vrr, wrr, Omrr, Hrr, arr)
 
-    Ilm2=np.zeros(len(t_list), dtype=np.complex128)
     Ilm4=np.zeros(len(t_list), dtype=np.complex128)
     for p in range(-Nphi//2, Nphi//2+1):
         nu=1.+bphi+1j*p*eta
@@ -399,17 +393,15 @@ def integrand_Il_F2(r, chi, ell, which, r_list, \
             t1min=0
 
         for ind, t in enumerate(t_list):
-            Ilm2[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu, t, chi, ell, t1min)
             Ilm4[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu-2., t, chi, ell, t1min)
+
     # here we have computed 
     # 2pi^2/r^2 \sum c_p I_me(1.+bphi+1j*p*eta, r1, chi)
-
     WDr=Drr**2*Wrr
-    out[0]=fm2[0]*Ilm2.real*WDr
-    out[1]=fm2[1]*Ilm2.real*WDr
+    out[0]=fm20*Ilm4.real
+    out[1]=fm21*Ilm4.real
     out[2]=fm4[0]*Ilm4.real*WDr
     out[3]=fm4[1]*Ilm4.real*WDr
-
     return out.T/2/np.pi**2 
 
 @njit
@@ -483,6 +475,7 @@ def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW,
                                 time_dict['Omr'], time_dict['Hr'], time_dict['ar'])\
                                 *time_dict['Dr']**2*time_dict['Wr']
         if which=='F2':
+            fm2_tab = mathcalD(time_dict['r_list'], fm2_tab, ell1, axis=1)
             integ = integrand_Il_F2
         elif which=='G2':
             integ = integrand_Il_G2
@@ -501,8 +494,15 @@ def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW,
         fdim=5
         if not Newton: fn = 'Am/Am_{}_ell{}.txt'
         else: fn = 'Am/Am_{}_ell{}_newton.txt'
+        if Newton: Hr=0
+        else: Hr=time_dict['Hr']
+
+        fm2_tab=fm2_nm(time_dict['r_list'], which, time_dict['Dr'],\
+                time_dict['fr'], time_dict['vr'], time_dict['wr'],\
+                time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
  
         if which=='F2' :
+            fm2_tab = mathcalD(time_dict['r_list'], fm2_tab, ell1, axis=1)
             if not Newton:
                 integ = integrand_Am_F2
             else:
@@ -512,9 +512,6 @@ def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW,
             else: Hr=time_dict['Hr']
     
             f0_tab=f0_nm(time_dict['r_list'], which, time_dict['Dr'],\
-                    time_dict['fr'], time_dict['vr'], time_dict['wr'],\
-                    time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
-            fm2_tab=fm2_nm(time_dict['r_list'], which, time_dict['Dr'],\
                     time_dict['fr'], time_dict['vr'], time_dict['wr'],\
                     time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
             
@@ -558,8 +555,8 @@ def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW,
             #                                time_dict['vr'], time_dict['wr'], time_dict['Omr'],\
             #                                time_dict['Hr'], time_dict['mathcalR'], r0, ddr, normW,\
             #                                f0_tab, fm2_tab,\
-            #                                cp_tr, bphi, Nphi, eta), relerr=relerr,\
-            #                                     maxEval=1e5, abserr=0, vectorized=True)
+            #                                cp_tr, bphi, Nphi, eta), relerr=1e-5,\
+            #                                     maxEval=1e6, abserr=0, vectorized=True)
             
             res[:,ind]=val*chi**2
 
