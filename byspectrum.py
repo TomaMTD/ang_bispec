@@ -250,7 +250,9 @@ def main(argv):
                     cp[:,ind], fctr[0, :,ind], b_list[ind]=\
                             fftlog.get_cp_of_r(tr['k'], Pk, lt, wh, qt, 0, argv.Newton, time_dict, r0, ddr, normW)
                     np.save(argv.output_dir+'cp_of_r', cp)
+
                     if argv.Limber: cp_arg = np.vstack([tr['k'], tr['k']**4*Pk]).T
+                    elif compute_all: cp_arg = cp
                     else: cp_arg = cp[:,ind]
                     
                     for ell in ell_list:
