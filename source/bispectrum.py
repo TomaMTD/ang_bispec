@@ -270,9 +270,9 @@ def nb_gradient(f, x):
     return out
 
 @njit
-def integrand_Am_F2(r, chi, ell, which, r_list, \
+def integrand_Am(r, chi, ell, which, r_list, \
         ar, Dr, fr, vr, wr, Omr, Hr, mathcalR, r0, ddr, normW, \
-        f0_tab, fm2_tab,\
+        fm2_tab, fm4_tab,\
         cp_tr, bphi, Nphi, eta):
     '''
     For all multiplet n and m, this function computes the integrand of the pure relativistic \
@@ -301,60 +301,14 @@ def integrand_Am_F2(r, chi, ell, which, r_list, \
             fact=1.
         Am4[ind]=chi*fact*Il(-1+0.j, t+0.j, ell) 
     
-    fm20=np.interp(r[:,0], r_list, fm2_tab[0]) 
-    fm21=np.interp(r[:,0], r_list, fm2_tab[1]) 
-    fm22=np.interp(r[:,0], r_list, fm2_tab[2]) 
+    out[0]=np.interp(r[:,0], r_list, fm2_tab[0]) 
+    out[1]=np.interp(r[:,0], r_list, fm2_tab[1]) 
+    out[2]=np.interp(r[:,0], r_list, fm2_tab[2]) 
+    out[3]=np.interp(r[:,0], r_list, fm4_tab[0])
+    out[4]=np.interp(r[:,0], r_list, fm4_tab[1])
 
-    fm4=fm4_nm(r[:,0], which, Drr, frr, vrr, wrr, Omrr, Hrr)
-    WDr=Drr**2*W_tilde(r[:,0], r0, ddr, r_list, Hr, ar, normW) 
+    return (out*Am4.real).T/2/np.pi**2
 
-    out[0]=fm20*Am4.real/2/np.pi**2
-    out[1]=fm21*Am4.real/2/np.pi**2
-    out[2]=fm22*Am4.real/2/np.pi**2
-    out[3]=Am4.real*fm4[0]*WDr/2/np.pi**2
-    out[4]=Am4.real*fm4[1]*WDr/2/np.pi**2
-#    out=chi*np.array([fm2[0]*Am2, fm2[1]*Am2, fm2[2]*Am2, fm4[0]*Am4, fm4[1]*Am4])\
-        #        *Drr**2*W_tilde(r[:,0], r0, ddr, normW) 
-    return out.T
-
-
-@njit
-def integrand_Am_G2(r, chi, ell, which, r_list, \
-        ar, Dr, fr, vr, wr, Omr, Hr, mathcalR, r0, ddr, normW, \
-        f0_tab, fm2_tab,\
-        cp_tr, bphi, Nphi, eta):
-    t_list=r[:,0]/chi
-    Am4=np.zeros(len(t_list), dtype=np.complex128)
-    Am2=np.zeros(len(t_list), dtype=np.float64)
-    out=np.zeros((5, len(t_list)), dtype=np.float64)
-    
-    for ind,t in enumerate(t_list):
-        if t>1:
-            Am2[ind]=t**(-ell+1.)
-            fact=t
-            t=1./t
-        else:
-            fact=1.
-            Am2[ind]=t**(ell+2.)
-        Am4[ind]=fact*(Il(-1+0.j, t+0.j, ell))
-
-    f00=np.interp(r[:,0], r_list, f0_tab[0])
-    f01=np.interp(r[:,0], r_list, f0_tab[1])
-    f02=np.interp(r[:,0], r_list, f0_tab[2])
-
-    fm20=np.interp(r[:,0], r_list, fm2_tab[0])
-    fm21=np.interp(r[:,0], r_list, fm2_tab[1])
-
-    Am2=Am2/(1.+2.*ell)/ r[:,0]**2
-
-    out[0]=chi*f00*Am2
-    out[1]=chi*f01*Am2
-    out[2]=chi*f02*Am2
-    out[3]=chi*fm20*Am4.real/2/np.pi**2
-    out[4]=chi*fm21*Am4.real/2/np.pi**2
-
-    #out=chi*np.array([f00*Am2, f01*Am2, f02*Am2, fm20*Am4, fm21*Am4])
-    return out.T
 
 @njit
 def integrand_Il_F2(r, chi, ell, which, r_list, \
@@ -443,7 +397,7 @@ def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW,
         computes the relativistic terms. Those terms lead to a function of chi that can be \
         expressed as an integral over r1:
 
-        returns integration of the function integrand_Am_F2 over r for all chi_list values and multiplication by chi^2:
+        returns integration of the function integrand_Am over r for all chi_list values and multiplication by chi^2:
             2/pi* chi^2 * \int dr D^2(r)W_tilde(r) f^{(-2)}_{nm}(r) \int dk jl(k chi)*jl(k r)
             and         
             2/pi* chi^2 * \int dr D^2(r)W_tilde(r) f^{(-4)}_{nm}(r) \int dk k^{-2} jl(k chi)*jl(k r)
@@ -496,15 +450,18 @@ def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW,
         else: fn = 'Am/Am_{}_ell{}_newton.txt'
         if Newton: Hr=0
         else: Hr=time_dict['Hr']
+        integ = integrand_Am
 
-        fm2_tab=fm2_nm(time_dict['r_list'], which, time_dict['Dr'],\
+        f0_tab=fm2_nm(time_dict['r_list'], which, time_dict['Dr'],\
                 time_dict['fr'], time_dict['vr'], time_dict['wr'],\
                 time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
+
+        fm2_tab=fm4_nm(time_dict['r_list'], which, time_dict['Dr'],\
+                    time_dict['fr'], time_dict['vr'], time_dict['wr'],\
+                    time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
  
         if which=='F2' :
-            fm2_tab = mathcalD(time_dict['r_list'], fm2_tab, ell1, axis=1)
             if not Newton:
-                integ = integrand_Am_F2
             else:
                 return 0
         else:
@@ -524,7 +481,7 @@ def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW,
                 f0_tab =np.gradient(f0_tab, time_dict['r_list'], axis=1)
                 fm2_tab=np.gradient(fm2_tab, time_dict['r_list'], axis=1)
     
-            integ = integrand_Am_G2
+        f0_tab = mathcalD(time_dict['r_list'], f0_tab, ell1, axis=1)
 
     try : 
         res=(np.loadtxt(output_dir+fn.format(which, int(ell1)))[:,1:]).T

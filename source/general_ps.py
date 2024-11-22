@@ -67,7 +67,9 @@ def get_Cl_sum(integrand, chi, ell, n, r_list, cp, fctr, rmin, rmax, N, kmax, km
         f_of_r=fctr[2]
         n-=4
     else:
-        f_of_r=fctr[0]
+        f_of_r=fctr[1]
+        n-=2
+        #f_of_r=fctr[0]
 
     if not Limber:
         evaluation=integrand(r_list[:,None], chi, ell, n, r_list, cp, f_of_r, N, kmax, kmin, kpow, b)

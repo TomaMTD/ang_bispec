@@ -249,16 +249,16 @@ def main(argv):
                     print('computing integrand tab of chi qterm={}'.format(qt))
                     cp[:,ind], fctr[0, :,ind], b_list[ind]=\
                             fftlog.get_cp_of_r(tr['k'], Pk, lt, wh, qt, 0, argv.Newton, time_dict, r0, ddr, normW)
-                    np.save(argv.output_dir+'cp_of_r', cp)
+                    #np.save(argv.output_dir+'cp_of_r', cp)
 
                     if argv.Limber: cp_arg = np.vstack([tr['k'], tr['k']**4*Pk]).T
                     elif compute_all: cp_arg = cp
                     else: cp_arg = cp[:,ind]
                     
                     for ell in ell_list:
-                        if wh in ['FG2', 'F2', 'G2']:
-                            fctr[1, :,ind]=fftlog.mathcalD(r_list, fctr[0, :,ind], ell, axis=0)
-                            fctr[2, :,ind]=fftlog.mathcalD(r_list, fctr[1, :,ind], ell, axis=0)
+                        #if wh in ['FG2', 'F2', 'G2', 'd1d']:
+                        fctr[1, :,ind]=fftlog.mathcalD(r_list, fctr[0, :,ind], ell, axis=0)
+                        fctr[2, :,ind]=fftlog.mathcalD(r_list, fctr[1, :,ind], ell, axis=0)
 
                         if len(qterm_list)==1 or compute_all_separate:
                             general_ps.get_all_Cln(wh, qt, lt, argv.Newton, chi_list, ell, r_list, \
