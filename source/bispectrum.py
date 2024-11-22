@@ -460,10 +460,7 @@ def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW,
                     time_dict['fr'], time_dict['vr'], time_dict['wr'],\
                     time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
  
-        if which=='F2' :
-            if not Newton:
-            else:
-                return 0
+        if which=='F2' and Newton: return 0
         else:
             if Newton: Hr=0
             else: Hr=time_dict['Hr']
