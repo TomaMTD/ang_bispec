@@ -321,7 +321,7 @@ def main(argv):
                     if rad: rad_key='_rad'
                     else: rad_key=''
 
-                    which_list=['F2{}'.format(rad_key), 'G2{}'.format(rad_key), \
+                    which_list=['F2', 'G2', \
                                 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v']
                 else:
                     which_list=[argv.which]

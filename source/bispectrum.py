@@ -191,11 +191,11 @@ def f4_nm(r, which, Dr, fr, vr, wr, Omr, Hr):
 
 ############################################################################# integral over chi
 #@njit
-def A0_chi(r, which, Dr, fr, vr, wr, Omr, Hr, Wr):
-    if which=='F2':
-        return f0_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2* Wr
-    else:
-        return 0
+def A0_chi_F2(r, which, Dr, fr, vr, wr, Omr, Hr, Wr):
+    #if which=='F2':
+    return f0_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2* Wr
+    #else:
+    #    return 0
 
 #@njit
 def A2_chi(r, which, ell, Dr, fr, vr, wr, Omr, Hr, Wr, mathcalR):
@@ -286,12 +286,12 @@ def integrand_Am(r, chi, ell, which, r_list, \
     Am4=np.zeros(len(t_list), dtype=np.complex128)
     out=np.zeros((5, len(t_list)), dtype=np.float64)
     
-    Drr=np.interp(r[:,0], r_list, Dr)
-    frr=np.interp(r[:,0], r_list, fr)
-    vrr=np.interp(r[:,0], r_list, vr)
-    wrr=np.interp(r[:,0], r_list, wr)
-    Omrr=np.interp(r[:,0], r_list, Omr)
-    Hrr=np.interp(r[:,0], r_list, Hr)
+    #Drr=np.interp(r[:,0], r_list, Dr)
+    #frr=np.interp(r[:,0], r_list, fr)
+    #vrr=np.interp(r[:,0], r_list, vr)
+    #wrr=np.interp(r[:,0], r_list, wr)
+    #Omrr=np.interp(r[:,0], r_list, Omr)
+    #Hrr=np.interp(r[:,0], r_list, Hr)
 
     for ind,t in enumerate(t_list):
         if t>1:
@@ -452,15 +452,18 @@ def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW,
         else: Hr=time_dict['Hr']
         integ = integrand_Am
 
-        f0_tab=fm2_nm(time_dict['r_list'], which, time_dict['Dr'],\
-                time_dict['fr'], time_dict['vr'], time_dict['wr'],\
-                time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
 
-        fm2_tab=fm4_nm(time_dict['r_list'], which, time_dict['Dr'],\
-                    time_dict['fr'], time_dict['vr'], time_dict['wr'],\
-                    time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
+        if which=='F2': 
+            if Newton: return 0
+            else:
+                f0_tab=fm2_nm(time_dict['r_list'], which, time_dict['Dr'],\
+                        time_dict['fr'], time_dict['vr'], time_dict['wr'],\
+                        time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
+    
+                fm2_tab=fm4_nm(time_dict['r_list'], which, time_dict['Dr'],\
+                            time_dict['fr'], time_dict['vr'], time_dict['wr'],\
+                            time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
  
-        if which=='F2' and Newton: return 0
         else:
             if Newton: Hr=0
             else: Hr=time_dict['Hr']
@@ -468,7 +471,11 @@ def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW,
             f0_tab=f0_nm(time_dict['r_list'], which, time_dict['Dr'],\
                     time_dict['fr'], time_dict['vr'], time_dict['wr'],\
                     time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
-            
+
+            fm2_tab=fm2_nm(time_dict['r_list'], which, time_dict['Dr'],\
+                            time_dict['fr'], time_dict['vr'], time_dict['wr'],\
+                            time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
+
             if which=='G2':
                 f0_tab =np.gradient(np.gradient(f0_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
                 fm2_tab=np.gradient(np.gradient(fm2_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
@@ -545,8 +552,9 @@ def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW,
 
 
 ################################################################################ spherical bispectrum
-def final_integrand(chi, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, Cl3n2_chi=0,\
-                        r_list=0, A0_tab=0, A2_tab=0, A4_tab=0, Am_tab=0, Il_tab=0):
+@njit
+def final_integrand(chi, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi, Cl3n2_chi,\
+                        r_list, A0_tab, A2_tab, A4_tab, Am_tab, Il_tab):
     '''
     The sum over n and m is now explicitely computed. The result is a function of chi which will be integrated over.
 
@@ -562,53 +570,46 @@ def final_integrand(chi, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi=0, 
     Cl3_0 = np.interp(chi, Cl3n1_chi[:,0], Cl3n1_chi[:,1])
 
     if which in ['F2', 'G2', 'dv2']:
-        if which == 'F2':
-            A00 = np.interp(chi, r_list, A0_tab[0])
-            A01 = np.interp(chi, r_list, A0_tab[1])
-            A02 = np.interp(chi, r_list, A0_tab[2])
-            A03 = np.interp(chi, r_list, A0_tab[3])
-        else :
-            A00, A01, A02, A03 = 0, 0, 0, 0
+
+        A20 = np.interp(chi, r_list, A2_tab[0])
+        A21 = np.interp(chi, r_list, A2_tab[1])
+        A40 = np.interp(chi, r_list, A4_tab[0])
 
         Cl2_p2 = np.interp(chi, Cl2n1_chi[:,0], Cl2n1_chi[:,3])
         Cl2_m2 = np.interp(chi, Cl2n1_chi[:,0], Cl2n1_chi[:,2])
         Cl3_m2 = np.interp(chi, Cl3n1_chi[:,0], Cl3n1_chi[:,2])
         Cl3_p2 = np.interp(chi, Cl3n1_chi[:,0], Cl3n1_chi[:,3])
 
+        if which == 'F2':
+            A00 = np.interp(chi, r_list, A0_tab[0])
+            A01 = np.interp(chi, r_list, A0_tab[1])
+            A02 = np.interp(chi, r_list, A0_tab[2])
+            A03 = np.interp(chi, r_list, A0_tab[3])
+    
+            out = A00*Cl2_0*Cl3_0 \
+              +(A03+A21+A40)*Cl2_m2*Cl3_m2 \
+              +A01*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)\
+              +(A02+A20)*(Cl2_0*Cl3_m2+Cl3_0*Cl2_m2)
+
+        else :
+            out = (A21+A40)*Cl2_m2*Cl3_m2 \
+              +(A20)*(Cl2_0*Cl3_m2+Cl3_0*Cl2_m2)
+
         if not Newton or (Newton and which!='F2'):
-            Am = np.interp(chi, Am_tab[:,0], Am_tab[:,1])*Cl2_0*Cl3_0+\
+            out += np.interp(chi, Am_tab[:,0], Am_tab[:,1])*Cl2_0*Cl3_0+\
                  np.interp(chi, Am_tab[:,0], Am_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)+\
                  np.interp(chi, Am_tab[:,0], Am_tab[:,3])*(Cl3_0*Cl2_m2+Cl3_m2*Cl2_0)+\
                  np.interp(chi, Am_tab[:,0], Am_tab[:,4])*Cl2_0*Cl3_0+\
                  np.interp(chi, Am_tab[:,0], Am_tab[:,5])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
-        else:
-            Am=0
-
-        A20 = np.interp(chi, r_list, A2_tab[0])
-        A21 = np.interp(chi, r_list, A2_tab[1])
-        A40 = np.interp(chi, r_list, A4_tab[0])
 
         if rad and not Newton:
-            #if which=='F2':
-            Il_res=np.interp(chi, Il_tab[:,0], Il_tab[:,1])*Cl2_0*Cl3_0+\
+            out += np.interp(chi, Il_tab[:,0], Il_tab[:,1])*Cl2_0*Cl3_0+\
                        np.interp(chi, Il_tab[:,0], Il_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)+\
                        np.interp(chi, Il_tab[:,0], Il_tab[:,3])*Cl2_0*Cl3_0+\
                        np.interp(chi, Il_tab[:,0], Il_tab[:,4])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
-            #else:
-    
-            #    Il_res=np.interp(chi, Il_tab[:,0], Il_tab[:,1])*Cl2_0*Cl3_0+\
-            #           np.interp(chi, Il_tab[:,0], Il_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
-        else:
-            Il_res=0
-
-        out = A00*Cl2_0*Cl3_0 \
-              +(A03+A21+A40)*Cl2_m2*Cl3_m2 \
-              +A01*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)\
-              +(A02+A20)*(Cl2_0*Cl3_m2+Cl3_0*Cl2_m2) \
-              + Am + Il_res
 
     else:
-        A00 = np.interp(chi, r_list, A0_tab)
+        A00 = np.interp(chi, r_list, A0_tab[0])
         if which=='d2vd2v':
             out = A00*Cl2_0*Cl3_0 
         else:
@@ -631,7 +632,7 @@ def spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell1, ell2, el
     '''
     
     #if which not in ['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d']: Newton=False
-
+    nothing=np.zeros((5, 5))
     if which in ['F2', 'G2', 'dv2']:
         Cl2n_chi = sum_qterm_and_linear_term(which, Newton, Limber, lterm, ell2)
         Cl3n_chi = sum_qterm_and_linear_term(which, Newton, Limber, lterm, ell3)
@@ -644,14 +645,15 @@ def spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell1, ell2, el
                 Il_tab = get_Am_and_Il(chi_list, ell1, which, Newton, True, time_dict, r0, ddr, normW, rmin,\
                                     rmax, cp_tr, b, k, kmax, kmin, True)
         else:
-            Il_tab = 0 
+            Il_tab = nothing
         
         Am_fn='Am/Am_{}_ell{}{}.txt'
         if not Newton:
             Am_new=''
             Hr = time_dict['Hr']
         else:
-            Am_new='_newton'
+            if which=='F2': Am_new=''
+            else: Am_new='_newton'
             Hr = 0
 
         if not Newton or (Newton and which!='F2'):
@@ -662,9 +664,9 @@ def spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell1, ell2, el
                 Am_tab = get_Am_and_Il(chi_list, ell1, which, Newton, False, time_dict, r0, ddr, normW, rmin,\
                                     rmax, cp_tr, b, k, kmax, kmin, True)
         else:
-            Am_tab = 0
+            Am_tab = nothing
 
-        A0_tab = A0_chi(time_dict['r_list'], which,       time_dict['Dr'], time_dict['fr'], \
+        A0_tab = A0_chi_F2(time_dict['r_list'], which,       time_dict['Dr'], time_dict['fr'], \
                 time_dict['vr'], time_dict['wr'], time_dict['Omr'], Hr, time_dict['Wr'])
         A2_tab = A2_chi(time_dict['r_list'], which, ell1, time_dict['Dr'], time_dict['fr'], \
                 time_dict['vr'], time_dict['wr'], time_dict['Omr'], Hr, time_dict['Wr'], \
@@ -682,12 +684,11 @@ def spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell1, ell2, el
 #                                     time_dict['r_list'],\
 #                                     A0_tab, A2_tab, A4_tab, Am_tab, Il_tab), \
 #                                     relerr=relerr, maxEval=0, abserr=0, vectorized=True)
-
-        evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2n_chi, Cl3n_chi, 0, 0, time_dict['r_list'], A0_tab, A2_tab, A4_tab, Am_tab, Il_tab)
+        evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2n_chi, Cl3n_chi, nothing, nothing,\
+                                   time_dict['r_list'], A0_tab, A2_tab, A4_tab, Am_tab, Il_tab)
         val=simpson(evaluation.T, x=time_dict['r_list'])
 
     else:
-
         if which=='d2vd2v':
             A0_tab = time_dict['Dr']**2*time_dict['fr']**2*time_dict['Wr']/time_dict['r_list']**4
 
@@ -698,7 +699,8 @@ def spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell1, ell2, el
 #                                     args=(which, Newton, rad, Cl2_chi, Cl3_chi, 0, 0, time_dict['r_list'], A0_tab),\
 #                                     relerr=relerr, maxEval=0, abserr=0, vectorized=True)
 
-            evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2_chi, Cl3_chi, 0, 0, time_dict['r_list'], A0_tab)
+            evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2_chi, Cl3_chi, nothing, nothing,\
+                                       time_dict['r_list'], A0_tab[None,:], nothing, nothing, nothing, nothing)
             val=simpson(evaluation.T, x=time_dict['r_list'])
         else:
             if which in ['d2vd0d', 'd1vd1d', 'd1vd0d']:
@@ -750,7 +752,7 @@ def spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell1, ell2, el
 #                                     relerr=relerr, maxEval=0, abserr=0, vectorized=True)
 #
             evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, \
-                    Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi, time_dict['r_list'], A0_tab)
+                    Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi, time_dict['r_list'], A0_tab[None, :], nothing, nothing, nothing, nothing)
             val=simpson(evaluation.T, x=time_dict['r_list'])
 
             val/=2.
