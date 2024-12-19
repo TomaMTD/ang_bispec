@@ -1,8 +1,9 @@
 import numpy as np
 from numba import njit
-import cubature
+import cubature, time, h5py
 from scipy.integrate import simpson
 from sympy.physics.wigner import wigner_3j
+from filelock import FileLock
 
 from fftlog import *
 from mathematica import *
@@ -620,32 +621,20 @@ def final_integrand(chi, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi, Cl
 
 
 ################################################################################ spherical bispectrum
+def get_kernels(ell1, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
+                                rmax, cp_tr, b, Nk, kmax, kmin):
 
-def spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin):
-    '''
-    Main function to compute de bispectrum assuming the generalised power spectra have already been computed.
-    Power spectra are loaded with the function sum_qterm_and_linear_term
-
-    Relativistic effects (including radiation) are either loaded (if already computed) or computed 
-    thanks to the function get_Am_and_Il 
-    ...
-    '''
+    A0_tab, A2_tab, A4_tab, Am_tab, Il_tab = np.zeros((5, 5)), np.zeros((5, 5)), \
+                                             np.zeros((5, 5)), np.zeros((5, 5)), np.zeros((5, 5)) 
     
-    #if which not in ['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d']: Newton=False
-    nothing=np.zeros((5, 5))
     if which in ['F2', 'G2', 'dv2']:
-        Cl2n_chi = sum_qterm_and_linear_term(which, Newton, Limber, lterm, ell2)
-        Cl3n_chi = sum_qterm_and_linear_term(which, Newton, Limber, lterm, ell3)
-
         Il_fn='Il/Il_{}_ell{}.txt'
         if not Newton and rad:
             try:
                 Il_tab = np.loadtxt(output_dir+Il_fn.format(which, int(ell1)))
             except FileNotFoundError:
                 Il_tab = get_Am_and_Il(chi_list, ell1, which, Newton, True, time_dict, r0, ddr, normW, rmin,\
-                                    rmax, cp_tr, b, k, kmax, kmin, True)
-        else:
-            Il_tab = nothing
+                                    rmax, cp_tr, b, Nk, kmax, kmin, True)
         
         Am_fn='Am/Am_{}_ell{}{}.txt'
         if not Newton:
@@ -662,9 +651,7 @@ def spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell1, ell2, el
                     int(ell1), Am_new))
             except (ValueError, FileNotFoundError):
                 Am_tab = get_Am_and_Il(chi_list, ell1, which, Newton, False, time_dict, r0, ddr, normW, rmin,\
-                                    rmax, cp_tr, b, k, kmax, kmin, True)
-        else:
-            Am_tab = nothing
+                                    rmax, cp_tr, b, Nk, kmax, kmin, True)
 
         A0_tab = A0_chi_F2(time_dict['r_list'], which,       time_dict['Dr'], time_dict['fr'], \
                 time_dict['vr'], time_dict['wr'], time_dict['Omr'], Hr, time_dict['Wr'])
@@ -679,103 +666,164 @@ def spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell1, ell2, el
             A2_tab*=time_dict['Hr']
             A4_tab*=time_dict['Hr']
 
-#        val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
-#                                     args=(which, Newton, rad, Cl2n_chi, Cl3n_chi, 0, 0, \
-#                                     time_dict['r_list'],\
-#                                     A0_tab, A2_tab, A4_tab, Am_tab, Il_tab), \
-#                                     relerr=relerr, maxEval=0, abserr=0, vectorized=True)
-        evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2n_chi, Cl3n_chi, nothing, nothing,\
-                                   time_dict['r_list'], A0_tab, A2_tab, A4_tab, Am_tab, Il_tab)
-        val=simpson(evaluation.T, x=time_dict['r_list'])
 
     else:
-        if which=='d2vd2v':
-            A0_tab = time_dict['Dr']**2*time_dict['fr']**2*time_dict['Wr']/time_dict['r_list']**4
+        if which in ['d2vd0d', 'd1vd1d', 'd1vd0d']:
+            A0_tab = time_dict['Dr']**2*time_dict['fr']*time_dict['Wr'] 
+            if which in ['d1vd0d']:
+                A0_tab*=time_dict['Hr']*time_dict['mathcalR'] 
 
-            Cl2_chi = sum_qterm_and_linear_term('d2v', Newton, Limber, lterm, ell2)
-            Cl3_chi = sum_qterm_and_linear_term('d2v', Newton, Limber, lterm, ell3)
-
-#            val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
-#                                     args=(which, Newton, rad, Cl2_chi, Cl3_chi, 0, 0, time_dict['r_list'], A0_tab),\
-#                                     relerr=relerr, maxEval=0, abserr=0, vectorized=True)
-
-            evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2_chi, Cl3_chi, nothing, nothing,\
-                                       time_dict['r_list'], A0_tab[None,:], nothing, nothing, nothing, nothing)
-            val=simpson(evaluation.T, x=time_dict['r_list'])
+        elif which in ['d1vdod']:
+            A0_tab = time_dict['Dr']*time_dict['fr']*time_dict['Wr'] 
+        elif which in ['d0pd3v', 'd0pd1d', 'd1vd2p']:
+            A0_tab = time_dict['Dr']**2*time_dict['Wr']/time_dict['Hr']/time_dict['ar']
+            if 'v' in which:
+                A0_tab*=time_dict['fr']
         else:
-            if which in ['d2vd0d', 'd1vd1d', 'd1vd0d']:
-                A0_tab = time_dict['Dr']**2*time_dict['fr']*time_dict['Wr'] 
-                if which in ['d1vd0d']:
-                    A0_tab*=time_dict['Hr']*time_dict['mathcalR'] 
-
-            elif which in ['d1vdod']:
-                A0_tab = time_dict['Dr']*time_dict['fr']*time_dict['Wr'] 
-            elif which in ['d0pd3v', 'd0pd1d', 'd1vd2p']:
-                A0_tab = time_dict['Dr']**2*time_dict['Wr']/time_dict['Hr']/time_dict['ar']
-                if 'v' in which:
-                    A0_tab*=time_dict['fr']
-            else:
-                A0_tab = time_dict['Dr']**2*time_dict['fr']**2*time_dict['Wr'] 
-                if which in ['d1vd2v']:
-                    A0_tab *= time_dict['Hr'] * \
-                            (1.+ 3.*time_dict['dHr']/time_dict['Hr']**2 + 4./time_dict['Hr']/time_dict['r_list'])
-                elif which in ['davd1v']:
-                    A0_tab *= time_dict['Hr']*Al123(ell1, ell2, ell3)*np.sqrt(ell2*(ell2+1.)*ell3*(ell3+1.))
+            A0_tab = time_dict['Dr']**2*time_dict['fr']**2*time_dict['Wr'] 
+            if which in ['d1vd2v']:
+                A0_tab *= time_dict['Hr'] * \
+                        (1.+ 3.*time_dict['dHr']/time_dict['Hr']**2 + 4./time_dict['Hr']/time_dict['r_list'])
+            elif which in ['davd1v']:
+                A0_tab *= time_dict['Hr'] #*Al123(ell1, ell2, ell3)*np.sqrt(ell2*(ell2+1.)*ell3*(ell3+1.))
 
 
-            try:
-                A0_tab/=time_dict['r_list']**(int(which[1]) + int(which[4]))
+        try:
+            A0_tab/=time_dict['r_list']**(int(which[1]) + int(which[4]))
+        except ValueError:
+            if which=='davd1v':
+                A0_tab/=time_dict['r_list']**2
+
+            try: 
+                A0_tab/=time_dict['r_list']**(int(which[1]))
             except ValueError:
-                if which=='davd1v':
-                    A0_tab/=time_dict['r_list']**2
+                A0_tab/=time_dict['r_list']**(int(which[4]))
 
-                try: 
-                    A0_tab/=time_dict['r_list']**(int(which[1]))
-                except ValueError:
-                    A0_tab/=time_dict['r_list']**(int(which[4]))
+        if which != 'd2vd2v': A0_tab=A0_tab[None,:]/2.
+        else: A0_tab=A0_tab[None,:]
+
+    return A0_tab, A2_tab, A4_tab, Am_tab, Il_tab
 
 
-            Cl2_1_chi = sum_qterm_and_linear_term(which[:3], Newton, Limber, lterm, ell2, time_dict['r_list'], \
-                    time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
-
-            Cl3_1_chi = sum_qterm_and_linear_term(which[:3], Newton, Limber, lterm, ell3, time_dict['r_list'], \
-                    time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
-                                                                                                                                                             
-            Cl2_2_chi = sum_qterm_and_linear_term(which[3:], Newton, Limber, lterm, ell2, time_dict['r_list'], \
-                    time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
-
-            Cl3_2_chi = sum_qterm_and_linear_term(which[3:], Newton, Limber, lterm, ell3, time_dict['r_list'], \
-                    time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
-
-#            val, err = cubature.cubature(final_integrand, ndim=1, fdim=1, xmin=[rmin], xmax=[rmax],\
-#                                     args=(which, Newton, rad, Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi, time_dict['r_list'], A0_tab),\
-#                                     relerr=relerr, maxEval=0, abserr=0, vectorized=True)
-#
-            evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, \
-                    Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi, time_dict['r_list'], A0_tab[None, :], nothing, nothing, nothing, nothing)
-            val=simpson(evaluation.T, x=time_dict['r_list'])
-
-            val/=2.
-
-    #if which in ['G2', 'd2vd0d', 'd1vd1d', 'd1vd2v', 'd0pd1d', 'd1vd2p', 'davd1v']:
-    if which in ['G2', 'd2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v']:
-        val*=-1
-
-    # The factor 2/pi in the def of Cl is not included in general_ps. We also add here the factor 2
-    return val*8./np.pi**2 #val[0]*8./np.pi**2
-
-def spherical_bispectrum(which, Newton, rad, Limber, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin):
-    '''
-    Function computing the permutations
-    '''
-    #print(which, lterm, ell1, ell2, ell3)
-    wigner = float(wigner_3j(ell1, ell2, ell3, 0,0,0))
-    if wigner==0:
-        return 0, 0
+def get_cl(which, Newton, Limber, lterm, ell1, time_dict):
+    Cl2_chi=np.zeros((5, 5))
+    if which in ['F2', 'G2', 'dv2']:
+        Cl1_chi = sum_qterm_and_linear_term(which, Newton, Limber, lterm, ell1)
+    elif which == 'd2vd2v':
+        Cl1_chi = sum_qterm_and_linear_term('d2v', Newton, Limber, lterm, ell1)
     else:
-        return  spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell1, ell2, ell3, time_dict,\
-                r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin)\
-            +spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell2, ell1, ell3, time_dict,\
-                r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin)\
-            +spherical_bispectrum_perm1(which, Newton, rad, Limber, lterm, ell3, ell2, ell1, time_dict,\
-                r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, k, kmax, kmin), wigner
+        Cl1_chi = sum_qterm_and_linear_term(which[:3], Newton, Limber, lterm, ell1, time_dict['r_list'], \
+                time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
+
+        Cl2_chi = sum_qterm_and_linear_term(which[3:], Newton, Limber, lterm, ell1, time_dict['r_list'], \
+                time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
+    return Cl1_chi, Cl2_chi
+
+
+def write_all_configuration(ell1, ellmax, which, lterm, name, Limber, rad, Newton, time_dict, chi_list,\
+                                    r0, ddr, normW, rmin, rmax, cp_tr, b, Nk, kmax, kmin):
+    '''
+        '''
+
+    file_path = f"{name}.h5"
+    lock_path = f"{file_path}.lock"
+    length = int ((ellmax - ell1) * (ell1+1)) 
+
+    with FileLock(lock_path): 
+        # Create or open the HDF5 file
+        with h5py.File(file_path, "a") as f:
+
+            # Initialize or load `bl` and `wigner` datasets
+            if f"bl_ell{ell1}" not in f:
+                bl = f.create_dataset(f"bl_ell{ell1}", (length,), dtype='f8', fillvalue=-999)[:]
+                wigner = f.create_dataset(f"wigner_ell{ell1}", (length,), dtype='f8', fillvalue=-999)[:]
+            else:
+                print(' resume from previous run!')
+                bl = f[f"bl_ell{ell1}"][:]
+                wigner = f[f"wigner_ell{ell1}"][:]
+
+
+    Cl1_1_chi, Cl1_2_chi = get_cl(which, Newton, Limber, lterm, ell1, time_dict)
+    A0_tab_ell1, A2_tab_ell1, A4_tab_ell1, Am_tab_ell1, Il_tab_ell1 \
+        = get_kernels(ell1, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
+                            rmax, cp_tr, b, Nk, kmax, kmin)
+    ind = 0
+    for ell2 in range(ell1, ellmax):
+        print(f'     ell2={ell2}/{ellmax}')
+        a=time.time()
+        Cl2_1_chi, Cl2_2_chi = get_cl(which, Newton, Limber, lterm, ell2, time_dict)
+        A0_tab_ell2, A2_tab_ell2, A4_tab_ell2, Am_tab_ell2, Il_tab_ell2 \
+            = get_kernels(ell2, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
+                            rmax, cp_tr, b, Nk, kmax, kmin)
+    
+        for ell3 in range(ell2, min(ell2+ell1+1, ellmax)):
+            wigner_test = float(wigner_3j(ell1, ell2, ell3, 0,0,0))
+    
+            if wigner_test==0:
+                bl[ind] = 0
+                wigner[ind] = 0
+            else:
+                a=time.time()
+                if ell3==ell2: Cl3_1_chi, Cl3_2_chi  = Cl2_1_chi, Cl2_2_chi
+                else: Cl3_1_chi, Cl3_2_chi  = get_cl(which, Newton, Limber, lterm, ell3, time_dict)
+
+                A0_tab_ell3, A2_tab_ell3, A4_tab_ell3, Am_tab_ell3, Il_tab_ell3 \
+                    = get_kernels(ell3, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
+                            rmax, cp_tr, b, Nk, kmax, kmin)
+
+                if 'dav' in which:
+                    A0_tab_ell1_arg = A0_tab_ell1*Al123(ell1, ell2, ell3)*np.sqrt(ell2*(ell2+1.)*ell3*(ell3+1.))
+                    A0_tab_ell2_arg = A0_tab_ell2*Al123(ell2, ell1, ell3)*np.sqrt(ell1*(ell1+1.)*ell3*(ell3+1.))
+                    A0_tab_ell3_arg = A0_tab_ell3*Al123(ell3, ell2, ell1)*np.sqrt(ell2*(ell2+1.)*ell1*(ell1+1.))
+                else:
+                    A0_tab_ell1_arg = A0_tab_ell1
+                    A0_tab_ell2_arg = A0_tab_ell2
+                    A0_tab_ell3_arg = A0_tab_ell3
+
+                # Skip if already computed
+                if bl[ind] != -999:
+                    ind += 1
+                    continue
+    
+                evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi,\
+                                time_dict['r_list'], A0_tab_ell1_arg, A2_tab_ell1, A4_tab_ell1, Am_tab_ell1, Il_tab_ell1)\
+                          +final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl1_1_chi, Cl3_1_chi, Cl1_2_chi, Cl3_2_chi,\
+                                time_dict['r_list'], A0_tab_ell2_arg, A2_tab_ell2, A4_tab_ell2, Am_tab_ell2, Il_tab_ell2)\
+                          +final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2_1_chi, Cl1_1_chi, Cl2_2_chi, Cl1_2_chi,\
+                                time_dict['r_list'], A0_tab_ell3_arg, A2_tab_ell3, A4_tab_ell3, Am_tab_ell3, Il_tab_ell3)
+    
+                val=simpson(evaluation.T, x=time_dict['r_list'])
+
+                #if which in ['G2', 'd2vd0d', 'd1vd1d', 'd1vd2v', 'd0pd1d', 'd1vd2p', 'davd1v']:
+                if which in ['G2', 'd2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v']:
+                    val*=-1
+
+                # The factor 2/pi in the def of Cl is not included in general_ps. We also add here the factor 2
+
+
+    
+                # Store results directly into the HDF5 datasets
+                bl[ind] = val*8./np.pi**2
+                wigner[ind] = wigner_test
+    
+                #if ind % 1000 == 0:
+                #    a=time.time()
+                #    # Save every 1000 iterations for persistence
+                #    with FileLock(lock_path): 
+                #        with h5py.File(file_path, "a") as f:
+
+                #            f[f"bl_ell{ell1}"][:]=bl
+                #            f[f"wigner_ell{ell1}"][:]=wigner
+                #            f.flush()  # Ensure data is written to disk
+                #    print('save: ', time.time()-a)
+        
+            ind += 1
+
+    with FileLock(lock_path): 
+        with h5py.File(file_path, "a") as f:
+
+            f[f"bl_ell{ell1}"][:]=bl
+            f[f"wigner_ell{ell1}"][:]=wigner
+ 
+            # Ensure all data is saved at the end
+            f.flush()

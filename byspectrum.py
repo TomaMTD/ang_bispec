@@ -56,14 +56,14 @@ def arguments():
     return argv
 
 def write_args(argv):
-    #if not os.path.exists(output_dir+'param_used.py'):
-    with open(output_dir+'param_used.py', 'w') as file:
-        for key, value in vars(argv).items():
-            if isinstance(value, str):
-                file.write(f"{key} = '{value}'\n")
-            else:
-                file.write(f"{key} = {value}\n")
-        file.write("h = {}\n".format(h100/100))
+    if not os.path.exists(output_dir+'param_used.py'):
+        with open(output_dir+'param_used.py', 'w') as file:
+            for key, value in vars(argv).items():
+                if isinstance(value, str):
+                    file.write(f"{key} = '{value}'\n")
+                else:
+                    file.write(f"{key} = {value}\n")
+            file.write("h = {}\n".format(h100/100))
 
 def ensure_directory_exists(path):
     """checks wether the output path exists"""
@@ -300,10 +300,10 @@ def main(argv):
             for Newton_rad in Newton_rad_list:
                 Newton, rad = Newton_rad[0], Newton_rad[1]
 
+                if argv.mode=='bin' and rad: rad_key='_rad'
+                else: rad_key=''
                 if argv.which=='all':
                     if argv.mode=='bin' or (argv.mode=='bl' and not rad):
-                        if argv.mode=='bin' and rad: rad_key='_rad'
-                        else: rad_key=''
 
                         #if argv.lterm == 'noproj': which_list=['F2{}'.format(rad_key), 'G2{}'.format(rad_key), \
                         #        'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v']
@@ -318,13 +318,10 @@ def main(argv):
                             which_list=['F2', 'G2', 'dv2']
 
                 elif argv.which=='newton': 
-                    if rad: rad_key='_rad'
-                    else: rad_key=''
-
                     which_list=['F2', 'G2', \
                                 'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v']
                 else:
-                    which_list=[argv.which]
+                    which_list=[argv.which+rad_key]
 
                 for lt in lterm_list:
                     if argv.mode == 'bin':
@@ -384,44 +381,11 @@ def main(argv):
                                             if bl!=0: fich.write('{} {} {} {:.16e} {:.16e} \n'.format(ell, ell, ell, bl, wigner))
 
                                 else:     
-                                    bl=np.array([])
-                                    wigner=np.array([])
                                     ell1=argv.ell
+                                    bispectrum.write_all_configuration(ell1, argv.ellmax, wh, lt, name, argv.Limber, rad, Newton, time_dict, chi_list,\
+                                            r0, ddr, normW, rmin, rmax, cp_tr, b, len(tr['k']), kmax, kmin)
 
-                                    try:
-                                        bl=np.load(name+'_ell{}.npy'.format(ell1))
-                                        lenght=len(bl)
-                                        ind=0
-                                        for ell2 in range(ell1, argv.ellmax):
-                                            print('     ell2={}/{}'.format(ell2, argv.ellmax))
-                                            for ell3 in range(ell2, argv.ellmax):
-                                                if ind<lenght: 
-                                                    ind+=1
-                                                    continue
-                                                else:
-                                                    toadd = bispectrum.spherical_bispectrum(wh, Newton, rad, argv.Limber,\
-                                                                lt, ell1, ell2,\
-                                                                ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, \
-                                                                cp_tr, b, len(tr['k']), kmax, kmin)
 
-                                                    bl=np.append(bl, toadd[0])
-                                                    wigner=np.append(wigner, toadd[1])
-                                                    np.save(name+'_ell{}'.format(ell1), bl)
-                                                    np.save(output_dir+'wigner_ellmax{}_ell{}'.format(argv.ellmax, ell1), wigner)
-
-                                    except (OSError, FileNotFoundError, EOFError, ValueError):
-                                        for ell2 in range(ell1, argv.ellmax):
-                                            print('     ell2={}/{}'.format(ell2, argv.ellmax))
-                                            for ell3 in range(ell2, argv.ellmax):
-                                                toadd=bispectrum.spherical_bispectrum(wh, Newton, rad, argv.Limber, lt, \
-                                                            ell1, ell2, ell3,\
-                                                                    time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b,\
-                                                            len(tr['k']), kmax, kmin)
-                                                bl=np.append(bl, toadd[0])
-                                                wigner=np.append(wigner, toadd[1])
-
-                                                np.save(name+'_ell{}'.format(ell1), bl)
-                                                np.save(output_dir+'wigner_ellmax{}_ell{}'.format(argv.ellmax, ell1), wigner)
     return 0
 
 if __name__ == "__main__":

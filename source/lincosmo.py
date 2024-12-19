@@ -9,7 +9,6 @@ import cubature
 from param_used import *
 from mathematica import *
 
-
 ############################################################################# Basic cosmo fct
 @njit
 def H_(z):

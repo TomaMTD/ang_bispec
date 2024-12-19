@@ -11,8 +11,8 @@ def Al123(ell1, ell2, ell3):
     if ell1==ell2 and ell2==ell3:
         return -1.0
     else:
-        return float((wigner_3j(ell1, ell2, ell3, 0,1,-1)+wigner_3j(ell1, ell2, ell3, 0,-1,1))\
-            /wigner_3j(ell1, ell2, ell3, 0,0,0))
+        return (float(wigner_3j(ell1, ell2, ell3, 0,1,-1))+float(wigner_3j(ell1, ell2, ell3, 0,-1,1)))\
+            /float(wigner_3j(ell1, ell2, ell3, 0,0,0))
 
 ############################################################################# window fct
 @numba.extending.overload(np.gradient)
