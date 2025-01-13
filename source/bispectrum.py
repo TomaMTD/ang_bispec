@@ -827,3 +827,53 @@ def write_all_configuration(ell1, ellmax, which, lterm, name, Limber, rad, Newto
  
             # Ensure all data is saved at the end
             f.flush()
+
+
+def spherical_bispectrum(which, Newton, rad, Limber, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, Nk, kmax, kmin):
+    '''
+        '''
+
+    wigner_test = float(wigner_3j(ell1, ell2, ell3, 0,0,0))
+
+    if wigner_test==0:
+        return 0., 0.
+    else:
+
+        Cl1_1_chi, Cl1_2_chi = get_cl(which, Newton, Limber, lterm, ell1, time_dict)
+        Cl2_1_chi, Cl2_2_chi = get_cl(which, Newton, Limber, lterm, ell2, time_dict)
+        Cl3_1_chi, Cl3_2_chi = get_cl(which, Newton, Limber, lterm, ell3, time_dict)
+
+        A0_tab_ell1, A2_tab_ell1, A4_tab_ell1, Am_tab_ell1, Il_tab_ell1 \
+            = get_kernels(ell1, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
+                            rmax, cp_tr, b, Nk, kmax, kmin)
+
+        A0_tab_ell2, A2_tab_ell2, A4_tab_ell2, Am_tab_ell2, Il_tab_ell2 \
+            = get_kernels(ell2, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
+                            rmax, cp_tr, b, Nk, kmax, kmin)
+
+        A0_tab_ell3, A2_tab_ell3, A4_tab_ell3, Am_tab_ell3, Il_tab_ell3 \
+            = get_kernels(ell3, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
+                            rmax, cp_tr, b, Nk, kmax, kmin)
+        if 'dav' in which:
+            A0_tab_ell1_arg = A0_tab_ell1*Al123(ell1, ell2, ell3)*np.sqrt(ell2*(ell2+1.)*ell3*(ell3+1.))
+            A0_tab_ell2_arg = A0_tab_ell2*Al123(ell2, ell1, ell3)*np.sqrt(ell1*(ell1+1.)*ell3*(ell3+1.))
+            A0_tab_ell3_arg = A0_tab_ell3*Al123(ell3, ell2, ell1)*np.sqrt(ell2*(ell2+1.)*ell1*(ell1+1.))
+        else:
+            A0_tab_ell1_arg = A0_tab_ell1
+            A0_tab_ell2_arg = A0_tab_ell2
+            A0_tab_ell3_arg = A0_tab_ell3
+
+        evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi,\
+                                time_dict['r_list'], A0_tab_ell1_arg, A2_tab_ell1, A4_tab_ell1, Am_tab_ell1, Il_tab_ell1)\
+                          +final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl1_1_chi, Cl3_1_chi, Cl1_2_chi, Cl3_2_chi,\
+                                time_dict['r_list'], A0_tab_ell2_arg, A2_tab_ell2, A4_tab_ell2, Am_tab_ell2, Il_tab_ell2)\
+                          +final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2_1_chi, Cl1_1_chi, Cl2_2_chi, Cl1_2_chi,\
+                                time_dict['r_list'], A0_tab_ell3_arg, A2_tab_ell3, A4_tab_ell3, Am_tab_ell3, Il_tab_ell3)
+        val=simpson(evaluation.T, x=time_dict['r_list'])
+
+        #if which in ['G2', 'd2vd0d', 'd1vd1d', 'd1vd2v', 'd0pd1d', 'd1vd2p', 'davd1v']:
+        if which in ['G2', 'd2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v']:
+            val*=-1
+
+        # The factor 2/pi in the def of Cl is not included in general_ps. We also add here the factor 2
+        return val*8./np.pi**2, wigner_test
