@@ -4,9 +4,10 @@ from classy import Class
 from scipy import integrate
 from numba import njit
 import cubature
-from mathematica import *
-from param import *
 
+
+from param_used import *
+from mathematica import *
 
 ############################################################################# Basic cosmo fct
 @njit
@@ -82,14 +83,21 @@ def growth_fct():
         np.savetxt(output_dir+'growth.txt', np.vstack([apy, ra, Ha, Oma, Dpy, fpy, vpy, wpy]).T, header='a r H Om D f v w')
     return apy[::-1], ra[::-1], Ha[::-1], Oma[::-1], Dpy[::-1], fpy[::-1], vpy[::-1], wpy[::-1]
 
-def interp_growth(r0, ddr, normW, rmin, rmax):
+def interp_growth(r0, ddr, rmin, rmax):
     a, ra, Ha, Oma, D, f, v, w = growth_fct()
     r_list=ra[np.logical_and(ra<=rmax, ra>=rmin)]
-    Wr = W(r_list, r0, ddr, normW)
     dHr = np.interp(r_list, ra, dotH_(1./a-1.))
     Hr = np.interp(r_list, ra, Ha)
+    ar = np.interp(r_list, ra, a)
+
+    normW= integrate.quad(W_tilde, a=rmin, b=rmax, \
+            args=(r0, ddr, r_list, Hr, ar,),\
+            epsrel=1e-10, epsabs=0)[0]
+
+    Wr = W_tilde(r_list, r0, ddr, r_list, Hr, ar, normW)
+    WWr = W(r_list, r0, ddr, normW)
     return {'r_list': r_list,\
-            'ar'    : np.interp(r_list, ra, a),\
+            'ar'    : ar,\
             'Hr'    : Hr,\
             'Omr'   : np.interp(r_list, ra, Oma),\
             'Dr'    : np.interp(r_list, ra, D),\
@@ -98,61 +106,34 @@ def interp_growth(r0, ddr, normW, rmin, rmax):
             'wr'    : np.interp(r_list, ra, w),\
             'dHr'   : dHr,\
             'Wr'    : Wr,\
-            'mathcalR': dHr/Hr**2+2./Hr/r_list}
+            'WWr'    : WWr,\
+            'mathcalR': dHr/Hr**2+2./Hr/r_list,
+            'normW': normW}
 
 ############################################################################# power spectrum
-def trans(z, gauge):
+def trans(z):
     if not os.path.isfile(output_dir+'class_transfer.npy') or force:
+        print('computing class')
         clss = Class()
-        clss.set({'gauge': gauge, 'h': h,'omega_b': omega_b*h**2, 'omega_cdm': omega_cdm*h**2,
-            'output':'dTk,vTk','z_pk': 10, 'A_s': A_s , 'n_s': n_s,
-                 'k_per_decade_for_pk' :  100,
-                 'k_per_decade_for_bao' : 100,
-#                  "transfer_neglect_delta_k_S_t0" :0.17,
-#                  "transfer_neglect_delta_k_S_t1" :0.05,
-#                  "transfer_neglect_delta_k_S_t2" :0.17,
-#                  "transfer_neglect_delta_k_S_e" : 0.13,
-
-#'tol_background_integration' : 1.e-15 ,
-#'tol_thermo_integration' : 1.e-15,
-'tol_perturbations_integration' : 1.e-10,
-#'reionization_optical_depth_tol' : 1.e-15,
-#'l_logstep' : 1.08, 
-#'l_linstep' : 25,
-#'perturbations_sampling_stepsize': 0.01,
-#delta_l_max = 800
-              'compute damping scale' : 'yes',
-             'P_k_max_h/Mpc' : 20,
-#'k_min_tau0':20,
-#'k_max_tau0_over_l_max':3.,
-#'k_step_sub':0.015,
-#'k_step_super':0.0001,
-#'k_step_super_reduction':0.1
+        clss.set({'gauge': 'new', 'h': h,'omega_b': omega_b*h**2, 'omega_cdm': omega_cdm*h**2,
+                  'output':'dTk,vTk','z_pk': 10, 'A_s': A_s , 'n_s': n_s,
+                  'k_per_decade_for_pk' :  100,
+                  'k_per_decade_for_bao' : 100,
+                  'tol_perturbations_integration' : 1.e-10,
+                  'compute damping scale' : 'yes',
+                  'P_k_max_h/Mpc' : 20,
                  })
         clss.compute()
 
         tr=clss.get_transfer(z=z)
         tr['k'] = tr.pop('k (h/Mpc)')
 
-#         if z==0:
-#             for key in list(tr.keys())[1:]:
-#                 tr[key]*=Dz
-
-#        tr['logphi'] = np.log(tr['phi'])
-#        tr['logk'] = np.log(tr['k'])
-#         dlogT=np.diff(np.append(tr['logphi'],tr['logphi'][-1]*2-tr['logphi'][-2]))
-#         dlogk=np.diff(np.append(tr['logk'],tr['logk'][-1]*2-tr['logk'][-2]))
-#        dlogT=np.diff(tr['logphi'])
-#        dlogk=np.diff(tr['logk'])
-#        tr['dTdk'] = dlogT/dlogk
-#        tr['dk'] = np.diff(tr['k'])
         tr['dTdk'] = np.gradient(np.log(tr['phi']), np.log(tr['k']))
 
         tr['d_m'] =  (omega_cdm*tr['d_cdm'] + omega_b*tr['d_b'])/(omega_b+omega_cdm)
 
-        if gauge=='new':
-            tr['t_m'] =  (omega_cdm*tr['t_cdm'] + omega_b*tr['t_b'])/(omega_b+omega_cdm)
-            tr['v_m'] = -tr['t_m']/tr['k']**2/h
+        tr['t_m'] =  (omega_cdm*tr['t_cdm'] + omega_b*tr['t_b'])/(omega_b+omega_cdm)
+        tr['v_m'] = -tr['t_m']/tr['k']**2/h
 
         np.save(output_dir+'class_transfer', tr)
     else:
@@ -169,13 +150,9 @@ def powerspectrum(k,delta_cdm):
     T=np.interp(k,delta_cdm[0],delta_cdm[1])
     return prim*T**2
 
-def get_power(z, gauge):
-
-    tr = trans(z, gauge)
-    if gauge=='new' or lterm=='pot':
-        Pk = powerspectrum(tr['k'],np.array([tr['k'], tr['phi']]))
-    else:
-        Pk = powerspectrum(tr['k'],np.array([tr['k'], tr['d_m']] ))
+def get_power(z):
+    tr = trans(z)
+    Pk = powerspectrum(tr['k'],np.array([tr['k'], tr['phi']]))
     return tr, Pk
 
 

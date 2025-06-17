@@ -3,15 +3,16 @@ import numba
 from numba import njit
 import sympy as sp
 from sympy.physics.wigner import wigner_3j
-from param import *
+#from param import *
+from param_used import *
 
 
 def Al123(ell1, ell2, ell3):
     if ell1==ell2 and ell2==ell3:
         return -1.0
     else:
-        return float((wigner_3j(ell1, ell2, ell3, 0,1,-1)+wigner_3j(ell1, ell2, ell3, 0,-1,1))\
-            /wigner_3j(ell1, ell2, ell3, 0,0,0))
+        return (float(wigner_3j(ell1, ell2, ell3, 0,1,-1))+float(wigner_3j(ell1, ell2, ell3, 0,-1,1)))\
+            /float(wigner_3j(ell1, ell2, ell3, 0,0,0))
 
 ############################################################################# window fct
 @numba.extending.overload(np.gradient)
@@ -27,9 +28,12 @@ def np_gradient(f):
 
 @njit
 def W(x, z0, Dz, normW=1):
-    
     res=(0.5+0.5*np.tanh( (x-(z0-Dz/2))/bb))*(0.5+0.5*np.tanh( (-x+(z0+Dz/2))/bb))
     return res/normW
+
+@njit
+def W_tilde(x, z0, Dz, r_list, Hr, ar, normW=1):
+    return np.interp(x, r_list, Hr)/np.interp(x, r_list, ar)*W(x, z0, Dz, normW)
 
 # sp.diff((0.5+0.5*sp.tanh( (x-(z0-Dz/2))/bb))*(0.5+0.5*sp.tanh( (-x+(z0+Dz/2))/bb)) , x, 1)
 @njit
@@ -107,6 +111,7 @@ def mathcalB(which, lterm, qterm, Newton, time_dict, z0, Dz, normW):
         expr = expr.subs(sp.diff(W, x, 2), d2W)
         expr = expr.subs(sp.diff(W, x, 1), d1W)
 
+        expr = expr.subs(sp.diff(H, x, 5), d5H)
         expr = expr.subs(sp.diff(H, x, 4), d4H)
         expr = expr.subs(sp.diff(H, x, 3), d3H)
         expr = expr.subs(sp.diff(H, x, 2), d2H)
@@ -117,6 +122,8 @@ def mathcalB(which, lterm, qterm, Newton, time_dict, z0, Dz, normW):
         expr = expr.subs(sp.diff(R, x, 2), d2R)
         expr = expr.subs(sp.diff(R, x, 1), d1R)
 
+        expr = expr.subs(sp.diff(a, x, 5), d5a)
+        expr = expr.subs(sp.diff(a, x, 4), d4a)
         expr = expr.subs(sp.diff(a, x, 3), d3a)
         expr = expr.subs(sp.diff(a, x, 2), d2a)
         expr = expr.subs(sp.diff(a, x, 1), d1a)
@@ -144,10 +151,13 @@ def mathcalB(which, lterm, qterm, Newton, time_dict, z0, Dz, normW):
     time_dict['d2H'] = np.gradient(time_dict['d1H'], time_dict['r_list'], edge_order=2)
     time_dict['d3H'] = np.gradient(time_dict['d2H'], time_dict['r_list'], edge_order=2)
     time_dict['d4H'] = np.gradient(time_dict['d3H'], time_dict['r_list'], edge_order=2)
+    time_dict['d5H'] = np.gradient(time_dict['d4H'], time_dict['r_list'], edge_order=2)
 
     time_dict['d1a'] = np.gradient(time_dict['ar'], time_dict['r_list'] , edge_order=2)
     time_dict['d2a'] = np.gradient(time_dict['d1a'], time_dict['r_list'], edge_order=2)
     time_dict['d3a'] = np.gradient(time_dict['d2a'], time_dict['r_list'], edge_order=2)
+    time_dict['d4a'] = np.gradient(time_dict['d3a'], time_dict['r_list'], edge_order=2)
+    time_dict['d5a'] = np.gradient(time_dict['d4a'], time_dict['r_list'], edge_order=2)
 
 
     time_dict['d1W'] = d1W_(time_dict['r_list'], z0, Dz, normW)
@@ -157,7 +167,7 @@ def mathcalB(which, lterm, qterm, Newton, time_dict, z0, Dz, normW):
     time_dict['d5W'] = d5W_(time_dict['r_list'], z0, Dz, normW)
 
     x = sp.symbols("time_dict['r_list']")
-    W = sp.Function("time_dict['Wr']")(x)
+    W = sp.Function("time_dict['WWr']")(x)
     f = sp.Function("time_dict['fr']")(x)
     D = sp.Function("time_dict['Dr']")(x)
     R = sp.Function("time_dict['mathcalR']")(x)
@@ -186,6 +196,7 @@ def mathcalB(which, lterm, qterm, Newton, time_dict, z0, Dz, normW):
     d2H = sp.Function("time_dict['d2H']")(x)
     d3H = sp.Function("time_dict['d3H']")(x)
     d4H = sp.Function("time_dict['d4H']")(x)
+    d5H = sp.Function("time_dict['d5H']")(x)
     
     d1R = sp.Function("time_dict['d1R']")(x)
     d2R = sp.Function("time_dict['d2R']")(x)
@@ -195,18 +206,22 @@ def mathcalB(which, lterm, qterm, Newton, time_dict, z0, Dz, normW):
     d1a = sp.Function("time_dict['d1a']")(x)
     d2a = sp.Function("time_dict['d2a']")(x)
     d3a = sp.Function("time_dict['d3a']")(x)
+    d4a = sp.Function("time_dict['d4a']")(x)
+    d5a = sp.Function("time_dict['d5a']")(x)
 
     if lterm=='density':
-        B = W*D
+        B = H/a*W*D
     elif lterm=='rsd':
-        B = -sp.diff(D*f*W , x, 2)
+        B = -sp.diff(D*f*H/a*W , x, 2)
     elif lterm=='pot':
         if not Newton:
-            B = W*D*((1.-R)/a+3*f*H**2)
+            B = H/a*W*D*((1.-R)/a+3*f*H**2)
         else:
-            B = W*D*((1.-R)/a)
+            B = H/a*W*D*((1.-R)/a)
+    elif lterm=='dpot':
+        B = -D*(f-1)/a*H/a*W
     elif lterm=='doppler':
-        B = sp.diff(H*D*W*f*R , x, 1)
+        B = sp.diff(H*D*H/a*W*f*R , x, 1)
     else:
         print('no code for {}'.format(lterm))
 
