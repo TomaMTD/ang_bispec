@@ -1,6 +1,6 @@
 # 🌀 `ang_bispec`: Python code for galaxy number count angular bispectrum
 
-Based on T. Montandon, et al., “Full angular bispectrum of galaxy number counts: Newtonian and GR terms without Limber,” arXiv:2501.05422 (2025).
+Based on T. Montandon, et al., “Angular bispectrum of matter number counts in cosmic structures,” arXiv:2501.05422 (2025).
 
 **Description**  
 `ang_bispec` is a high-performance Python implementation for computing the angular bispectrum of galaxy number counts. It significantly extends the existing **Byspectrum** code by incorporating **finite redshift bins**, **redshift-space distortions (RSD)**, and leading **general relativistic (GR) projection** and **radiation effects**, all without relying on the Limber approximation.
