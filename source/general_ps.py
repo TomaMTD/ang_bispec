@@ -45,6 +45,10 @@ def theintegrand_sum(rvar, chi, ell, n, r_list, cp, f_of_r, N, kmax, kmin, kpow,
 
 @njit
 def theintegrand_sum_quadratic(rvar, chi, ell, n, r_list, cp, f_of_r, N, kmax, kmin, kpow, b_list):
+    '''
+    Function summing theintegrand_quadratic over the frequency before integration: sum_p theintegrand_p
+    '''
+
     res = np.zeros((len(rvar[:,0])), dtype=np.float64)
     for ind, b in enumerate(b_list):
         res+=theintegrand_sum(rvar, chi, ell, n, r_list, cp[:,ind], f_of_r[:,ind], N, kmax, kmin, kpow, b)
@@ -165,6 +169,9 @@ def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, cp, fctr, rm
 
 # debug
 def plot_integrand(ell, n, r_list, y, y1, rmin, rmax, N, kmax, kmin, kpow, b):
+    '''
+    Function to plot the integrand for a given ell and n
+    '''
     #rvar_list=np.loadtxt('qterms4_L10_r3200.dat')[:,0] #np.linspace(rmin, rmax, 403)
     rvar_list=np.linspace(rmin, rmax, 1000)
     chi =  3200 

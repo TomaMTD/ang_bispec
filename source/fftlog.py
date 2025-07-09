@@ -32,16 +32,8 @@ def set_bias(k, fctk):
     print(' bias: {:.2f}'.format(b))
     return b
 
-def P_of_k(k, Pk, rad): 
-    if not rad:
-        out=Pk*k**4 
-
-    else:
-        out=Pk
-    return out
-
-def quadratic_terms(qterm, k, Pk, lterm, which):
-    B=P_of_k(k, Pk, rad=False) 
+def quadratic_terms(qterm, k, B, lterm, which):
+    B*=k**4 #P_of_k(k, Pk, rad=False) 
     
     if which=='d2v':
         if lterm=='density':
@@ -100,7 +92,7 @@ def quadratic_terms(qterm, k, Pk, lterm, which):
     return out
 
 @njit
-def compute(k, Pk, fct_k, b):
+def compute(k, fct_k, b):
     Nk = len(k)
     kmin, kmax = np.min(k), np.max(k)
     res=np.zeros((Nk+1), dtype=np.complex128)
@@ -108,9 +100,12 @@ def compute(k, Pk, fct_k, b):
         res[p+Nk//2] = get_cp(p, b, k, Nk, kmin, kmax, fct_k)
     return res
 
-def get_cp_of_r(k, Pk, lterm, which, qterm, rad, Newton, time_dict, r0, ddr, normW):
-    if which in ['FG2', 'F2', 'G2', 'dv2']: 
-        fct_k = P_of_k(k, Pk, rad)
+def get_cp_of_r(k, Pk, lterm, which, qterm, rad, Newton=0, time_dict=0, r0=0, ddr=0, normW=0):
+    if which in ['FG2', 'F2', 'G2', 'dv2', 'local']: 
+        if not rad:
+            fct_k=Pk*k**4 
+        else:
+            fct_k=Pk
         np.save(output_dir+'fct_k'.format('FG2_dv2', qterm), np.vstack([k, fct_k]).T)
     else: 
         fct_k = quadratic_terms(qterm, k, Pk, lterm, which) 
@@ -120,7 +115,6 @@ def get_cp_of_r(k, Pk, lterm, which, qterm, rad, Newton, time_dict, r0, ddr, nor
     if not rad:
         fct_r = mathcalB(which, lterm, qterm, Newton, time_dict, r0, ddr, normW)
         np.save(output_dir+'fct_r_{}_lterm{}_qterm{}'.format(which, lterm, qterm), fct_r)
-        return compute(k, Pk, fct_k, b), fct_r, b
+        return compute(k, fct_k, b), fct_r, b
     else:
-        return compute(k, Pk, fct_k, b), b
-
+        return compute(k, fct_k, b), b

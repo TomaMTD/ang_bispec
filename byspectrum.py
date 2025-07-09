@@ -271,9 +271,12 @@ def main(argv):
                         general_ps.get_all_Cln(wh, qterm, lt, argv.Newton, chi_list, ell, r_list, cp_arg, fctr, \
                                 rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list, argv.Limber)
 
+    elif argv.mode in ['prim', 'primordial', 'Primordial']:
+        cp_tr, b = fftlog.get_cp_of_r(tr['k'], tr['phi'], '', 'local', 0, 1)
+        return 0
+
     else:
-        cp_tr, b = fftlog.get_cp_of_r(tr['k'], tr['dTdk'], '', 'FG2', 0, 1, 0, time_dict\
-            , r0, ddr, normW)
+        cp_tr, b = fftlog.get_cp_of_r(tr['k'], tr['dTdk'], '', 'FG2', 0, 1)
         #cp_tr=cp_tr[:,0]
         np.savetxt(argv.output_dir+'cpTr.txt', cp_tr.T)
 
