@@ -1,5 +1,5 @@
 ############################################################################# Parameters
-force=False
+force=True # force to recompute from scratch
 
 which='all' # for cl: FG2, d2v, d1v, d3v, d1d, d0d
             # for bl, F2, G2, d2vd2v, d1vd3v, d1vd1d, d2vd0d
@@ -13,40 +13,27 @@ ell=2
 ellmax=514
 
 Nchi=500
-chi_ind = -1
 
-#bins = [2, 6, 14, 25, 44, 57, 73, 94, 120, 152, 194, 244] #294, 344, 394, 444, \
-#        #494, 544, 594, 644, 694, 744, 801, 901, 1001, 1101, 1201, 1301, 1401, \
-#        #1501, 1601, 1701, 1801, 1901, 2000] 
 bins = [2, 6, 14, 25, 44, 57, 73, 94, 120, 152, 194, 244, 294, 344, 394, 444, \
-        494, 514] #544, 594, 644, 694, 744, 801, 901, 1001, 1101, 1201, 1301, 1401, \
-        #1501, 1601, 1701, 1801, 1901, 2000] 
+        494, 514] 
 
-configuration='equi' #
+configuration='equi'
 
 Newton=False
 rad=True
-Limber=False
-
-relerr=1e-2
 
 ####################################################
 ### Window function
 z0, dz=2, 0.25
 bb=25
 
-#z0, dz=0.6, 0.05
-#bb=10
-
 ####################################################
 ### output directory
-output_dir = 'output_z{}_dz{}_final/'.format(z0, dz)
-#'test/' #'output_z{}_dz{}_simpson/'.format(z0, dz)
-#
+output_dir = 'output_z{}_dz{}_primordial/'.format(z0, dz)
 
 ####################################################
 ### Cosmology
-h100=67.556 #=0.67556
+h100=67.556 
 h=h100/100
 omega_b=0.0482754
 omega_cdm=0.263771

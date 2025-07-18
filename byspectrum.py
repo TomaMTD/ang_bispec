@@ -1,11 +1,8 @@
 import numpy as np
 import os, sys, argparse
 from art import text2art
-from classy import Class
 from scipy import integrate
 import time
-from numba import njit
-import cubature
 
 import path
 sys.path.insert(1, path.path+'/byspectrum/source')
@@ -23,7 +20,6 @@ def arguments():
     parser.add_argument('-q', '--qterm', default=qterm, type=int, help='-1, 0, 1, 2, 3, 4 only for which neq F2 G2')
     parser.add_argument('-N', '--Newton', default=Newton, type=int, help='Newtonian gravity: 0=No, 1=Yes')
     parser.add_argument('-r', '--rad',default=rad, type=int, help='Radiation: 0=No, 1=Yes')
-    parser.add_argument('-L', '--Limber',default=Limber, type=int, help='Radiation: 0=No, 1=Yes')
     parser.add_argument('-z0'    , default=z0, type=float, help='center of redshift bin')
     parser.add_argument('-dz'    , default=dz, type=float, help='half width of redshift bin')
     parser.add_argument('-bb'    , default=bb, type=float, help='How fast is the window function decaying')
@@ -47,8 +43,6 @@ def arguments():
     parser.add_argument('-k_pivot'  , type=float,default=k_pivot) 
     parser.add_argument('-c'        , type=float,default=c) 
     parser.add_argument('-H0'       , type=float,default=H0) 
-    parser.add_argument('-chi_ind'  , type=int,default=-1) 
-    parser.add_argument('-relerr'   , type=float,default=relerr) 
     parser.add_argument('-bins'   , type=list,default=bins) 
 
     argv=parser.parse_args()
@@ -83,34 +77,23 @@ def main(argv):
     import bispectrum
     import binning
     
-
     if argv.force!=0: print('-force is activated, overwritting files')
 
     Wrmin, Wrmax = lincosmo.get_distance(argv.z0-argv.dz)[0], lincosmo.get_distance(argv.z0+argv.dz)[0]
-    r0=(Wrmin+Wrmax)/2.
-    ddr=(-Wrmin+Wrmax)
+    rmin, rmax = Wrmin-10*bb, Wrmax+10*bb
 
-    rmin, rmax = lincosmo.get_distance(argv.z0-2.*argv.dz)[0], lincosmo.get_distance(argv.z0+2.*argv.dz)[0]
+    time_dict = lincosmo.growth_fct()    
+    np.save(output_dir+'time_dict', time_dict)
+
+    window_args = (Wrmin, Wrmax, bb)
+
     print('Window function limits: rmin={:.0f} rmax={:.0f}'.format(rmin, rmax))
 
     tr, Pk = lincosmo.get_power(0)
     kmin, kmax = np.min(tr['k']), np.max(tr['k'])
 
-    time_dict = lincosmo.interp_growth(r0, ddr, rmin, rmax)
-    r_list = time_dict["r_list"]
-    normW = time_dict["normW"]
-    np.save(output_dir+'time_dict', time_dict)
-
-    # norm of W not W_tilde
-    # print(1./4.*bb*(1. + 1./np.tanh((Wrmax - Wrmin)/bb))*2./bb*(Wrmax-Wrmin))
-
-    if argv.Nchi>0:
-        chi_list=np.linspace(rmin, rmax, argv.Nchi)
-    else:
-        chi_list=np.copy(r_list)
-
-    if argv.chi_ind>-1:
-        chi_list=np.array([chi_list[argv.chi_ind]])
+    chi_list=np.linspace(rmin, rmax, argv.Nchi)
+    r_list  =np.linspace(rmin, rmax, argv.Nchi)
 
     if argv.ellmax<=argv.ell:
         ell_list=[argv.ell]
@@ -199,6 +182,7 @@ def main(argv):
         print(indlist)
 
     elif argv.mode in ['cl', 'cln', 'Cl', 'Cln']:
+        
         if argv.which in ['FG2', 'F2', 'G2']:
             qterm_list=[0]
         else:
@@ -213,29 +197,24 @@ def main(argv):
             else:
                 qterm_list=[0]
 
+        if argv.qterm in qterm_list:
+            qterm_list = [argv.qterm]
+
         if argv.which=='all':
             which_list=['FG2', 'd2v', 'd1v', 'd3v', 'd1d']
         else:
             which_list=[argv.which]
 
-        if argv.qterm in qterm_list and not Limber:
-            qterm_list = [argv.qterm]
-        
-        if argv.qterm==-1:
-            compute_all_separate=True
-        else:
-            compute_all_separate=False
-        compute_all=False
-        
         print('Computing generalised power spectra for:')
         print('     which={}'.format(which_list))
         print('     lterm={}'.format(lterm_list))
-        print('     Limber={}'.format(argv.Limber))
+        print('     qterm={}'.format(qterm_list))
         if argv.ell>1:
             print('     ell={}'.format(argv.ell))
         else:
             print('     ell=[{}, {}]'.format(argv.ell, argv.ellmax))
             
+        compute_all=False
         for wh in which_list:
             for lt in lterm_list:
                 b_list=np.zeros((len(qterm_list)))
@@ -248,11 +227,10 @@ def main(argv):
                 for ind, qt in enumerate(qterm_list):
                     print('computing integrand tab of chi qterm={}'.format(qt))
                     cp[:,ind], fctr[0, :,ind], b_list[ind]=\
-                            fftlog.get_cp_of_r(tr['k'], Pk, lt, wh, qt, 0, argv.Newton, time_dict, r0, ddr, normW)
+                            fftlog.get_cp_of_r(tr['k'], Pk, lt, wh, qt, 0, argv.Newton, time_dict, window_args)
                     #np.save(argv.output_dir+'cp_of_r', cp)
 
-                    if argv.Limber: cp_arg = np.vstack([tr['k'], tr['k']**4*Pk]).T
-                    elif compute_all: cp_arg = cp
+                    if compute_all: cp_arg = cp
                     else: cp_arg = cp[:,ind]
                     
                     for ell in ell_list:
@@ -260,16 +238,16 @@ def main(argv):
                         fctr[1, :,ind]=fftlog.mathcalD(r_list, fctr[0, :,ind], ell, axis=0)
                         fctr[2, :,ind]=fftlog.mathcalD(r_list, fctr[1, :,ind], ell, axis=0)
 
-                        if len(qterm_list)==1 or compute_all_separate:
+                        if len(qterm_list)==1:
                             general_ps.get_all_Cln(wh, qt, lt, argv.Newton, chi_list, ell, r_list, \
-                                    cp_arg, fctr[:,:,ind], rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list[ind], argv.Limber)
+                                    cp_arg, fctr[:,:,ind], rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list[ind])
                         else:
                             compute_all=True
 
                 if compute_all:
                     for ell in ell_list:
                         general_ps.get_all_Cln(wh, qterm, lt, argv.Newton, chi_list, ell, r_list, cp_arg, fctr, \
-                                rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list, argv.Limber)
+                                rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list)
 
     elif argv.mode in ['prim', 'primordial', 'Primordial']:
         cp_tr, b = fftlog.get_cp_of_r(tr['k'], tr['phi'], '', 'local', 0, 1)
@@ -358,26 +336,25 @@ def main(argv):
                                     name=argv.output_dir+"bl/bl_{}_{}_newton{}".format(lt, wh, shape_name)
                                 else:
                                     name=argv.output_dir+"bl/bl_{}_{}{}".format(lt, wh, shape_name)
-                                if argv.Limber: name+='_Limber'
                                 
                                 print(' bispectrum file={}'.format(name))
                                 if config in ['equi', 'squ', 'folded']:
                                     fich = open(name+'.txt', "w")
                                     for ell in ell_list:
                                         if config == 'squ':
-                                            bl, wigner=bispectrum.spherical_bispectrum(wh, Newton, rad, argv.Limber, \
+                                            bl, wigner=bispectrum.spherical_bispectrum(wh, Newton, rad, \
                                                     lt, argv.ell, ell, ell,\
                                                     time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
                                                     len(tr['k']), kmax, kmin)
                                             if bl!=0: fich.write('{} {} {} {:.16e} {:.16e} \n'.format(argv.ell, ell, ell, bl, wigner))
                                         elif config == 'folded':
-                                            bl, wigner=bispectrum.spherical_bispectrum(wh, Newton, rad, argv.Limber, \
+                                            bl, wigner=bispectrum.spherical_bispectrum(wh, Newton, rad, \
                                                     lt, ell, ell, argv.ellmax,\
                                                     time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
                                                     len(tr['k']), kmax, kmin)
                                             if bl!=0: fich.write('{} {} {} {:.16e} {:.16e} \n'.format(argv.ellmax, ell, ell, bl, wigner))
                                         else:
-                                            bl, wigner=bispectrum.spherical_bispectrum(wh, Newton, rad, argv.Limber, \
+                                            bl, wigner=bispectrum.spherical_bispectrum(wh, Newton, rad, \
                                                     lt, ell, ell, ell,\
                                                     time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
                                                     len(tr['k']), kmax, kmin)
@@ -385,7 +362,7 @@ def main(argv):
 
                                 else:     
                                     ell1=argv.ell
-                                    bispectrum.write_all_configuration(ell1, argv.ellmax, wh, lt, name, argv.Limber, rad, Newton, time_dict, chi_list,\
+                                    bispectrum.write_all_configuration(ell1, argv.ellmax, wh, lt, name, rad, Newton, time_dict, chi_list,\
                                             r0, ddr, normW, rmin, rmax, cp_tr, b, len(tr['k']), kmax, kmin)
 
 

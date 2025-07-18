@@ -10,12 +10,10 @@ from mathematica import *
 from lincosmo import *
 from param_used import *
 
-def sum_qterm_and_linear_term(which, Newton, Limber, lterm, ell, r_list=0, Hr=0, fr=0, Dr=0, ar=0):
+def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, Dr=0, ar=0):
     '''
     Loading the generalised power spectra and summing over qterm and lterm
     '''
-    if Limber and ell>200: Limber='_Limber'
-    else: Limber=''
 
     if which in ['d2p', 'd0p']:
         stuff=2./3./omega_m/H0**2
@@ -37,27 +35,27 @@ def sum_qterm_and_linear_term(which, Newton, Limber, lterm, ell, r_list=0, Hr=0,
         for ind, lt in enumerate(lterm):
             if lt=='pot':  lt='pot_newton'
             if ind==0:
-                Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_ell{}{}.txt'.format(lt, int(ell), Limber))
+                Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))
             else:
-                Cl2_chi[:,1:] += np.loadtxt(output_dir+'cln/Cln_{}_ell{}{}.txt'.format(lt, int(ell), Limber))[:,1:]
+                Cl2_chi[:,1:] += np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))[:,1:]
 
             if lt=='density' and not Newton: 
-                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_pot_ell{}{}.txt'.format(int(ell), Limber))
-                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_pot_newton_ell{}{}.txt'.format(int(ell), Limber))
+                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_pot_ell{}.txt'.format(int(ell)))
+                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_pot_newton_ell{}.txt'.format(int(ell)))
                 Cl2_chi[:,1:] += 2./3./omega_m/H0**2*(Cl2_chi_R[:,1:]-Cl2_chi_N[:,1:])
 
     elif which=='d0d':
-        Cl2_chi=sum_qterm_and_linear_term('F2', Newton, Limber, lterm, ell)
+        Cl2_chi=sum_qterm_and_linear_term('F2', Newton, lterm, ell)
         if not Newton:
             Cl2_chi[:,1]+=3.*np.interp(Cl2_chi[:,0], r_list, Hr)**2*np.interp(Cl2_chi[:,0], r_list, fr)\
                                     *Cl2_chi[:,2]
 
     elif which in ['d0p', 'dav']:
-        Cl2_chi=sum_qterm_and_linear_term('F2', Newton, Limber, lterm, ell)
+        Cl2_chi=sum_qterm_and_linear_term('F2', Newton, lterm, ell)
         Cl2_chi[:,1]=Cl2_chi[:,2]
 
     elif which=='dod':
-        Cl2_chi=sum_qterm_and_linear_term('F2', Newton, Limber, lterm, ell)
+        Cl2_chi=sum_qterm_and_linear_term('F2', Newton, lterm, ell)
         ff=np.interp(Cl2_chi[:,0], r_list, fr)
         HH=np.interp(Cl2_chi[:,0], r_list, Hr)
         if not Newton:
@@ -93,19 +91,19 @@ def sum_qterm_and_linear_term(which, Newton, Limber, lterm, ell, r_list=0, Hr=0,
             #except FileNotFoundError:
             if lt=='pot': lt='pot_newton'
             if ind==0:
-                Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}{}.txt'.format(which, lt, int(ell), Limber))
+                Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))
             else:
-                Cl2_chi[:,1] += np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}{}.txt'.format(which, lt, int(ell), Limber))[:,1]
+                Cl2_chi[:,1] += np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))[:,1]
 
             if lt=='density' and not Newton: 
-                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_{}_pot_ell{}{}.txt'.format(which, int(ell), Limber))
-                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_{}_pot_newton_ell{}{}.txt'.format(which, int(ell), Limber))
+                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_{}_pot_ell{}.txt'.format(which, int(ell)))
+                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_{}_pot_newton_ell{}.txt'.format(which, int(ell)))
                 Cl2_chi[:,1:] += 2./3./omega_m/H0**2*(Cl2_chi_R[:,1:]-Cl2_chi_N[:,1:])
             ind+=1
         
         if which=='d1d' and not Newton:
             Cl2_chi[:,1]+=3.*np.interp(Cl2_chi[:,0], r_list, Hr)**2*np.interp(Cl2_chi[:,0], r_list, fr)\
-                            *sum_qterm_and_linear_term('d1v', Newton, Limber, lterm, ell)[:,1]
+                            *sum_qterm_and_linear_term('d1v', Newton, lterm, ell)[:,1]
 
     #np.savetxt(output_dir+'cl_{}_{}_ell{}.txt'.format(which, lterm[0], int(ell)), Cl2_chi)
     Cl2_chi[:,1:]/=stuff
@@ -705,22 +703,22 @@ def get_kernels(ell1, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, r
     return A0_tab, A2_tab, A4_tab, Am_tab, Il_tab
 
 
-def get_cl(which, Newton, Limber, lterm, ell1, time_dict):
+def get_cl(which, Newton, lterm, ell1, time_dict):
     Cl2_chi=np.zeros((5, 5))
     if which in ['F2', 'G2', 'dv2']:
-        Cl1_chi = sum_qterm_and_linear_term(which, Newton, Limber, lterm, ell1)
+        Cl1_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell1)
     elif which == 'd2vd2v':
-        Cl1_chi = sum_qterm_and_linear_term('d2v', Newton, Limber, lterm, ell1)
+        Cl1_chi = sum_qterm_and_linear_term('d2v', Newton, lterm, ell1)
     else:
-        Cl1_chi = sum_qterm_and_linear_term(which[:3], Newton, Limber, lterm, ell1, time_dict['r_list'], \
+        Cl1_chi = sum_qterm_and_linear_term(which[:3], Newton, lterm, ell1, time_dict['r_list'], \
                 time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
 
-        Cl2_chi = sum_qterm_and_linear_term(which[3:], Newton, Limber, lterm, ell1, time_dict['r_list'], \
+        Cl2_chi = sum_qterm_and_linear_term(which[3:], Newton, lterm, ell1, time_dict['r_list'], \
                 time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
     return Cl1_chi, Cl2_chi
 
 
-def write_all_configuration(ell1, ellmax, which, lterm, name, Limber, rad, Newton, time_dict, chi_list,\
+def write_all_configuration(ell1, ellmax, which, lterm, name, rad, Newton, time_dict, chi_list,\
                                     r0, ddr, normW, rmin, rmax, cp_tr, b, Nk, kmax, kmin):
     '''
         '''
@@ -743,7 +741,7 @@ def write_all_configuration(ell1, ellmax, which, lterm, name, Limber, rad, Newto
                 wigner = f[f"wigner_ell{ell1}"][:]
 
 
-    Cl1_1_chi, Cl1_2_chi = get_cl(which, Newton, Limber, lterm, ell1, time_dict)
+    Cl1_1_chi, Cl1_2_chi = get_cl(which, Newton, lterm, ell1, time_dict)
     A0_tab_ell1, A2_tab_ell1, A4_tab_ell1, Am_tab_ell1, Il_tab_ell1 \
         = get_kernels(ell1, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
                             rmax, cp_tr, b, Nk, kmax, kmin)
@@ -751,7 +749,7 @@ def write_all_configuration(ell1, ellmax, which, lterm, name, Limber, rad, Newto
     for ell2 in range(ell1, ellmax):
         print(f'     ell2={ell2}/{ellmax}')
         a=time.time()
-        Cl2_1_chi, Cl2_2_chi = get_cl(which, Newton, Limber, lterm, ell2, time_dict)
+        Cl2_1_chi, Cl2_2_chi = get_cl(which, Newton, lterm, ell2, time_dict)
         A0_tab_ell2, A2_tab_ell2, A4_tab_ell2, Am_tab_ell2, Il_tab_ell2 \
             = get_kernels(ell2, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
                             rmax, cp_tr, b, Nk, kmax, kmin)
@@ -765,7 +763,7 @@ def write_all_configuration(ell1, ellmax, which, lterm, name, Limber, rad, Newto
             else:
                 a=time.time()
                 if ell3==ell2: Cl3_1_chi, Cl3_2_chi  = Cl2_1_chi, Cl2_2_chi
-                else: Cl3_1_chi, Cl3_2_chi  = get_cl(which, Newton, Limber, lterm, ell3, time_dict)
+                else: Cl3_1_chi, Cl3_2_chi  = get_cl(which, Newton, lterm, ell3, time_dict)
 
                 A0_tab_ell3, A2_tab_ell3, A4_tab_ell3, Am_tab_ell3, Il_tab_ell3 \
                     = get_kernels(ell3, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
@@ -829,7 +827,7 @@ def write_all_configuration(ell1, ellmax, which, lterm, name, Limber, rad, Newto
             f.flush()
 
 
-def spherical_bispectrum(which, Newton, rad, Limber, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, Nk, kmax, kmin):
+def spherical_bispectrum(which, Newton, rad, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, Nk, kmax, kmin):
     '''
         '''
 
@@ -839,9 +837,9 @@ def spherical_bispectrum(which, Newton, rad, Limber, lterm, ell1, ell2, ell3, ti
         return 0., 0.
     else:
 
-        Cl1_1_chi, Cl1_2_chi = get_cl(which, Newton, Limber, lterm, ell1, time_dict)
-        Cl2_1_chi, Cl2_2_chi = get_cl(which, Newton, Limber, lterm, ell2, time_dict)
-        Cl3_1_chi, Cl3_2_chi = get_cl(which, Newton, Limber, lterm, ell3, time_dict)
+        Cl1_1_chi, Cl1_2_chi = get_cl(which, Newton, lterm, ell1, time_dict)
+        Cl2_1_chi, Cl2_2_chi = get_cl(which, Newton, lterm, ell2, time_dict)
+        Cl3_1_chi, Cl3_2_chi = get_cl(which, Newton, lterm, ell3, time_dict)
 
         A0_tab_ell1, A2_tab_ell1, A4_tab_ell1, Am_tab_ell1, Il_tab_ell1 \
             = get_kernels(ell1, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\

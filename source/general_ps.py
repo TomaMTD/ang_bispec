@@ -9,6 +9,30 @@ from param_used import *
 from mathematica import *
 
 
+
+############################################################################ 
+@njit(parallel=True)
+def compute_hyp21_grid_numba(t_grid, nu_p_grid, ell_grid):
+    """
+    Compute hyp21 values on the grid using numba for speed
+    """
+    n_t = len(t_grid)
+    n_nu_p = len(nu_p_grid)
+    n_ell = len(ell_grid)
+    
+    # Preallocate result array
+    result = np.zeros((n_t, n_nu_p, n_ell), dtype=np.complex128)
+    
+    # Compute in parallel over t values
+    for i_t in prange(n_t):
+        t = t_grid[i_t]
+        for i_nu_p, nu_p in enumerate(nu_p_grid):
+            for i_ell, ell in enumerate(ell_grid):
+                result[i_t, i_nu_p, i_ell] = I_nacked(nu_p, t, ell)
+
+    return result
+
+
 ############################################################################# integrand for Cl
 @njit
 def theintegrand(rvar, chi, nu_p, ell, r_list, f_of_r):
@@ -55,7 +79,7 @@ def theintegrand_sum_quadratic(rvar, chi, ell, n, r_list, cp, f_of_r, N, kmax, k
 
     return res
 
-def get_Cl_sum(integrand, chi, ell, n, r_list, cp, fctr, rmin, rmax, N, kmax, kmin, kpow, b, Limber=False):
+def get_Cl_sum(integrand, chi, ell, n, r_list, cp, fctr, rmin, rmax, N, kmax, kmin, kpow, b):
     '''
     Computes the generalised power spectrum for a given chi, ell and n
 
@@ -75,21 +99,14 @@ def get_Cl_sum(integrand, chi, ell, n, r_list, cp, fctr, rmin, rmax, N, kmax, km
         #n-=2
         f_of_r=fctr[0]
 
-    if not Limber:
-        evaluation=integrand(r_list[:,None], chi, ell, n, r_list, cp, f_of_r, N, kmax, kmin, kpow, b)
-        #np.save(output_dir+'check{:.0f}_n{}'.format(chi, nn), np.vstack([r_list, evaluation]))
-        val=simpson(evaluation, x=r_list)
-    else:
-        #Pk = np.load(output_dir+'fct_k.npy')
-        ell+=0.5
-        val=2*np.pi**2 * (ell/chi)**(n+kpow-2)\
-                * np.exp(np.interp(np.log(ell/chi), np.log(cp[:,0]), np.log(cp[:,1])))\
-                * np.interp(chi, r_list, f_of_r.real) / chi**2
+    evaluation=integrand(r_list[:,None], chi, ell, n, r_list, cp, f_of_r, N, kmax, kmin, kpow, b)
+    #np.save(output_dir+'check{:.0f}_n{}'.format(chi, nn), np.vstack([r_list, evaluation]))
+    val=simpson(evaluation, x=r_list)
 
     return val/4./np.pi
 
 def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, cp, fctr, rmin, rmax, N, kmax, kmin, \
-        kpow, b, Limber=False):
+        kpow, b):
     '''
     Main function to compute the generalised power spectrum
     Computes the generalised power spectrum for all chi's and n's given ell. The result is normalised 
@@ -107,21 +124,19 @@ def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, cp, fctr, rm
 
     if lterm in ['pot', 'all'] and Newton: key_pot='_newton'
     else: key_pot=''
-    if Limber: Limber_key='_Limber'
-    else: Limber_key=''
 
     if which in ['FG2', 'F2', 'G2', 'all']:
         res=np.zeros((len(chi_list), 4))
-        cl_name = output_dir+'cln/Cln_{}{}_ell{}{}.txt'.format(lterm, key_pot, int(ell), Limber_key)
+        cl_name = output_dir+'cln/Cln_{}{}_ell{}{}.txt'.format(lterm, key_pot, int(ell))
         integrand=theintegrand_sum
     else:
         if qterm==0:
             res=np.zeros((len(chi_list), 2))
-            cl_name = output_dir+'cln/Cln_{}_{}{}_ell{}.txt'.format(which, lterm, key_pot, int(ell), Limber_key)
+            cl_name = output_dir+'cln/Cln_{}_{}{}_ell{}.txt'.format(which, lterm, key_pot, int(ell))
             integrand=theintegrand_sum_quadratic
         else:
             res=np.zeros((len(chi_list), 2))
-            cl_name = output_dir+'cln/Cln_{}_qterm{}_{}{}_ell{}.txt'.format(which, qterm, lterm, key_pot, int(ell), Limber_key)
+            cl_name = output_dir+'cln/Cln_{}_qterm{}_{}{}_ell{}.txt'.format(which, qterm, lterm, key_pot, int(ell))
             integrand=theintegrand_sum 
 
     print(' ') 
@@ -139,18 +154,18 @@ def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, cp, fctr, rm
         if res[ind_chi,1]!=0 and not force: 
             print('     already computed -> jump')
             continue
-        res[ind_chi,1]=stuff2*get_Cl_sum(integrand, chi, ell, 0, r_list, cp, fctr, rmin, rmax, N, kmax, kmin, kpow, b, Limber)
+        res[ind_chi,1]=stuff2*get_Cl_sum(integrand, chi, ell, 0, r_list, cp, fctr, rmin, rmax, N, kmax, kmin, kpow, b)
 
         if which in ['FG2', 'F2', 'G2']:
             if res[ind_chi,2]!=0 and not force: 
                 print('     already computed -> jump')
                 continue
-            res[ind_chi,2]=stuff2*get_Cl_sum(integrand, chi, ell, -2, r_list, cp, fctr, rmin, rmax, N, kmax, kmin, kpow, b, Limber)
+            res[ind_chi,2]=stuff2*get_Cl_sum(integrand, chi, ell, -2, r_list, cp, fctr, rmin, rmax, N, kmax, kmin, kpow, b)
 
             if res[ind_chi,3]!=0 and not force: 
                 print('     already computed -> jump')
                 continue
-            res[ind_chi,3]=stuff2*get_Cl_sum(integrand, chi, ell, 2, r_list, cp, fctr, rmin, rmax, N, kmax, kmin, kpow, b, Limber)
+            res[ind_chi,3]=stuff2*get_Cl_sum(integrand, chi, ell, 2, r_list, cp, fctr, rmin, rmax, N, kmax, kmin, kpow, b)
         
         if len(chi_list)==1:
             os.system("awk -i inplace '{{if (NR=={}) $2=\"{:.18e}\"; print $0}}' {}".format(ind_chi+1, res[ind_chi,1], cl_name))
@@ -159,7 +174,7 @@ def get_all_Cln(which, qterm, lterm, Newton, chi_list, ell, r_list, cp, fctr, rm
                 os.system("awk -i inplace '{{if (NR=={}) $4=\"{:.18e}\"; print $0}}' {}".format(ind_chi+1, res[ind_chi,3], cl_name))
         else:
             np.savetxt(cl_name, res) 
-        if not Limber: print('  {}/{} chi={:.2f}, time {:.2f}'.format(ind_chi, len(res[:,0]), chi, time.time()-a))
+        print('  {}/{} chi={:.2f}, time {:.2f}'.format(ind_chi, len(res[:,0]), chi, time.time()-a))
     else:
         res=np.loadtxt(cl_name)
     return res

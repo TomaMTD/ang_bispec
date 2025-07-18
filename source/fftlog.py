@@ -4,117 +4,148 @@ import os
 from mathematica import *
 from lincosmo import *
 from param_used import *
-
-#import sys, importlib
-#importlib.import_module(sys.argv[-1])
-
-
+from scipy.interpolate import UnivariateSpline
 
 ############################################################################# fftlog
 @njit
-def get_cp(px, bx, x_list, N, xmin, xmax, fct_x):
-    eta_p = 2.*np.pi*px/np.log(xmax/xmin)
-    l=np.arange(N)
-    return np.sum(fct_x * x_list**(-bx) * xmin**(-1j*eta_p) * np.exp(-2.*1j*np.pi*px*l/N)) / N
-
-
-############################################################################# get fftlog coef
-def mathcalD(x, y, ell, axis=1):
-    dy=np.gradient(y, x, axis=axis)
-    return -np.gradient(dy, x, axis=axis)+2./x*dy+(ell*(ell+1)-2.)/x**2*y
-
-def set_bias(k, fctk):
-    b, ind = 0, 0
-    for i in range(5, 16):
-        b+=(np.log(np.abs(fctk[-i])) - np.log(np.abs(fctk[i]))) / (np.log(k[-i]) - np.log(k[i]))
-        ind+=1
-    b/=ind
-    print(' bias: {:.2f}'.format(b))
-    return b
-
-def quadratic_terms(qterm, k, B, lterm, which):
-    B*=k**4 #P_of_k(k, Pk, rad=False) 
-    
-    if which=='d2v':
-        if lterm=='density':
-            B*=k**2
-
-        if qterm==1:
-            deriv1_k  = np.gradient(np.gradient(B, k, axis=0, edge_order =2)
-                                                 , k, axis=0, edge_order =2)
-            out=deriv1_k
-        elif qterm==2:
-            deriv1_k  = np.gradient(B, k, axis=0, edge_order =2)
-            out=-2./k*deriv1_k
-        else:
-            out=B/k**2
-
-    elif which in ['d1v', 'd1d']:
-        if lterm=='density':
-            B*=k
-        else:
-            B/=k
-
-        if which=='d1d':
-            B*=k**2 
-
-        if qterm==1:
-            out=np.gradient(B, k, axis=0, edge_order =2)
-        else:
-            out=-B/k
-
-    elif which=='d3v':
-        if lterm=='density':
-            B*=k**3
-        else:
-            B*=k
-
-        if qterm==1:
-            out = np.gradient(np.gradient(np.gradient(B, k, axis=0, edge_order =2),
-                                                         k, axis=0, edge_order =2), 
-                                                         k, axis=0, edge_order =2)
-        elif qterm==2:
-            deriv2_k = np.gradient(np.gradient(B, k, axis=0, edge_order =2),
-                                                  k, axis=0, edge_order =2)
-            out=-3./k*deriv2_k
-        elif qterm==3:
-            deriv1_k = np.gradient(B, k, axis=0, edge_order =2)
-            out=B*3./k**2
-        else:
-            out=-B/k**3
-
-    elif which=='d0d':
-        if lterm!='density':
-            B/=k**2
-
-        out=B*k**2
-
-    return out
-
-@njit
-def compute(k, fct_k, b):
+def get_cp_eta_p(k, fct_k, b):
     Nk = len(k)
     kmin, kmax = np.min(k), np.max(k)
-    res=np.zeros((Nk+1), dtype=np.complex128)
-    for p in range(-Nk//2, Nk//2+1):
-        res[p+Nk//2] = get_cp(p, b, k, Nk, kmin, kmax, fct_k)
-    return res
 
-def get_cp_of_r(k, Pk, lterm, which, qterm, rad, Newton=0, time_dict=0, r0=0, ddr=0, normW=0):
+    l=np.arange(Nk)
+    p_list = np.arange(-Nk//2, Nk//2+1)
+    eta_p_list = 2.*np.pi*p_list/np.log(kmax/kmin)
+    
+    res  =np.zeros((Nk+1), dtype=np.complex128)
+    for p in range(-Nk//2, Nk//2+1):
+        res[p+Nk//2] = np.sum(fct_k * k**(-b) * kmin**(-1j*eta_p_list[p+Nk//2]) * np.exp(-2.*1j*np.pi*p*l/Nk)) / Nk
+
+    return res, eta_p_list
+
+############################################################################# get fftlog coef
+def set_bias(k, fctk_list):
+    b_list = np.zeros(len(fctk_list), dtype=np.float64)
+
+    for ind_b, fctk in enumerate(fctk_list):
+        ind=0
+        for i in range(5, 16):
+            b_list[ind_b]+=(np.log(np.abs(fctk[-i])) - np.log(np.abs(fctk[i]))) / (np.log(k[-i]) - np.log(k[i]))
+            ind+=1
+
+        b_list[ind_b]/=ind
+
+    print(' biases: {:.2f}'.format(b_list))
+    return b_list
+
+def quadratic_terms(k, B, lterm, which):
+    """
+    Calculate quadratic terms
+    
+    Parameters:
+    -----------
+    qterm : int
+        Term index (0, 1, 2, or 3)
+    k : array_like
+        Wave number array
+    B : array_like
+        Input array B
+    lterm : str
+        Linear term type ('density' or other)
+    which : str
+        Derivative type ('d2v', 'd1v', 'd1d', 'd3v', 'd0d')
+    
+    Returns:
+    --------
+    array_like
+        Computed quadratic terms
+    """
+    
+    B_scaled =B*k**4
+    if which == 'd2v':
+        if lterm == 'density':
+            B_scaled *= k**2
+
+        spline = UnivariateSpline(k, B_scaled, k=5, s=0)
+        return [spline.derivative(2)(k),\
+                -2./k * spline.derivative(1)(k),\
+                B/k**2]
+
+    elif which in ['d1v', 'd1d']:
+        if lterm == 'density':
+            B_scaled *= k
+        else:
+            B_scaled /= k
+        
+        if which == 'd1d':
+            B_scaled *= k**2
+
+        spline = UnivariateSpline(k, B_scaled, k=5, s=0)
+        return [spline.derivative(1)(k), -B/k]
+
+    elif which == 'd3v':
+        if lterm == 'density':
+            B_scaled *= k**3
+        else:
+            B_scaled *= k
+
+        spline = UnivariateSpline(k, B_scaled, k=5, s=0)
+        return [spline.derivative(3)(k),
+                -3./k * spline.derivative(2)(k),
+                3./k**2 * spline.derivative(1)(k),
+                -B / k**3]
+
+    elif which == 'd0d':
+        if lterm != 'density':
+            B_scaled /= k**2
+        return [B_scaled * k**2]
+    
+    else:
+        raise ValueError(f"Invalid 'which' parameter: {which}")
+
+
+def apply_fftlog(k, Pk, lterm, which, qterm, rad):
     if which in ['FG2', 'F2', 'G2', 'dv2', 'local']: 
         if not rad:
-            fct_k=Pk*k**4 
+            fct_k=[Pk*k**4]
         else:
-            fct_k=Pk
+            fct_k=[Pk]
         np.save(output_dir+'fct_k'.format('FG2_dv2', qterm), np.vstack([k, fct_k]).T)
     else: 
         fct_k = quadratic_terms(qterm, k, Pk, lterm, which) 
         np.save(output_dir+'fct_k_{}_lterm{}_qterm{}'.format(which, lterm, qterm), np.vstack([k, fct_k]).T)
 
     b=set_bias(k, fct_k)
-    if not rad:
-        fct_r = mathcalB(which, lterm, qterm, Newton, time_dict, r0, ddr, normW)
-        np.save(output_dir+'fct_r_{}_lterm{}_qterm{}'.format(which, lterm, qterm), fct_r)
-        return compute(k, fct_k, b), fct_r, b
+    cp, eta = get_cp_eta_p(k, fct_k, b)
+    return cp, eta, b
+
+
+def mathcalD(x, y, ell, axis=1):
+    dy=np.gradient(y, x, axis=axis)
+    return -np.gradient(dy, x, axis=axis)+2./x*dy+(ell*(ell+1)-2.)/x**2*y
+
+def fct_of_r_numeric(ell_list, r_list, window, number_of_derive=2):
+
+    y_list = np.zeros((len(ell_list), len(r_list)), dtype=np.float64)
+    if number_of_derive == 0:
+        for ind_ell in range(len(ell_list)):
+            ell = ell_list[ind_ell]
+            y_list[ind_ell] = window
+
+    elif number_of_derive == 1:
+        for ind_ell in range(len(ell_list)):
+            ell = ell_list[ind_ell]
+            y_list[ind_ell] = mathcalD(r_list, window, ell)
     else:
-        return compute(k, fct_k, b), b
+        for ind_ell in range(len(ell_list)):
+            ell = ell_list[ind_ell]
+            y_list[ind_ell] = mathcalD(r_list, window, ell)
+            for _ in range(number_of_derive - 1):
+                y_list[ind_ell] = mathcalD(r_list, y_list[ind_ell], ell)
+
+    return y_list
+
+
+def f_of_r(k, Pk, lterm, which, qterm, Newton=0, time_dict=0, window_args=0):
+    fct_r = mathcalB(which, lterm, qterm, Newton, time_dict, r0, ddr, normW)
+    np.save(output_dir+'fct_r_{}_lterm{}_qterm{}'.format(which, lterm, qterm), fct_r)
+    return fct_r
