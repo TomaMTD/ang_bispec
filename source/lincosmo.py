@@ -103,6 +103,10 @@ def trans(z=0):
                   'k_per_decade_for_bao' : 100,
                   'compute damping scale' : 'yes',
                   'P_k_max_h/Mpc' : 20,
+                    'tol_background_integration': 1e-9,
+                    'tol_thermo_integration': 1e-9,
+                    'tol_perturb_integration': 1e-9,
+
                  })
         clss.compute()
 

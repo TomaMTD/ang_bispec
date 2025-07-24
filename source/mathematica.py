@@ -423,3 +423,25 @@ def myhyp21(nu_p, t, chi, ell, t1min):
         return chi**(-nu_p) * fact * hyp21(nu_p, t, ell)
 
 
+@njit
+def I_nacked(nu_p, t, ell):
+    '''
+    returns the result of 4pi * \int dk k**(nu-1) jl(k*chi)jl(k*r) = chi**(-nu_p) * I_Assassi_Simonovic_Zaldarriaga
+                                                                   = 2pi^2 / r^2 * I_me
+    '''
+
+    if t.real>1:
+        fact=t**(-nu_p)
+        t=1./t
+    else:
+        fact=1.+0.j
+
+    if ell>=5: t1min = tmin_fct(ell, nu_p)
+    else: t1min=0
+
+    if t<t1min:
+        return 0.j
+    else:
+        return fact * hyp21(nu_p, t, ell)
+
+

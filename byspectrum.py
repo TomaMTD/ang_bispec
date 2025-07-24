@@ -69,6 +69,28 @@ def ensure_directory_exists(path):
         os.makedirs(path+'/cln')
         print(f"output dir created : {path}")
 
+
+class parameters:
+    def __init__(self, argv):
+        self.which = argv.which
+        self.lterm = argv.lterm
+        self.qterm = argv.qterm
+        self.Newton = argv.Newton
+        self.rad = argv.rad
+        self.z0 = argv.z0
+        self.dz = argv.dz
+        self.bb = argv.bb
+        self.force = argv.force
+        self.Nchi = argv.Nchi
+        self.ell = argv.ell
+        self.ellmax = argv.ellmax
+        self.output_dir = argv.output_dir
+        self.mode = argv.mode
+        self.configuration = argv.configuration
+
+
+
+
 def main(argv):
 
     import lincosmo 
@@ -79,13 +101,15 @@ def main(argv):
     
     if argv.force!=0: print('-force is activated, overwritting files')
 
+    p=parameters(argv)
+
     Wrmin, Wrmax = lincosmo.get_distance(argv.z0-argv.dz)[0], lincosmo.get_distance(argv.z0+argv.dz)[0]
-    rmin, rmax = Wrmin-10*bb, Wrmax+10*bb
+    rmin, rmax = Wrmin-15*bb, Wrmax+15*bb
 
     time_dict = lincosmo.growth_fct()    
     np.save(output_dir+'time_dict', time_dict)
 
-    window_args = (Wrmin, Wrmax, bb)
+    window_args = (Wrmin, Wrmax, 1, bb)
 
     print('Window function limits: rmin={:.0f} rmax={:.0f}'.format(rmin, rmax))
 
@@ -94,15 +118,21 @@ def main(argv):
 
     chi_list=np.linspace(rmin, rmax, argv.Nchi)
     r_list  =np.linspace(rmin, rmax, argv.Nchi)
+    t_grid = np.linspace(rmin/rmax, rmax/rmin, 1000)
 
     if argv.ellmax<=argv.ell:
-        ell_list=[argv.ell]
+        ell_list=np.array([argv.ell])
     else:
-        if argv.configuration in ['equi', 'squ', 'folded', 'esf']:
-            if argv.ell%2!=0: argv.ell+=1
-            ell_list=np.arange(argv.ell, argv.ellmax, 2)
+        if argv.mode in ['cl', 'cln', 'Cl', 'Cln']:
+            log_vals = np.logspace(np.log10(argv.ell), np.log10(argv.ellmax), num=Nell)  # Adjust `num` as needed
+            # Round to nearest integer and remove duplicates
+            ell_list = np.unique(np.round(log_vals).astype(int))
         else:
-            ell_list=np.arange(argv.ell, argv.ellmax, 1)
+            if argv.configuration in ['equi', 'squ', 'folded', 'esf']:
+                if argv.ell%2!=0: argv.ell+=1
+                ell_list=np.arange(argv.ell, argv.ellmax, 2)
+            else:
+                ell_list=np.arange(argv.ell, argv.ellmax, 1)
 
     if argv.lterm=='each':
         lterm_list=['density', 'pot', 'dpot', 'rsd', 'doppler']
@@ -182,23 +212,6 @@ def main(argv):
         print(indlist)
 
     elif argv.mode in ['cl', 'cln', 'Cl', 'Cln']:
-        
-        if argv.which in ['FG2', 'F2', 'G2']:
-            qterm_list=[0]
-        else:
-            if argv.which=='d2v':
-                qterm_list=[1,2,3]
-            elif argv.which in ['d1v', 'd1d']:
-                qterm_list=[1,2]
-            elif argv.which in ['d0d']:
-                qterm_list=[1]
-            elif argv.which=='d3v':
-                qterm_list=[1,2,3,4]
-            else:
-                qterm_list=[0]
-
-        if argv.qterm in qterm_list:
-            qterm_list = [argv.qterm]
 
         if argv.which=='all':
             which_list=['FG2', 'd2v', 'd1v', 'd3v', 'd1d']
@@ -208,46 +221,52 @@ def main(argv):
         print('Computing generalised power spectra for:')
         print('     which={}'.format(which_list))
         print('     lterm={}'.format(lterm_list))
-        print('     qterm={}'.format(qterm_list))
-        if argv.ell>1:
-            print('     ell={}'.format(argv.ell))
-        else:
-            print('     ell=[{}, {}]'.format(argv.ell, argv.ellmax))
+        print('     ell_list={}'.format(ell_list))
             
         compute_all=False
-        for wh in which_list:
-            for lt in lterm_list:
-                b_list=np.zeros((len(qterm_list)))
-                cp=np.zeros((len(tr['k'])+1, len(qterm_list)), dtype=complex)
-                fctr=np.zeros((3, len(r_list), len(qterm_list)), dtype=complex)
 
-                if lt=='density' and wh in ['FG2', 'F2', 'G2']: kpow=2.
-                else: kpow=0
+        for p.which in which_list:
+            # array shape (3, len(ell_list, len(r_list))
+            fctr = fftlog.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args)
+            np.save(argv.output_dir+'fctr_of_r', fctr)
 
-                for ind, qt in enumerate(qterm_list):
-                    print('computing integrand tab of chi qterm={}'.format(qt))
-                    cp[:,ind], fctr[0, :,ind], b_list[ind]=\
-                            fftlog.get_cp_of_r(tr['k'], Pk, lt, wh, qt, 0, argv.Newton, time_dict, window_args)
-                    #np.save(argv.output_dir+'cp_of_r', cp)
+            cp = fftlog.apply_fftlog(tr['k'], Pk, p)
 
-                    if compute_all: cp_arg = cp
-                    else: cp_arg = cp[:,ind]
-                    
-                    for ell in ell_list:
-                        #if wh in ['FG2', 'F2', 'G2', 'd1d']:
-                        fctr[1, :,ind]=fftlog.mathcalD(r_list, fctr[0, :,ind], ell, axis=0)
-                        fctr[2, :,ind]=fftlog.mathcalD(r_list, fctr[1, :,ind], ell, axis=0)
+            general_ps.compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp, fctr)
 
-                        if len(qterm_list)==1:
-                            general_ps.get_all_Cln(wh, qt, lt, argv.Newton, chi_list, ell, r_list, \
-                                    cp_arg, fctr[:,:,ind], rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list[ind])
-                        else:
-                            compute_all=True
+            pass
+            #for p.qterm in lterm_list:
+                #b_list=np.zeros((len(qterm_list)))
+                #cp=np.zeros((len(tr['k'])+1, len(qterm_list)), dtype=complex)
+                #fctr=np.zeros((3, len(r_list), len(qterm_list)), dtype=complex)
 
-                if compute_all:
-                    for ell in ell_list:
-                        general_ps.get_all_Cln(wh, qterm, lt, argv.Newton, chi_list, ell, r_list, cp_arg, fctr, \
-                                rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list)
+                #if lt=='density' and wh in ['FG2', 'F2', 'G2']: kpow=2.
+                #else: kpow=0
+
+                #for ind, qt in enumerate(qterm_list):
+                #    print('computing integrand tab of chi qterm={}'.format(qt))
+                #    cp[:,ind], fctr[0, :,ind], b_list[ind]=\
+                #            fftlog.get_cp_of_r(tr['k'], Pk, lt, wh, qt, 0, argv.Newton, time_dict, window_args)
+                #    #np.save(argv.output_dir+'cp_of_r', cp)
+
+                #    if compute_all: cp_arg = cp
+                #    else: cp_arg = cp[:,ind]
+                #    
+                #    for ell in ell_list:
+                #        #if wh in ['FG2', 'F2', 'G2', 'd1d']:
+                #        fctr[1, :,ind]=fftlog.mathcalD(r_list, fctr[0, :,ind], ell, axis=0)
+                #        fctr[2, :,ind]=fftlog.mathcalD(r_list, fctr[1, :,ind], ell, axis=0)
+
+                #        if len(qterm_list)==1:
+                #            general_ps.get_all_Cln(wh, qt, lt, argv.Newton, chi_list, ell, r_list, \
+                #                    cp_arg, fctr[:,:,ind], rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list[ind])
+                #        else:
+                #            compute_all=True
+
+                #if compute_all:
+                #    for ell in ell_list:
+                #        general_ps.get_all_Cln(wh, qterm, lt, argv.Newton, chi_list, ell, r_list, cp_arg, fctr, \
+                #                rmin, rmax, len(tr['k']), kmax, kmin, kpow, b_list)
 
     elif argv.mode in ['prim', 'primordial', 'Primordial']:
         cp_tr, b = fftlog.get_cp_of_r(tr['k'], tr['phi'], '', 'local', 0, 1)

@@ -10,9 +10,10 @@ lterm='all' # each, all, density, rsd, pot or doppler
 qterm=0 # 1, 2, 3, 4 only for which neq F2 G2
 
 ell=2
-ellmax=514
+ellmax=500
+Nell=8
 
-Nchi=500
+Nchi=501
 
 bins = [2, 6, 14, 25, 44, 57, 73, 94, 120, 152, 194, 244, 294, 344, 394, 444, \
         494, 514] 
