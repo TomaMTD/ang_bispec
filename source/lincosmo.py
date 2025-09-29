@@ -119,7 +119,7 @@ def trans(z):
                   'output':'dTk,vTk','z_pk': 10, 'A_s': A_s , 'n_s': n_s,
                   'k_per_decade_for_pk' :  100,
                   'k_per_decade_for_bao' : 100,
-                  'tol_perturbations_integration' : 1.e-10,
+                  #'tol_perturbations_integration' : 1.e-10,
                   'compute damping scale' : 'yes',
                   'P_k_max_h/Mpc' : 20,
                  })
