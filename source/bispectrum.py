@@ -1,877 +1,887 @@
 import numpy as np
-from numba import njit
+from numba import njit, prange
 import cubature, time, h5py
 from scipy.integrate import simpson
+from scipy.interpolate import interp1d
 from sympy.physics.wigner import wigner_3j
 from filelock import FileLock
+import os
 
 from fftlog import *
 from mathematica import *
 from lincosmo import *
 from param_used import *
+import general_ps
+import fctr
 
-def sum_qterm_and_linear_term(which, Newton, lterm, ell, r_list=0, Hr=0, fr=0, Dr=0, ar=0):
-    '''
-    Loading the generalised power spectra and summing over qterm and lterm
-    '''
+################################################################################ New efficient bispectrum computation
+def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lterm_list,
+                               W_derivs_list=None, tr=None, Pk=None, t_grid=None):
+    """
+    Unified loading function: loads Cls, Am, Il AND computes A0, A2, A4 kernels.
+    Everything is evaluated/interpolated onto the same chi grid for efficient integration.
 
-    if which in ['d2p', 'd0p']:
-        stuff=2./3./omega_m/H0**2
-        if which=='d2p': which='d2v'
+    Parameters:
+    -----------
+    p : Param object with .which, .Newton, .rad attributes
+    ell_list : array of ell values to load/compute
+    chi_list : array of chi values (comoving distance grid)
+    time_dict : dict with cosmological functions
+    window_args : tuple (r0, ddr, normW) for window function
+    W_derivs_list : list of arrays, optional
+        Precomputed window derivatives. If None, will be computed from window_args.
+
+    Returns:
+    --------
+    ell_array : (n_ell,) - array of ell values
+    Cl_array : (n_ell, n_chi, 4) - Power spectra [chi, Cl_0, Cl_m2, Cl_p2]
+    kernels_array : (n_ell, n_chi, 16) - All kernel terms interpolated to chi:
+        [0-3]: A0 (up to 4 components)
+        [4-5]: A2 (2 components, 0 if not F2/G2/dv2)
+        [6]:   A4 (1 component, 0 if not F2/G2/dv2)
+        [7-11]: Am (5 terms, 0 if Newton)
+        [12-15]: Il (4 terms, 0 if not rad)
+    """
+    n_ell = len(ell_list)
+    n_chi = len(chi_list)
+
+    # ========================================================================
+    # 1. Load power spectra from Cls.h5 for all ells
+    # ========================================================================
+    print("  Loading power spectra from Cls.h5...")
+
+    cls_file = f"{output_dir}Cls.h5"
+
+    # For F2, G2, dv2: use 'FG2' to get nm_pairs
+    # For other quadratic terms: concatenate nm_pairs from both parts
+    if p.which in ['F2', 'G2', 'dv2']:
+        nm_pairs = general_ps.get_nm_values('FG2')
+        which_for_cls = 'FG2'
     else:
-        stuff=1.
+        # Quadratic term: concatenate nm_pairs from which[:3] and which[3:]
+        nm_pairs = general_ps.get_nm_values(p.which[:3]) + general_ps.get_nm_values(p.which[3:])
+        which_for_cls = p.which[:3]  # For now just compute first part
 
-    if not isinstance(lterm, list):
-        if lterm=='all':
-            lterm=['density', 'rsd', 'pot', 'doppler', 'dpot']
-        elif lterm=='nopot':
-            lterm=['density', 'rsd', 'doppler'] 
-        elif lterm=='noproj':
-            lterm=['density', 'rsd'] #, 'pot', 'dpot']
-        else:
-            lterm=[lterm]
+    # Single Cl_array for all cases
+    Cl_array = np.zeros((n_ell, n_chi, len(nm_pairs)))
 
-    if which in ['F2', 'G2', 'dv2']:
-        for ind, lt in enumerate(lterm):
-            if lt=='pot':  lt='pot_newton'
-            if ind==0:
-                Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))
-            else:
-                Cl2_chi[:,1:] += np.loadtxt(output_dir+'cln/Cln_{}_ell{}.txt'.format(lt, int(ell)))[:,1:]
+    kernels_array = np.zeros((n_ell, n_chi, 15))
 
-            if lt=='density' and not Newton: 
-                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_pot_ell{}.txt'.format(int(ell)))
-                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_pot_newton_ell{}.txt'.format(int(ell)))
-                Cl2_chi[:,1:] += 2./3./omega_m/H0**2*(Cl2_chi_R[:,1:]-Cl2_chi_N[:,1:])
+    # Check if Cls.h5 exists and has required data
+    need_to_compute_cls = False
+    need_to_compute_am = False
+    missing_cls_ells = []
+    missing_am_ells = []
 
-    elif which=='d0d':
-        Cl2_chi=sum_qterm_and_linear_term('F2', Newton, lterm, ell)
-        if not Newton:
-            Cl2_chi[:,1]+=3.*np.interp(Cl2_chi[:,0], r_list, Hr)**2*np.interp(Cl2_chi[:,0], r_list, fr)\
-                                    *Cl2_chi[:,2]
-
-    elif which in ['d0p', 'dav']:
-        Cl2_chi=sum_qterm_and_linear_term('F2', Newton, lterm, ell)
-        Cl2_chi[:,1]=Cl2_chi[:,2]
-
-    elif which=='dod':
-        Cl2_chi=sum_qterm_and_linear_term('F2', Newton, lterm, ell)
-        ff=np.interp(Cl2_chi[:,0], r_list, fr)
-        HH=np.interp(Cl2_chi[:,0], r_list, Hr)
-        if not Newton:
-            Cl2_chi[:,1]=HH*np.interp(Cl2_chi[:,0], r_list, Dr) * \
-                        (ff * Cl2_chi[:,1] + 3.*(ff*np.interp(Cl2_chi[:,0], r_list, dotH_(1./ar-1.))+\
-                        HH**2*(3./2.*np.interp(Cl2_chi[:,0], r_list, Om_(1./ar-1.))-ff))*Cl2_chi[:,2])
-        else:
-            Cl2_chi[:,1]=HH*np.interp(Cl2_chi[:,0], r_list, Dr) * ff * Cl2_chi[:,1]
-
+    if not os.path.exists(cls_file):
+        need_to_compute_cls = True
+        missing_cls_ells = list(ell_list)
+        if p.which in ['F2', 'G2', 'dv2']:
+            need_to_compute_am = True
+            missing_am_ells = list(ell_list)
     else:
-        ind=0
-        for lt in lterm:
-            #try: 
-            #    if lt=='pot' and Newton: lt='pot_newton'
-            #    #                print(output_dir+'cln/Cln_{}_{}_ell{}.txt not found, try qterm...'.format(which, lt, int(ell)))
-            #    if which[:2]=='d2':
-            #        qlist=[1, 2, 3]
-            #    elif which[:2]=='d1':
-            #        qlist=[1, 2]
-            #    elif which[:2]=='d3': 
-            #        qlist=[1, 2, 3, 4]
-            #    else: 
-            #        print('{} not recognised'.format(which))
-            #        exit()
- 
-            #    for qt in qlist:
-            #        if ind==0:
-            #            Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))
-            #        else:
-            #            Cl2_chi[:,1] += np.loadtxt(output_dir+'cln/Cln_{}_qterm{}_{}_ell{}.txt'.format(which, qt, lt, int(ell)))[:,1]
-
-
-            #except FileNotFoundError:
-            if lt=='pot': lt='pot_newton'
-            if ind==0:
-                Cl2_chi = np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))
-            else:
-                Cl2_chi[:,1] += np.loadtxt(output_dir+'cln/Cln_{}_{}_ell{}.txt'.format(which, lt, int(ell)))[:,1]
-
-            if lt=='density' and not Newton: 
-                Cl2_chi_R = np.loadtxt(output_dir+'cln/Cln_{}_pot_ell{}.txt'.format(which, int(ell)))
-                Cl2_chi_N = np.loadtxt(output_dir+'cln/Cln_{}_pot_newton_ell{}.txt'.format(which, int(ell)))
-                Cl2_chi[:,1:] += 2./3./omega_m/H0**2*(Cl2_chi_R[:,1:]-Cl2_chi_N[:,1:])
-            ind+=1
-        
-        if which=='d1d' and not Newton:
-            Cl2_chi[:,1]+=3.*np.interp(Cl2_chi[:,0], r_list, Hr)**2*np.interp(Cl2_chi[:,0], r_list, fr)\
-                            *sum_qterm_and_linear_term('d1v', Newton, lterm, ell)[:,1]
-
-    #np.savetxt(output_dir+'cl_{}_{}_ell{}.txt'.format(which, lterm[0], int(ell)), Cl2_chi)
-    Cl2_chi[:,1:]/=stuff
-    return Cl2_chi
-
-
-############################################################################# definition of alpha, beta gamma as fct of chi
-@njit
-def alpha_chi(r, index, which, Dr, fr, vr, wr, Omr):
-    if which=='F2':
-        if index==0:
-            res=(7.-3.*vr)/14.
-        elif index==1:
-            res=4.*fr + 3./2.*Omr - 9./7.*wr
-        elif index==2:
-            res=(18.*fr**2 + 9.*fr**2*Omr - 9./2.*fr*Omr)
-        else:
-            res=np.zeros((len(r)), dtype=np.float64)
-    else:
-        if index==0:
-            res=fr-3./7.*wr
-        elif index==1:
-            res=-0.5*15.*Omr*fr
-        else:
-            res=np.zeros((len(r)), dtype=np.float64)
-    
-    return  res
-
-@njit
-def beta_chi(r, index, which, Dr, fr, vr, wr, Omr):
-    if which=='F2':
-        if index==0:
-            res=np.ones((len(r)), dtype=np.float64)
-        elif index==1:
-            res=-2*fr**2 + 6*fr - 9./2.*Omr
-        elif index==2:
-            res=(36.*fr**2 + 18.*fr**2*Omr )
-        else:
-            res=np.zeros((len(r)), dtype=np.float64)
-    else:
-        if index==0:
-            res=fr
-        elif index==1:
-            res=-12.*Omr*fr
-        else:
-            res=np.zeros((len(r)), dtype=np.float64)
-    return  res
-
-@njit
-def gamma_chi(r, index, which, Dr, fr, vr, wr, Omr):
-    if which=='F2':
-        if index==0:
-            res=np.zeros((len(r)), dtype=np.float64)
-        elif index==1:
-            res=1./2.*(-fr**2+fr  - 3.*Omr)
-        elif index==2:
-            res=1./4.*(18*fr**2+9.*(fr**2-fr)*Omr)
-        else:
-            res=np.zeros((len(r)), dtype=np.float64)
-    else:
-        res=-9./4.*Omr*fr #np.zeros((len(r)), dtype=np.float64)
-    return  res
-
-############################################################################# definition of fnm as function of chi
-#@njit
-def f0_nm(r, which, Dr, fr, vr, wr, Omr, Hr):
-    res=np.zeros((4, len(r)), dtype=np.float64)
-    res[0]=(beta_chi(r, 0, which, Dr, fr, vr, wr, Omr) - alpha_chi(r, 0, which, Dr, fr, vr, wr, Omr))/2.
-    res[1]=(alpha_chi(r, 0, which, Dr, fr, vr, wr, Omr) - beta_chi(r, 0, which, Dr, fr, vr, wr, Omr))/4.
-    res[2]=Hr**2/2.*(beta_chi(r, 1, which, Dr, fr, vr, wr, Omr)/2. - alpha_chi(r, 1, which, Dr, fr, vr, wr, Omr))
-    res[3]=Hr**4/4.*alpha_chi(r, 2, which, Dr, fr, vr, wr, Omr)
-    return res
-
-#@njit
-def f2_nm(r, which, Dr, fr, vr, wr, Omr, Hr):
-    res=np.zeros((2, len(r)))
-    res[0]=1./2.*(beta_chi(r, 0, which, Dr, fr, vr, wr, Omr)/2. - alpha_chi(r, 0, which, Dr, fr, vr, wr, Omr))
-    res[1]=Hr**2/4.*alpha_chi(r, 1, which, Dr, fr, vr, wr, Omr)
-    return res
-
-#@njit
-def f4_nm(r, which, Dr, fr, vr, wr, Omr, Hr):
-    return 1./4.*alpha_chi(r, 0, which, Dr, fr, vr, wr, Omr)
-
-############################################################################# integral over chi
-#@njit
-def A0_chi_F2(r, which, Dr, fr, vr, wr, Omr, Hr, Wr):
-    #if which=='F2':
-    return f0_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2* Wr
-    #else:
-    #    return 0
-
-#@njit
-def A2_chi(r, which, ell, Dr, fr, vr, wr, Omr, Hr, Wr, mathcalR):
-    y=f2_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2*Wr 
-
-    if which == 'F2':
-        out = mathcalD(r, y, ell)
-    elif which=='G2':
-        out = np.gradient(np.gradient(y, r, axis=1), r, axis=1)
-    else:
-        y*=mathcalR
-        out = np.gradient(y, r, axis=1)
-    return out
-
-#@njit
-def A4_chi(r, which, ell, Dr, fr, vr, wr, Omr, Hr, Wr, mathcalR):
-    y=f4_nm(r, which, Dr, fr, vr, wr, Omr, Hr)*Dr**2*Wr
-
-    if which == 'F2':
-        y=mathcalD(r, y[None,:], ell)
-    elif which == 'G2':
-        y=np.gradient(np.gradient(y[None, :], r, axis=1), r, axis=1)
-    else:
-        y*=mathcalR
-        y=np.gradient(y[None, :], r, axis=1)
-    return  mathcalD(r, y, ell)
-
-
-
-############################################################################# RE
-@njit
-def fm2_nm(r, which, Dr, fr, vr, wr, Omr, Hr):
-    H2 = Hr**2
-    res=np.zeros((3, len(r)))
-    res[0]=(beta_chi(r, 1, which, Dr, fr, vr, wr, Omr) - alpha_chi(r, 1, which, Dr, fr, vr, wr, Omr))/2.-2.*gamma_chi(r, 1, which, Dr, fr, vr, wr, Omr)
-    res[1]=(alpha_chi(r, 1, which, Dr, fr, vr, wr, Omr) - beta_chi(r, 1, which, Dr, fr, vr, wr, Omr))/4.\
-            +gamma_chi(r, 1, which, Dr, fr, vr, wr, Omr)
-    res[2]=H2/2.*(beta_chi(r, 2, which, Dr, fr, vr, wr, Omr)/2. - alpha_chi(r, 2, which, Dr, fr, vr, wr, Omr))
-    return res*H2
-
-@njit
-def fm4_nm(r, which, Dr, fr, vr, wr, Omr, Hr):
-    res=np.zeros((2, len(r)))
-    res[0]= (beta_chi(r, 2, which, Dr, fr, vr, wr, Omr) - alpha_chi(r, 2, which, Dr, fr, vr, wr, Omr))/2.-2.*gamma_chi(r, 2, which, Dr, fr, vr, wr, Omr)
-    res[1]=(alpha_chi(r, 2, which, Dr, fr, vr, wr, Omr) - beta_chi(r, 2, which, Dr, fr, vr, wr, Omr))/4.+gamma_chi(r, 2, which, Dr, fr, vr, wr, Omr)
-    return res*Hr**4
-
-################################################################################ radiation
-@njit
-def fm2R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar):
-    res=np.zeros((2, len(fr)))
-    res[0]=fr+3.*Omr/2.
-    res[1]=-res[0]/2.
-    return res*Hr**2 * Dr/ar
-
-@njit
-def fm4R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar):
-    res=np.zeros((2, len(fr)))
-    if which=='F2':
-        res[0]= 3.*fr*(fr+3.*Omr/2.)
-    else:
-        res[0]= 3.*(fr-1)*(fr+3.*Omr/2.)
-    res[1]=-res[0]/2.
-    return res*Hr**4 * Dr/ar
-
-@njit
-def nb_gradient(f, x):
-    out = np.empty_like(f, np.float64)
-    out[1:-1] = (f[2:] - f[:-2]) / (x[2:] - x[:-2])
-    out[0] = (f[1] - f[0]) / (x[1] - x[0]) 
-    out[-1] = (f[-1] - f[-2]) / (x[-1] - x[-2])
-    return out
-
-@njit
-def integrand_Am(r, chi, ell, which, r_list, \
-        ar, Dr, fr, vr, wr, Omr, Hr, mathcalR, r0, ddr, normW, \
-        fm2_tab, fm4_tab,\
-        cp_tr, bphi, Nphi, eta):
-    '''
-    For all multiplet n and m, this function computes the integrand of the pure relativistic \
-            terms coming from the k1^-2 and k1^-4 terms of the kernel
-    
-    returns Am2=2/pi * D^2(r)W_tilde(r) f^{(-2)}_{nm}(r) \int dk jl(k chi)*jl(k r)
-            Am4=2/pi * D^2(r)W_tilde(r) f^{(-4)}_{nm}(r) \int dk k^{-2} jl(k chi)*jl(k r)
-            
-    '''
-    t_list=r[:,0]/chi
-    Am4=np.zeros(len(t_list), dtype=np.complex128)
-    out=np.zeros((5, len(t_list)), dtype=np.float64)
-    
-    #Drr=np.interp(r[:,0], r_list, Dr)
-    #frr=np.interp(r[:,0], r_list, fr)
-    #vrr=np.interp(r[:,0], r_list, vr)
-    #wrr=np.interp(r[:,0], r_list, wr)
-    #Omrr=np.interp(r[:,0], r_list, Omr)
-    #Hrr=np.interp(r[:,0], r_list, Hr)
-
-    for ind,t in enumerate(t_list):
-        if t>1:
-            fact=t
-            t=1./t
-        else:
-            fact=1.
-        Am4[ind]=chi*fact*Il(-1+0.j, t+0.j, ell) 
-    
-    out[0]=np.interp(r[:,0], r_list, fm2_tab[0]) 
-    out[1]=np.interp(r[:,0], r_list, fm2_tab[1]) 
-    out[2]=np.interp(r[:,0], r_list, fm2_tab[2]) 
-    out[3]=np.interp(r[:,0], r_list, fm4_tab[0])
-    out[4]=np.interp(r[:,0], r_list, fm4_tab[1])
-
-    return (out*Am4.real).T/2/np.pi**2
-
-
-@njit
-def integrand_Il_F2(r, chi, ell, which, r_list, \
-        ar, Dr, fr, vr, wr, Omr, Hr, mathcalR, r0, ddr, normW, \
-        f0_tab, fm2_tab,\
-        cp_tr, bphi, Nphi, eta):
-    '''
-    For all multiplet n and m, this function computes the integrand of the radiation term \
-            \partial \log T_{phi_0} / \partial \log k = \sum_p c_p k^{b+i\eta_p}
-    
-    returns 2/pi * D^2(r)W_tilde(r) f^{(R)}_{nm}(r) \sum_p c_p * \int dk k**(nu_p-1) jl(k*chi)jl(k*r)
-    '''
-
-    t_list=r[:,0]/chi
-    out=np.zeros((4, len(t_list)), dtype=np.float64)
-    
-    arr=np.interp(r[:,0],  r_list, ar)
-    Drr=np.interp(r[:,0],  r_list, Dr)
-    frr=np.interp( r[:,0], r_list, fr)
-    vrr=np.interp( r[:,0], r_list, vr)
-    wrr=np.interp( r[:,0], r_list, wr)
-    Omrr=np.interp(r[:,0], r_list, Omr)
-    Hrr=np.interp( r[:,0], r_list, Hr)
-    Wrr=W_tilde(r[:,0], r0, ddr, r_list, Hr, ar, normW)
-
-    fm20=np.interp(r[:,0], r_list, fm2_tab[0]) 
-    fm21=np.interp(r[:,0], r_list, fm2_tab[1]) 
-    fm4=fm4R_nm(which, Drr, frr, vrr, wrr, Omrr, Hrr, arr)
-
-    Ilm4=np.zeros(len(t_list), dtype=np.complex128)
-    for p in range(-Nphi//2, Nphi//2+1):
-        nu=1.+bphi+1j*p*eta
-        if ell>=5: 
-            t1min = tmin_fct(ell, nu)
-        else: 
-            t1min=0
-
-        for ind, t in enumerate(t_list):
-            Ilm4[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu-2., t, chi, ell, t1min)
-
-    # here we have computed 
-    # 2pi^2/r^2 \sum c_p I_me(1.+bphi+1j*p*eta, r1, chi)
-    WDr=Drr**2*Wrr
-    out[0]=fm20*Ilm4.real
-    out[1]=fm21*Ilm4.real
-    out[2]=fm4[0]*Ilm4.real*WDr
-    out[3]=fm4[1]*Ilm4.real*WDr
-    return out.T/2/np.pi**2 
-
-@njit
-def integrand_Il_G2(r, chi, ell, which, r_list, \
-        ar, Dr, fr, vr, wr, Omr, Hr, mathcalR, r0, ddr, normW, \
-        f0_tab, fm2_tab,\
-        cp_tr, bphi, Nphi, eta):
-    t_list=r[:,0]/chi
-    out=np.zeros((4, len(t_list)), dtype=np.float64)
- 
-    Ilm2=np.zeros(len(t_list), dtype=np.complex128)
-    Ilm4=np.zeros(len(t_list), dtype=np.complex128)
-    for p in range(-Nphi//2, Nphi//2+1):
-        nu=-1.+bphi+1j*p*eta
-        if ell>=5: 
-            t1min = tmin_fct(ell, nu)
-        else: 
-            t1min=0
-        
-        for ind, t in enumerate(t_list):
-            Ilm2[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu, t, chi, ell, t1min)
-            Ilm4[ind]+=cp_tr[p+Nphi//2]*myhyp21(nu-2., t, chi, ell, t1min)
-    
-    out[0]=np.interp(r[:,0], r_list, fm2_tab[0])*Ilm2.real
-    out[1]=np.interp(r[:,0], r_list, fm2_tab[1])*Ilm2.real
-    out[2]=np.interp(r[:,0], r_list, f0_tab[0])*Ilm4.real
-    out[3]=np.interp(r[:,0], r_list, f0_tab[1])*Ilm4.real
-
-    return out.T/2./np.pi**2
-
-
-def get_Am_and_Il(chi_list, ell1, which, Newton, rad, time_dict, r0, ddr, normW, rmin, rmax, \
-        cp_tr, bphi, Nphi, kmax, kmin, save=True):
-    '''
-    Computes the r and k integrals of the pure relativistic terms coming from the k1^-2 and k1^-4 terms of the kernel. 
-    ell1 is fixed. All multiplet of n, m are computed as function of chi
-    
-    if rad==False: 
-        computes the relativistic terms. Those terms lead to a function of chi that can be \
-        expressed as an integral over r1:
-
-        returns integration of the function integrand_Am over r for all chi_list values and multiplication by chi^2:
-            2/pi* chi^2 * \int dr D^2(r)W_tilde(r) f^{(-2)}_{nm}(r) \int dk jl(k chi)*jl(k r)
-            and         
-            2/pi* chi^2 * \int dr D^2(r)W_tilde(r) f^{(-4)}_{nm}(r) \int dk k^{-2} jl(k chi)*jl(k r)
-
-    else radiation is on:
-        computes the radiation term. Those terms lead to a function of chi that can be \
-        expressed as an integral over r1:
-
-        returns integration of the function integrand_Il_F2 over r for all chi_list values and multiplication by chi^2:
-            2/pi* chi^2 * \int dr D^2(r)W_tilde(r) f^{(R)}_{nm}(r) \sum_p c_p * \int dk k**(nu_p-1) jl(k*chi)jl(k*r)
-    
-    '''
-
-
-    eta=2.*np.pi/np.log(kmax/kmin)
-    fm2_tab, f0_tab=0, 0
-    
-    if rad: print('     Computing I_ell={}'.format(int(ell1)))
-    else: print('     Computing A_ell={}'.format(int(ell1)))
-
-    if rad:
-        fdim=4
-        fn = 'Il/Il_{}_ell{}.txt'
-        
-        fm2_tab=fm2R_nm(which, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'],\
-                                time_dict['Omr'], time_dict['Hr'], time_dict['ar'])\
-                                *time_dict['Dr']**2*time_dict['Wr']
-        f0_tab=fm4R_nm(which, time_dict['Dr'], time_dict['fr'], time_dict['vr'], time_dict['wr'],\
-                                time_dict['Omr'], time_dict['Hr'], time_dict['ar'])\
-                                *time_dict['Dr']**2*time_dict['Wr']
-        if which=='F2':
-            fm2_tab = mathcalD(time_dict['r_list'], fm2_tab, ell1, axis=1)
-            integ = integrand_Il_F2
-        elif which=='G2':
-            integ = integrand_Il_G2
-            fm2_tab = np.gradient(np.gradient(fm2_tab, \
-                            time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
-            f0_tab = np.gradient(np.gradient(f0_tab, \
-                            time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
-        elif which=='dv2':
-            integ = integrand_Il_G2
-            fm2_tab = np.gradient(fm2_tab*\
-                        time_dict['mathcalR']*time_dict['Hr'], time_dict['r_list'], axis=1)
-            f0_tab = np.gradient(f0_tab*\
-                        time_dict['mathcalR']*time_dict['Hr'], time_dict['r_list'], axis=1)
-
-    else:
-        fdim=5
-        if not Newton: fn = 'Am/Am_{}_ell{}.txt'
-        else: fn = 'Am/Am_{}_ell{}_newton.txt'
-        if Newton: Hr=0
-        else: Hr=time_dict['Hr']
-        integ = integrand_Am
-
-
-        if which=='F2': 
-            if Newton: return 0
-            else:
-                f0_tab=fm2_nm(time_dict['r_list'], which, time_dict['Dr'],\
-                        time_dict['fr'], time_dict['vr'], time_dict['wr'],\
-                        time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
-    
-                fm2_tab=fm4_nm(time_dict['r_list'], which, time_dict['Dr'],\
-                            time_dict['fr'], time_dict['vr'], time_dict['wr'],\
-                            time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
- 
-        else:
-            if Newton: Hr=0
-            else: Hr=time_dict['Hr']
-    
-            f0_tab=f0_nm(time_dict['r_list'], which, time_dict['Dr'],\
-                    time_dict['fr'], time_dict['vr'], time_dict['wr'],\
-                    time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
-
-            fm2_tab=fm2_nm(time_dict['r_list'], which, time_dict['Dr'],\
-                            time_dict['fr'], time_dict['vr'], time_dict['wr'],\
-                            time_dict['Omr'], Hr)*time_dict['Dr']**2*time_dict['Wr']
-
-            if which=='G2':
-                f0_tab =np.gradient(np.gradient(f0_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
-                fm2_tab=np.gradient(np.gradient(fm2_tab, time_dict['r_list'], axis=1), time_dict['r_list'], axis=1)
-            else:
-                f0_tab *=time_dict['mathcalR']*time_dict['Hr']
-                fm2_tab*=time_dict['mathcalR']*time_dict['Hr']
-                f0_tab =np.gradient(f0_tab, time_dict['r_list'], axis=1)
-                fm2_tab=np.gradient(fm2_tab, time_dict['r_list'], axis=1)
-    
-        f0_tab = mathcalD(time_dict['r_list'], f0_tab, ell1, axis=1)
-
-    try : 
-        res=(np.loadtxt(output_dir+fn.format(which, int(ell1)))[:,1:]).T
-    except (OSError, FileNotFoundError, EOFError, ValueError): 
-        res=np.zeros((fdim, len(chi_list)))
-    #if ell1<100:
-
-    for ind, chi in enumerate(chi_list):
-        if ind%10==0 and rad: print('   {}/{}'.format(ind, len(chi_list)))
-        
-        if res[0,ind]!=0 and not force: 
-            print('     already computed -> jump chi_ind='+str(ind))
-            continue
-        else:
-
-
-            evaluation=integ(time_dict['r_list'][:,None], chi, ell1, which, time_dict['r_list'],\
-                                            time_dict['ar'], time_dict['Dr'], time_dict['fr'],\
-                                            time_dict['vr'], time_dict['wr'], time_dict['Omr'],\
-                                            time_dict['Hr'], time_dict['mathcalR'], r0, ddr, normW,\
-                                            f0_tab, fm2_tab,\
-                                            cp_tr, bphi, Nphi, eta) 
-            val=simpson(evaluation.T, x=time_dict['r_list'])
-
-            #val, err = cubature.cubature(integ, ndim=1, fdim=fdim, xmin=[rmin], xmax=[rmax],\
-            #                             args=(chi, ell1, which, time_dict['r_list'],\
-            #                                time_dict['ar'], time_dict['Dr'], time_dict['fr'],\
-            #                                time_dict['vr'], time_dict['wr'], time_dict['Omr'],\
-            #                                time_dict['Hr'], time_dict['mathcalR'], r0, ddr, normW,\
-            #                                f0_tab, fm2_tab,\
-            #                                cp_tr, bphi, Nphi, eta), relerr=1e-5,\
-            #                                     maxEval=1e6, abserr=0, vectorized=True)
-            
-            res[:,ind]=val*chi**2
-
-            if save: 
-                np.savetxt(output_dir+fn.format(which, int(ell1)), np.vstack([chi_list, res]).T) 
-
-    # Limber seems not to work ...
-    #else:
-    #    ar=np.interp( chi_list, time_dict['r_list'], time_dict['ar'])
-    #    Dr=np.interp( chi_list, time_dict['r_list'], time_dict['Dr'])
-    #    fr=np.interp( chi_list, time_dict['r_list'], time_dict['fr'])
-    #    vr=np.interp( chi_list, time_dict['r_list'], time_dict['vr'])
-    #    wr=np.interp( chi_list, time_dict['r_list'], time_dict['wr'])
-    #    Omr=np.interp(chi_list, time_dict['r_list'], time_dict['Omr'])
-    #    Hr=np.interp( chi_list, time_dict['r_list'], time_dict['Hr'])
-    #    Wr=W_tilde(chi_list, r0, ddr, normW)
-    #
-    #    fm2=fm2R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar)
-    #    fm4=fm4R_nm(which, Dr, fr, vr, wr, Omr, Hr, ar)
-    #
-    #    p_range=np.arange(-Nphi//2, Nphi//2+1)
-    #    nu=bphi+1j*p_range*eta
-    #        
-    #    limber=(cp_tr*(ell1/chi_list[:,None])**(nu-3.)).sum(1)
-    #    WDr=Dr**2*Wr
-    #    res[0]=fm2[0]*limber.real*WDr
-    #    res[1]=fm2[1]*limber.real*WDr
-    #    res[2]=fm4[0]*limber.real*WDr
-    #    res[3]=fm4[1]*limber.real*WDr
-    
-    return np.vstack([chi_list, res]).T
-
-
-################################################################################ spherical bispectrum
-@njit
-def final_integrand(chi, which, Newton, rad, Cl2n1_chi, Cl3n1_chi, Cl2n2_chi, Cl3n2_chi,\
-                        r_list, A0_tab, A2_tab, A4_tab, Am_tab, Il_tab):
-    '''
-    The sum over n and m is now explicitely computed. The result is a function of chi which will be integrated over.
-
-    returns 2/pi* chi^2 * \sum_{mn} C_{\ell2}^{(n)}(chi) C_{\ell3}^{(m)}(chi) 
-                
-                \int dr D^2(r)W_tilde(r) f^{(X)}_{nm}(r) \int dk k^(X)*jl(k chi)*jl(k r) where X is an integer
-            or
-                \int dr D^2(r)W_tilde(r) f^{(R)}_{nm}(r) \sum_p c_p * \int dk k**(nu_p-1) jl(k*chi)jl(k*r) for radiation
-    '''
-
-    chi=chi[:,0]
-    Cl2_0 = np.interp(chi, Cl2n1_chi[:,0], Cl2n1_chi[:,1])
-    Cl3_0 = np.interp(chi, Cl3n1_chi[:,0], Cl3n1_chi[:,1])
-
-    if which in ['F2', 'G2', 'dv2']:
-
-        A20 = np.interp(chi, r_list, A2_tab[0])
-        A21 = np.interp(chi, r_list, A2_tab[1])
-        A40 = np.interp(chi, r_list, A4_tab[0])
-
-        Cl2_p2 = np.interp(chi, Cl2n1_chi[:,0], Cl2n1_chi[:,3])
-        Cl2_m2 = np.interp(chi, Cl2n1_chi[:,0], Cl2n1_chi[:,2])
-        Cl3_m2 = np.interp(chi, Cl3n1_chi[:,0], Cl3n1_chi[:,2])
-        Cl3_p2 = np.interp(chi, Cl3n1_chi[:,0], Cl3n1_chi[:,3])
-
-        if which == 'F2':
-            A00 = np.interp(chi, r_list, A0_tab[0])
-            A01 = np.interp(chi, r_list, A0_tab[1])
-            A02 = np.interp(chi, r_list, A0_tab[2])
-            A03 = np.interp(chi, r_list, A0_tab[3])
-    
-            out = A00*Cl2_0*Cl3_0 \
-              +(A03+A21+A40)*Cl2_m2*Cl3_m2 \
-              +A01*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)\
-              +(A02+A20)*(Cl2_0*Cl3_m2+Cl3_0*Cl2_m2)
-
-        else :
-            out = (A21+A40)*Cl2_m2*Cl3_m2 \
-              +(A20)*(Cl2_0*Cl3_m2+Cl3_0*Cl2_m2)
-
-        if not Newton or (Newton and which!='F2'):
-            out += np.interp(chi, Am_tab[:,0], Am_tab[:,1])*Cl2_0*Cl3_0+\
-                 np.interp(chi, Am_tab[:,0], Am_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)+\
-                 np.interp(chi, Am_tab[:,0], Am_tab[:,3])*(Cl3_0*Cl2_m2+Cl3_m2*Cl2_0)+\
-                 np.interp(chi, Am_tab[:,0], Am_tab[:,4])*Cl2_0*Cl3_0+\
-                 np.interp(chi, Am_tab[:,0], Am_tab[:,5])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
-
-        if rad and not Newton:
-            out += np.interp(chi, Il_tab[:,0], Il_tab[:,1])*Cl2_0*Cl3_0+\
-                       np.interp(chi, Il_tab[:,0], Il_tab[:,2])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)+\
-                       np.interp(chi, Il_tab[:,0], Il_tab[:,3])*Cl2_0*Cl3_0+\
-                       np.interp(chi, Il_tab[:,0], Il_tab[:,4])*(Cl3_p2*Cl2_m2+Cl3_m2*Cl2_p2)
-
-    else:
-        A00 = np.interp(chi, r_list, A0_tab[0])
-        if which=='d2vd2v':
-            out = A00*Cl2_0*Cl3_0 
-        else:
-            Cl2_0_2 = np.interp(chi, Cl2n2_chi[:,0], Cl2n2_chi[:,1])
-            Cl3_0_2 = np.interp(chi, Cl3n2_chi[:,0], Cl3n2_chi[:,1])
-            out = A00*(Cl2_0*Cl3_0_2+Cl3_0*Cl2_0_2)
-    return out
-
-
-################################################################################ spherical bispectrum
-def get_kernels(ell1, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
-                                rmax, cp_tr, b, Nk, kmax, kmin):
-
-    A0_tab, A2_tab, A4_tab, Am_tab, Il_tab = np.zeros((5, 5)), np.zeros((5, 5)), \
-                                             np.zeros((5, 5)), np.zeros((5, 5)), np.zeros((5, 5)) 
-    
-    if which in ['F2', 'G2', 'dv2']:
-        Il_fn='Il/Il_{}_ell{}.txt'
-        if not Newton and rad:
-            try:
-                Il_tab = np.loadtxt(output_dir+Il_fn.format(which, int(ell1)))
-            except FileNotFoundError:
-                Il_tab = get_Am_and_Il(chi_list, ell1, which, Newton, True, time_dict, r0, ddr, normW, rmin,\
-                                    rmax, cp_tr, b, Nk, kmax, kmin, True)
-        
-        Am_fn='Am/Am_{}_ell{}{}.txt'
-        if not Newton:
-            Am_new=''
-            Hr = time_dict['Hr']
-        else:
-            if which=='F2': Am_new=''
-            else: Am_new='_newton'
-            Hr = 0
-
-        if not Newton or (Newton and which!='F2'):
-            try:
-                Am_tab = np.loadtxt(output_dir+Am_fn.format(which, \
-                    int(ell1), Am_new))
-            except (ValueError, FileNotFoundError):
-                Am_tab = get_Am_and_Il(chi_list, ell1, which, Newton, False, time_dict, r0, ddr, normW, rmin,\
-                                    rmax, cp_tr, b, Nk, kmax, kmin, True)
-
-        A0_tab = A0_chi_F2(time_dict['r_list'], which,       time_dict['Dr'], time_dict['fr'], \
-                time_dict['vr'], time_dict['wr'], time_dict['Omr'], Hr, time_dict['Wr'])
-        A2_tab = A2_chi(time_dict['r_list'], which, ell1, time_dict['Dr'], time_dict['fr'], \
-                time_dict['vr'], time_dict['wr'], time_dict['Omr'], Hr, time_dict['Wr'], \
-                time_dict['mathcalR'])
-        A4_tab = A4_chi(time_dict['r_list'], which, ell1, time_dict['Dr'], time_dict['fr'], \
-                time_dict['vr'], time_dict['wr'], time_dict['Omr'], Hr, time_dict['Wr'], 
-                time_dict['mathcalR'])
-        
-        if which=='dv2':
-            A2_tab*=time_dict['Hr']
-            A4_tab*=time_dict['Hr']
-
-
-    else:
-        if which in ['d2vd0d', 'd1vd1d', 'd1vd0d']:
-            A0_tab = time_dict['Dr']**2*time_dict['fr']*time_dict['Wr'] 
-            if which in ['d1vd0d']:
-                A0_tab*=time_dict['Hr']*time_dict['mathcalR'] 
-
-        elif which in ['d1vdod']:
-            A0_tab = time_dict['Dr']*time_dict['fr']*time_dict['Wr'] 
-        elif which in ['d0pd3v', 'd0pd1d', 'd1vd2p']:
-            A0_tab = time_dict['Dr']**2*time_dict['Wr']/time_dict['Hr']/time_dict['ar']
-            if 'v' in which:
-                A0_tab*=time_dict['fr']
-        else:
-            A0_tab = time_dict['Dr']**2*time_dict['fr']**2*time_dict['Wr'] 
-            if which in ['d1vd2v']:
-                A0_tab *= time_dict['Hr'] * \
-                        (1.+ 3.*time_dict['dHr']/time_dict['Hr']**2 + 4./time_dict['Hr']/time_dict['r_list'])
-            elif which in ['davd1v']:
-                A0_tab *= time_dict['Hr'] #*Al123(ell1, ell2, ell3)*np.sqrt(ell2*(ell2+1.)*ell3*(ell3+1.))
-
-
+        # Check Cls and Am data separately
         try:
-            A0_tab/=time_dict['r_list']**(int(which[1]) + int(which[4]))
-        except ValueError:
-            if which=='davd1v':
-                A0_tab/=time_dict['r_list']**2
-
-            try: 
-                A0_tab/=time_dict['r_list']**(int(which[1]))
-            except ValueError:
-                A0_tab/=time_dict['r_list']**(int(which[4]))
-
-        if which != 'd2vd2v': A0_tab=A0_tab[None,:]/2.
-        else: A0_tab=A0_tab[None,:]
-
-    return A0_tab, A2_tab, A4_tab, Am_tab, Il_tab
-
-
-def get_cl(which, Newton, lterm, ell1, time_dict):
-    Cl2_chi=np.zeros((5, 5))
-    if which in ['F2', 'G2', 'dv2']:
-        Cl1_chi = sum_qterm_and_linear_term(which, Newton, lterm, ell1)
-    elif which == 'd2vd2v':
-        Cl1_chi = sum_qterm_and_linear_term('d2v', Newton, lterm, ell1)
-    else:
-        Cl1_chi = sum_qterm_and_linear_term(which[:3], Newton, lterm, ell1, time_dict['r_list'], \
-                time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
-
-        Cl2_chi = sum_qterm_and_linear_term(which[3:], Newton, lterm, ell1, time_dict['r_list'], \
-                time_dict['Hr'], time_dict['fr'], time_dict['Dr'], time_dict['ar'])
-    return Cl1_chi, Cl2_chi
-
-
-def write_all_configuration(ell1, ellmax, which, lterm, name, rad, Newton, time_dict, chi_list,\
-                                    r0, ddr, normW, rmin, rmax, cp_tr, b, Nk, kmax, kmin):
-    '''
-        '''
-
-    file_path = f"{name}.h5"
-    lock_path = f"{file_path}.lock"
-    length = int ((ellmax - ell1) * (ell1+1)) 
-
-    with FileLock(lock_path): 
-        # Create or open the HDF5 file
-        with h5py.File(file_path, "a") as f:
-
-            # Initialize or load `bl` and `wigner` datasets
-            if f"bl_ell{ell1}" not in f:
-                bl = f.create_dataset(f"bl_ell{ell1}", (length,), dtype='f8', fillvalue=-999)[:]
-                wigner = f.create_dataset(f"wigner_ell{ell1}", (length,), dtype='f8', fillvalue=-999)[:]
-            else:
-                print(' resume from previous run!')
-                bl = f[f"bl_ell{ell1}"][:]
-                wigner = f[f"wigner_ell{ell1}"][:]
-
-
-    Cl1_1_chi, Cl1_2_chi = get_cl(which, Newton, lterm, ell1, time_dict)
-    A0_tab_ell1, A2_tab_ell1, A4_tab_ell1, Am_tab_ell1, Il_tab_ell1 \
-        = get_kernels(ell1, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
-                            rmax, cp_tr, b, Nk, kmax, kmin)
-    ind = 0
-    for ell2 in range(ell1, ellmax):
-        print(f'     ell2={ell2}/{ellmax}')
-        a=time.time()
-        Cl2_1_chi, Cl2_2_chi = get_cl(which, Newton, lterm, ell2, time_dict)
-        A0_tab_ell2, A2_tab_ell2, A4_tab_ell2, Am_tab_ell2, Il_tab_ell2 \
-            = get_kernels(ell2, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
-                            rmax, cp_tr, b, Nk, kmax, kmin)
-    
-        for ell3 in range(ell2, min(ell2+ell1+1, ellmax)):
-            wigner_test = float(wigner_3j(ell1, ell2, ell3, 0,0,0))
-    
-            if wigner_test==0:
-                bl[ind] = 0
-                wigner[ind] = 0
-            else:
-                a=time.time()
-                if ell3==ell2: Cl3_1_chi, Cl3_2_chi  = Cl2_1_chi, Cl2_2_chi
-                else: Cl3_1_chi, Cl3_2_chi  = get_cl(which, Newton, lterm, ell3, time_dict)
-
-                A0_tab_ell3, A2_tab_ell3, A4_tab_ell3, Am_tab_ell3, Il_tab_ell3 \
-                    = get_kernels(ell3, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
-                            rmax, cp_tr, b, Nk, kmax, kmin)
-
-                if 'dav' in which:
-                    A0_tab_ell1_arg = A0_tab_ell1*Al123(ell1, ell2, ell3)*np.sqrt(ell2*(ell2+1.)*ell3*(ell3+1.))
-                    A0_tab_ell2_arg = A0_tab_ell2*Al123(ell2, ell1, ell3)*np.sqrt(ell1*(ell1+1.)*ell3*(ell3+1.))
-                    A0_tab_ell3_arg = A0_tab_ell3*Al123(ell3, ell2, ell1)*np.sqrt(ell2*(ell2+1.)*ell1*(ell1+1.))
+            with h5py.File(cls_file, 'r') as f:
+                # Check Cls
+                first_group_name = f'n_{nm_pairs[0][0]}_m_{nm_pairs[0][1]}'
+                if first_group_name in f:
+                    ell_list_file = f[first_group_name]['ell_list'][()]
+                    missing_cls_ells = [ell for ell in ell_list if ell not in ell_list_file]
                 else:
-                    A0_tab_ell1_arg = A0_tab_ell1
-                    A0_tab_ell2_arg = A0_tab_ell2
-                    A0_tab_ell3_arg = A0_tab_ell3
+                    missing_cls_ells = list(ell_list)
 
-                # Skip if already computed
-                if bl[ind] != -999:
-                    ind += 1
+                if missing_cls_ells:
+                    need_to_compute_cls = True
+
+                # Check Am data separately for F2/G2/dv2
+                if p.which in ['F2', 'G2', 'dv2']:
+                    if p.which in f:
+                        am_ell_list = f[p.which]['ell_list'][()]
+                        missing_am_ells = [ell for ell in ell_list if ell not in am_ell_list]
+                    else:
+                        missing_am_ells = list(ell_list)
+
+                    if missing_am_ells:
+                        need_to_compute_am = True
+
+        except Exception as e:
+            need_to_compute_cls = True
+            missing_cls_ells = list(ell_list)
+            if p.which in ['F2', 'G2', 'dv2']:
+                need_to_compute_am = True
+                missing_am_ells = list(ell_list)
+
+    # Compute only what's missing
+    if need_to_compute_cls or need_to_compute_am:
+        print(f"\n{'='*70}")
+        if need_to_compute_cls:
+            print(f"  Missing Cls for ells: {missing_cls_ells}")
+        if need_to_compute_am:
+            print(f"  Missing Am/f-coefficients for ells: {missing_am_ells}")
+        print(f"{'='*70}\n")
+
+        if tr is None or Pk is None or t_grid is None:
+            missing = missing_cls_ells if need_to_compute_cls else missing_am_ells
+            raise ValueError(
+                f"Missing data for ells {missing}!\n"
+                f"Please run first with mode='cl' to compute power spectra,\n"
+                f"or ensure tr/Pk/t_grid parameters are passed to compute_all_bispectra_efficient()."
+            )
+
+        # r_list and chi_list are the same in this context
+        r_list = chi_list
+
+        # Temporarily set p.which to which_for_cls for Cls computation
+        original_which = p.which
+
+        # Step 1: Compute Cls if needed (using FG2)
+        if need_to_compute_cls:
+            if p.which in ['F2', 'G2', 'dv2']:
+                p.which = 'FG2'
+            else:
+                p.which = which_for_cls
+
+            print(f"  Computing Cls ({p.which})...")
+            fctr_dict = fctr.fct_of_r_analytical(p, missing_cls_ells, r_list, time_dict,
+                                                  window_args, lterm_list)
+            cp_dict = apply_fftlog_dict(tr['k'], tr['dTdk'] if p.rad else Pk, p, lterm_list)
+            general_ps.compute_integral_generalized(p, missing_cls_ells, chi_list, r_list, t_grid, cp_dict, fctr_dict)
+            print(f"  Cls computed and saved")
+
+        # Step 2: Compute Am/f-coefficient terms if needed (only for F2/G2/dv2)
+        if need_to_compute_am:
+            p.which = original_which
+            print(f"  Computing Am/f-coefficients ({p.which})...")
+            fctr_dict = fctr.fct_of_r_analytical(p, missing_am_ells, r_list, time_dict,
+                                                  window_args, lterm_list)
+            cp_dict = apply_fftlog_dict(tr['k'], tr['dTdk'] if p.rad else Pk, p, lterm_list)
+            general_ps.compute_integral_generalized(p, missing_am_ells, chi_list, r_list, t_grid, cp_dict, fctr_dict)
+            print(f"  Am/f-coefficients computed and saved")
+
+        # Restore original which
+        p.which = original_which
+        print(f"\n  All required data computed and saved to {cls_file}\n")
+
+    with h5py.File(cls_file, 'r') as f:
+        # Get ell_list and chi_list from file
+        # They should be in each group, let's get from first group
+        first_group_name = f'n_{nm_pairs[0][0]}_m_{nm_pairs[0][1]}'
+        if first_group_name not in f:
+            raise ValueError(f"Group {first_group_name} not found in {cls_file}")
+
+        ell_list_file = f[first_group_name]['ell_list'][()]
+        chi_list_file = f[first_group_name]['chi_list'][()]
+
+        # Check if ell_list and chi_list match
+        ell_match = np.array_equal(ell_list_file, ell_list)
+        chi_match = np.array_equal(chi_list_file, chi_list)
+
+        if not ell_match:
+            print(f"  Warning: ell_list mismatch - will extract requested ells from file")
+            print(f"    File has {len(ell_list_file)} ells: [{ell_list_file[0]}, {ell_list_file[-1]}]")
+            print(f"    Requested {len(ell_list)} ells: [{ell_list[0]}, {ell_list[-1]}]")
+
+        if not chi_match:
+            print(f"  Warning: chi_list mismatch - Interpolation needed for chi")
+            print(f"    File has {len(chi_list_file)} chi points: [{chi_list_file[0]:.3f}, {chi_list_file[-1]:.3f}]")
+            print(f"    Requested {len(chi_list)} chi points: [{chi_list[0]:.3f}, {chi_list[-1]:.3f}]")
+
+        # Precompute ell indices once (outside the loop)
+        ell_indices = []
+        for ell in ell_list:
+            idx = np.where(ell_list_file == ell)[0]
+            if len(idx) == 0:
+                print(f"  Warning: ell={ell} not found in file")
+                ell_indices.append(-1)
+            else:
+                ell_indices.append(idx[0])
+        ell_indices = np.array(ell_indices)
+        valid_mask = ell_indices >= 0
+
+        # For each (n,m) pair, sum over lterms
+        for cl_idx, (n, m) in enumerate(nm_pairs):
+            group_name = f'n_{n}_m_{m}'
+
+            if group_name not in f:
+                print(f"  Warning: Group {group_name} not found, skipping")
+                continue
+
+            group = f[group_name]
+
+            # Sum over requested lterms
+            Cl_nm_summed = np.zeros((len(ell_list_file), len(chi_list_file)))
+
+            for lt in lterm_list:
+                if lt in group:
+                    Cl_nm_summed += group[lt][()]
+                else:
+                    print(f"  Warning: Dataset {lt} not found in {group_name}")
+
+            # Extract all requested ells at once using fancy indexing
+            Cl_subset = Cl_nm_summed[ell_indices[valid_mask], :]  # shape (n_valid_ells, n_chi_file)
+
+            # Interpolate all ells at once if needed
+            if not chi_match:
+                # Vectorized interpolation: interpolate all ells simultaneously
+                interp_func = interp1d(chi_list_file, Cl_subset, kind='linear',
+                                      axis=1, bounds_error=False, fill_value=0.0)
+                Cl_array[valid_mask, :, cl_idx] = interp_func(chi_list)
+            else:
+                Cl_array[valid_mask, :, cl_idx] = Cl_subset
+
+    # ========================================================================
+    # Apply stuff normalization for quadratic terms with d2p or d0p
+    # ========================================================================
+    if p.which not in ['F2', 'G2', 'dv2']:
+        # Extract first and second parts
+        which_parts = [p.which[:3], p.which[3:]]  # e.g., ['d2p', 'd2p'] or ['d1v', 'd1d']
+
+        # Get number of nm_pairs for each part to know the Cl_array slicing
+        nm_pairs_counts = [len(general_ps.get_nm_values(wp)) for wp in which_parts]
+        cl_slices = [
+            slice(0, nm_pairs_counts[0]),
+            slice(nm_pairs_counts[0], nm_pairs_counts[0] + nm_pairs_counts[1])
+        ]
+
+        # Apply stuff normalization to each part separately
+        for part_idx, which_part in enumerate(which_parts):
+            if which_part in ['d2p', 'd0p']:
+                stuff = 2.0 / (3.0 * omega_m * H0**2)
+                print(f"  Applying stuff normalization to {which_part}: {stuff:.6e}")
+                cl_slice = cl_slices[part_idx]
+                Cl_array[:, :, cl_slice] /= stuff
+
+    # ========================================================================
+    # 2. Compute A0, A2, A4 kernels for all ells directly on chi_list
+    # ========================================================================
+    print("  Computing A0, A2, A4 kernels for all ells at once...")
+    # Compute for all ells at once (no loop needed!)
+    kernels = fctr.get_bispectrum_kernels_analytical(p, ell_list, chi_list, time_dict,
+                                                      window_args=window_args, W_derivs_list=W_derivs_list)
+
+    # A0: shape (n_ell, n_components, n_chi)
+    # For F2: use analytical A0
+    # For G2/dv2: will be filled with f^(0) from file below
+    # For quadratic terms: only need A00, extract later
+    if p.which == 'F2':
+        A0 = kernels['A0']
+        n_A0_comp = A0.shape[1]
+        # Copy A00
+        kernels_array[:, :, 0] = A0[:, 0, :]
+        # A01 = -A00/2
+        kernels_array[:, :, 1] = -kernels_array[:, :, 0] / 2.
+        # Copy remaining components (A02, A03 if present)
+        for comp in range(2, n_A0_comp):
+            kernels_array[:, :, comp] = A0[:, comp, :]
+
+    # A2 and A4 (only for F2/G2/dv2)
+    if p.which in ['F2', 'G2', 'dv2'] and kernels['A2'] is not None and kernels['A4'] is not None:
+        A2 = kernels['A2']  # shape (n_ell, 2, n_chi)
+        A4 = kernels['A4']  # shape (n_ell, 1, n_chi)
+
+        # A2: 2 components
+        for comp in range(2):
+            kernels_array[:, :, 4+comp] = A2[:, comp, :]
+
+        # A4: 1 component
+        kernels_array[:, :, 6] = A4[:, 0, :]
+    
+    # ========================================================================
+    # 4. Load f-coefficient terms from HDF5 (F2/G2/dv2 only)
+    # ========================================================================
+    if p.which in ['F2', 'G2', 'dv2']:
+        cls_file = f"{output_dir}Cls.h5"
+
+        # For G2/dv2: Always need f^(0) (goes to A0 slots 0-2)
+        # For F2: Only need f^(-2) and f^(-4) if Newton=0 (goes to Am slots 7-11)
+        if p.which in ['G2', 'dv2'] or not p.Newton:
+            print("  Loading f-coefficient terms from HDF5...")
+            try:
+                with h5py.File(cls_file, 'r') as f:
+                    if p.which not in f:
+                        raise KeyError(f"Group {p.which} not found")
+
+                    group = f[p.which]
+                    ell_list_file = group['ell_list'][()]
+                    chi_list_file = group['chi_list'][()]
+
+                    # Check which ells are missing
+                    missing_ells = [ell for ell in ell_list if ell not in ell_list_file]
+                    if missing_ells:
+                        raise KeyError(f"ells {missing_ells} not found")
+
+                    # Extract for each ell and interpolate to chi_list
+                    chi_match = np.array_equal(chi_list_file, chi_list)
+
+                    for i, ell in enumerate(ell_list):
+                        ell_idx = np.where(ell_list_file == ell)[0][0]
+
+                        if p.which in ['G2', 'dv2']:
+                            # Load f^(0) directly into A0 slots (0-2)
+                            f0_data = group['f0'][()]  # shape: (n_components, n_ell_file, n_chi_file)
+                            f0_comp1 = f0_data[0, ell_idx, :]  # f_{0,0}
+                            f0_comp2 = f0_data[1, ell_idx, :]  # second component
+
+                            if not chi_match:
+                                interp_func = interp1d(chi_list_file, f0_comp1, kind='linear',
+                                                      bounds_error=False, fill_value=0.0)
+                                kernels_array[i, :, 0] = interp_func(chi_list)  # A00
+                                kernels_array[i, :, 1] = -kernels_array[i, :, 0] / 2.  # A01 = -f_{0,0}/2
+
+                                interp_func = interp1d(chi_list_file, f0_comp2, kind='linear',
+                                                      bounds_error=False, fill_value=0.0)
+                                kernels_array[i, :, 2] = interp_func(chi_list)  # A02
+                            else:
+                                kernels_array[i, :, 0] = f0_comp1
+                                kernels_array[i, :, 1] = -f0_comp1 / 2.
+                                kernels_array[i, :, 2] = f0_comp2
+
+                            # If Newton=0, also load f^(-2) into Am slots (7-9, same as F2)
+                            if not p.Newton:
+                                fm2_data = group['fm2'][()]
+                                fm2_comp1 = fm2_data[0, ell_idx, :]  # Only one component for G2/dv2
+
+                                if not chi_match:
+                                    interp_func = interp1d(chi_list_file, fm2_comp1, kind='linear',
+                                                          bounds_error=False, fill_value=0.0)
+                                    kernels_array[i, :, 7] = interp_func(chi_list)  # Am1
+                                    kernels_array[i, :, 8] = -kernels_array[i, :, 7] / 2.  # Am2
+                                    # kernels_array[i, :, 9] remains zero (no Am3 for G2/dv2)
+                                else:
+                                    kernels_array[i, :, 7] = fm2_comp1
+                                    kernels_array[i, :, 8] = -fm2_comp1 / 2.
+                                    # kernels_array[i, :, 9] remains zero
+
+                        else:  # F2 with Newton=0
+                            # Load f^(-2) into Am slots (7-9)
+                            fm2_data = group['fm2'][()]
+                            fm2_comp1 = fm2_data[0, ell_idx, :]
+                            fm2_comp2 = fm2_data[1, ell_idx, :]
+
+                            if not chi_match:
+                                interp_func = interp1d(chi_list_file, fm2_comp1, kind='linear',
+                                                      bounds_error=False, fill_value=0.0)
+                                kernels_array[i, :, 7] = interp_func(chi_list)  # Am1
+                                kernels_array[i, :, 8] = -kernels_array[i, :, 7] / 2.  # Am2
+
+                                interp_func = interp1d(chi_list_file, fm2_comp2, kind='linear',
+                                                      bounds_error=False, fill_value=0.0)
+                                kernels_array[i, :, 9] = interp_func(chi_list)  # Am3
+                            else:
+                                kernels_array[i, :, 7] = fm2_comp1
+                                kernels_array[i, :, 8] = -fm2_comp1 / 2.
+                                kernels_array[i, :, 9] = fm2_comp2
+
+                            # Load f^(-4) into Am slots (10-11)
+                            fm4_data = group['fm4'][()]
+                            fm4_comp1 = fm4_data[0, ell_idx, :]
+
+                            if not chi_match:
+                                interp_func = interp1d(chi_list_file, fm4_comp1, kind='linear',
+                                                      bounds_error=False, fill_value=0.0)
+                                kernels_array[i, :, 10] = interp_func(chi_list)  # Am4
+                                kernels_array[i, :, 11] = -kernels_array[i, :, 10] / 2.  # Am5
+                            else:
+                                kernels_array[i, :, 10] = fm4_comp1
+                                kernels_array[i, :, 11] = -fm4_comp1 / 2.
+
+            except (FileNotFoundError, KeyError) as e:
+                # If we get here, it means the data should have been computed in the section above
+                # but something went wrong. Raise a clear error.
+                raise RuntimeError(
+                    f"f-coefficient data not found: {e}\n"
+                    f"This should have been computed automatically. Check that tr/Pk/t_grid were provided."
+                ) from e
+
+    # ========================================================================
+    # 5. Precompute combined coefficients for efficient integration
+    # ========================================================================
+    print("  Precomputing angular coefficient combinations...")
+
+    if p.which in ['F2', 'G2', 'dv2']:
+        # F2/G2/dv2: 4 angular combinations from the integrand formula
+        # coeff_00: for Cl2(0,0)*Cl3(0,0)
+        # coeff_m2m2: for Cl2(-2,0)*Cl3(-2,0)
+        # coeff_p2m2: for (Cl2(2,0)*Cl3(-2,0) + Cl2(-2,0)*Cl3(2,0))
+        # coeff_0m2: for (Cl2(0,0)*Cl3(-2,0) + Cl3(0,0)*Cl2(-2,0))
+
+        coeffs = np.zeros((n_ell, n_chi, 4))
+
+        # Base: A0, A2, A4 contributions (now unified for all cases!)
+        coeffs[:, :, 0] = kernels_array[:, :, 0]  # A00 for Cl(0,0)*Cl(0,0)
+        coeffs[:, :, 1] = kernels_array[:, :, 3] + kernels_array[:, :, 5] + kernels_array[:, :, 6]  # A03 + A21 + A40 for Cl(-2,0)*Cl(-2,0)
+        coeffs[:, :, 2] = kernels_array[:, :, 1]  # A01 for (Cl(2,0)*Cl(-2,0) + Cl(-2,0)*Cl(2,0))
+        coeffs[:, :, 3] = kernels_array[:, :, 2] + kernels_array[:, :, 4]  # A02 + A20 for (Cl(0,0)*Cl(-2,0) + Cl(0,0)*Cl(-2,0))
+
+        # Add Am contributions (f^(-2) and f^(-4) terms)
+        # Unified formula for F2, G2, dv2!
+        # - F2: Am1-Am3 contain f^(-2), Am4-Am5 contain f^(-4)
+        # - G2/dv2: Am1-Am2 contain f^(-2), Am3 is zero, Am4-Am5 are zero
+        if not p.Newton or (p.Newton and p.which != 'F2'):
+            coeffs[:, :, 0] += kernels_array[:, :, 7] + kernels_array[:, :, 10]  # Am1 + Am4 for Cl_0*Cl_0
+            coeffs[:, :, 2] += kernels_array[:, :, 8] + kernels_array[:, :, 11]  # Am2 + Am5 for (Cl_p2*Cl_m2 + Cl_m2*Cl_p2)
+            coeffs[:, :, 3] += kernels_array[:, :, 9]  # Am3 for (Cl_0*Cl_m2 + Cl_0*Cl_m2)
+
+    else:
+        # Quadratic terms: only need A00
+        # Integrand is: A00 * Cl2 * Cl3 (for d2vd2v) or A00 * (Cl2_1*Cl3_2 + Cl3_1*Cl2_2) (for others)
+        # Pad to 4 components for compatibility with integration function (last 3 are zeros)
+        coeffs = np.zeros((n_ell, n_chi, 4))
+        A0 = kernels['A0']
+        coeffs[:, :, 0] = A0[:, 0, :]  # A00 (only non-zero component)
+
+    # Return combined coefficients instead of individual kernels
+    return Cl_array, coeffs
+
+    #    # Load Il terms (radiation)
+    #    if not p.Newton and p.rad:
+    #        print("  Loading Il terms from HDF5...")
+    #        try:
+    #            with h5py.File(cls_file, 'r') as f:
+    #                group = f[p.which]
+    #                ell_list_file = group['ell_list'][()]
+    #                chi_list_file = group['chi_list'][()]
+
+    #                missing_ells = [ell for ell in ell_list if ell not in ell_list_file]
+    #                if missing_ells:
+    #                    raise KeyError(f"ells {missing_ells} not found")
+
+    #                fm2_rad = group['fm2_rad'][()]
+    #                fm4_rad = group['fm4_rad'][()]
+
+    #                for i, ell in enumerate(ell_list):
+    #                    ell_idx = np.where(ell_list_file == ell)[0][0]
+
+    #                    Il_tab = np.zeros((len(chi_list_file), 5))
+    #                    Il_tab[:, 0] = chi_list_file
+    #                    Il_tab[:, 1] = fm2_rad[0, ell_idx, :]
+    #                    Il_tab[:, 2] = -Il_tab[:, 1] / 2.
+    #                    Il_tab[:, 3] = fm4_rad[0, ell_idx, :]
+    #                    Il_tab[:, 4] = -Il_tab[:, 3] / 2.
+
+    #                    # Interpolate Il terms onto chi_list
+    #                    for col in range(1, 5):
+    #                        interp_func = interp1d(Il_tab[:, 0], Il_tab[:, col], kind='linear',
+    #                                               bounds_error=False, fill_value=0.0)
+    #                        kernels_array[i, :, 11+col] = interp_func(chi_list)  # Slots 12-15
+
+    #        except (FileNotFoundError, KeyError) as e:
+    #            print(f"  Il data not found ({e}), computing...")
+    #            general_ps.compute_integral_F2_G2_dv2(p, ell_list, chi_list,
+    #                                                  time_dict['r_list'], time_dict, {}, {})
+    #            # Retry loading
+    #            with h5py.File(cls_file, 'r') as f:
+    #                group = f[p.which]
+    #                ell_list_file = group['ell_list'][()]
+    #                chi_list_file = group['chi_list'][()]
+
+    #                fm2_rad = group['fm2_rad'][()]
+    #                fm4_rad = group['fm4_rad'][()]
+
+    #                for i, ell in enumerate(ell_list):
+    #                    ell_idx = np.where(ell_list_file == ell)[0][0]
+
+    #                    Il_tab = np.zeros((len(chi_list_file), 5))
+    #                    Il_tab[:, 0] = chi_list_file
+    #                    Il_tab[:, 1] = fm2_rad[0, ell_idx, :]
+    #                    Il_tab[:, 2] = -Il_tab[:, 1] / 2.
+    #                    Il_tab[:, 3] = fm4_rad[0, ell_idx, :]
+    #                    Il_tab[:, 4] = -Il_tab[:, 3] / 2.
+
+    #                    for col in range(1, 5):
+    #                        interp_func = interp1d(Il_tab[:, 0], Il_tab[:, col], kind='linear',
+    #                                               bounds_error=False, fill_value=0.0)
+    #                        kernels_array[i, :, 11+col] = interp_func(chi_list)
+
+    return Cl_array, kernels_array
+
+
+@njit
+def simpson_weights(n):
+    """Generate Simpson's rule weights for n points"""
+    if n < 3:
+        raise ValueError("Need at least 3 points for Simpson's rule")
+
+    w = np.ones(n)
+    w[1:-1:2] = 4.0
+    w[2:-1:2] = 2.0
+
+    # Handle even n
+    if n % 2 == 0:
+        w[-2] = 1.0
+        w[-1] = 1.0
+
+    return w
+
+
+@njit(parallel=True)
+def compute_bispectrum_quadratic(ell_array, Cl_array, coeffs,
+                                chi_list, triplet_list, apply_sign, is_symmetric):
+    """
+    Efficient parallel computation for quadratic terms (d2vd2v, d1vd1d, etc.)
+
+    Parameters:
+    -----------
+    ell_array : (n_ell,) - ell values
+    Cl_array : (n_ell, n_chi, 2) - [Cl_1, Cl_2] for the two parts of quadratic term
+    coeffs : (n_ell, n_chi, 4) - Precomputed angular coefficients (only first component used)
+    chi_list : (n_chi,) - chi values
+    triplet_list : (n_triplets, 3) - indices into ell_array for (ell1, ell2, ell3)
+    apply_sign : bool - if True, multiply result by -1
+    is_symmetric : bool - True for d2vd2v where both parts are the same
+
+    Returns:
+    --------
+    results : (n_triplets,) - bispectrum values
+    """
+    n_triplets = triplet_list.shape[0]
+    n_chi = len(chi_list)
+    results = np.zeros(n_triplets)
+
+    # Simpson weights
+    dchi = chi_list[1] - chi_list[0]
+    simp_w = simpson_weights(n_chi)
+
+    for idx in prange(n_triplets):
+        i1, i2, i3 = triplet_list[idx, 0], triplet_list[idx, 1], triplet_list[idx, 2]
+
+        # Extract Cls for this triplet
+        if is_symmetric:
+            # d2vd2v case: Cl_array[:, :, 0] == Cl_array[:, :, 1]
+            Cl1 = Cl_array[i1, :, 0]
+            Cl2 = Cl_array[i2, :, 0]
+            Cl3 = Cl_array[i3, :, 0]
+
+            # Extract A00 coefficients
+            A00_1 = coeffs[i1, :, 0]
+            A00_2 = coeffs[i2, :, 0]
+            A00_3 = coeffs[i3, :, 0]
+
+            # Integrand: A00 * Cl * Cl for each permutation
+            term1 = A00_1 * Cl2 * Cl3
+            term2 = A00_2 * Cl1 * Cl3
+            term3 = A00_3 * Cl1 * Cl2
+        else:
+            # Other quadratic terms: need both Cl components
+            Cl1_1, Cl1_2 = Cl_array[i1, :, 0], Cl_array[i1, :, 1]
+            Cl2_1, Cl2_2 = Cl_array[i2, :, 0], Cl_array[i2, :, 1]
+            Cl3_1, Cl3_2 = Cl_array[i3, :, 0], Cl_array[i3, :, 1]
+
+            # Extract A00 coefficients
+            A00_1 = coeffs[i1, :, 0]
+            A00_2 = coeffs[i2, :, 0]
+            A00_3 = coeffs[i3, :, 0]
+
+            # Integrand: A00 * (Cl_1 * Cl_2 + Cl_2 * Cl_1) for each permutation
+            term1 = A00_1 * (Cl2_1 * Cl3_2 + Cl2_2 * Cl3_1)
+            term2 = A00_2 * (Cl1_1 * Cl3_2 + Cl1_2 * Cl3_1)
+            term3 = A00_3 * (Cl1_1 * Cl2_2 + Cl1_2 * Cl2_1)
+
+        integrand = term1 + term2 + term3
+
+        # Integrate using Simpson's rule
+        integral = np.sum(integrand * simp_w) * dchi / 3.0
+
+        # Apply normalization and optional sign
+        result = integral * 8.0 / (np.pi**2)
+        if apply_sign:
+            result *= -1.0
+
+        results[idx] = result
+
+    return results
+
+
+@njit(parallel=True)
+def compute_bispectrum_parallel_efficient(ell_array, Cl_array, coeffs,
+                                         chi_list, triplet_list, apply_sign):
+    """
+    Efficient parallel computation using precomputed angular coefficients.
+
+    Parameters:
+    -----------
+    ell_array : (n_ell,) - ell values
+    Cl_array : (n_ell, n_chi, 3) - [Cl_m2, Cl_0, Cl_p2] (indices 0,1,2 for nm_pairs [(-2,0), (0,0), (2,0)])
+    coeffs : (n_ell, n_chi, 4) - Precomputed angular coefficients [c_00, c_m2m2, c_p2m2, c_0m2]
+    chi_list : (n_chi,) - chi values
+    triplet_list : (n_triplets, 3) - indices into ell_array for (ell1, ell2, ell3)
+    apply_sign : bool - if True, multiply result by -1
+
+    Returns:
+    --------
+    results : (n_triplets,) - bispectrum values
+    """
+    n_triplets = triplet_list.shape[0]
+    n_chi = len(chi_list)
+    results = np.zeros(n_triplets)
+
+    # Simpson weights
+    dchi = chi_list[1] - chi_list[0]  # Assume uniform spacing
+    simp_w = simpson_weights(n_chi)
+
+    for idx in prange(n_triplets):
+        i1, i2, i3 = triplet_list[idx, 0], triplet_list[idx, 1], triplet_list[idx, 2]
+
+        # Extract Cls for this triplet (nm_pairs order: [(-2,0), (0,0), (2,0)])
+        Cl1_m2, Cl1_0, Cl1_p2 = Cl_array[i1, :, 0], Cl_array[i1, :, 1], Cl_array[i1, :, 2]
+        Cl2_m2, Cl2_0, Cl2_p2 = Cl_array[i2, :, 0], Cl_array[i2, :, 1], Cl_array[i2, :, 2]
+        Cl3_m2, Cl3_0, Cl3_p2 = Cl_array[i3, :, 0], Cl_array[i3, :, 1], Cl_array[i3, :, 2]
+
+        # Extract precomputed coefficients (4 components now)
+        c1_00, c1_m2m2, c1_p2m2, c1_0m2 = coeffs[i1, :, 0], coeffs[i1, :, 1], coeffs[i1, :, 2], coeffs[i1, :, 3]
+        c2_00, c2_m2m2, c2_p2m2, c2_0m2 = coeffs[i2, :, 0], coeffs[i2, :, 1], coeffs[i2, :, 2], coeffs[i2, :, 3]
+        c3_00, c3_m2m2, c3_p2m2, c3_0m2 = coeffs[i3, :, 0], coeffs[i3, :, 1], coeffs[i3, :, 2], coeffs[i3, :, 3]
+
+        # Compute integrand for all three permutations (vectorized!)
+        # Using formula: A00*Cl_0*Cl_0 + (A03+A21+A40)*Cl_m2*Cl_m2 + A01*(Cl_p2*Cl_m2+Cl_m2*Cl_p2) + (A02+A20)*(Cl_0*Cl_m2+Cl_0*Cl_m2)
+
+        # Permutation 1: kernels from ell1, Cls from ell2 and ell3
+        term1 = c1_00 * Cl2_0 * Cl3_0 \
+              + c1_m2m2 * Cl2_m2 * Cl3_m2 \
+              + c1_p2m2 * (Cl2_p2 * Cl3_m2 + Cl2_m2 * Cl3_p2) \
+              + c1_0m2 * (Cl2_0 * Cl3_m2 + Cl3_0 * Cl2_m2)
+
+        # Permutation 2: kernels from ell2, Cls from ell1 and ell3
+        term2 = c2_00 * Cl1_0 * Cl3_0 \
+              + c2_m2m2 * Cl1_m2 * Cl3_m2 \
+              + c2_p2m2 * (Cl1_p2 * Cl3_m2 + Cl1_m2 * Cl3_p2) \
+              + c2_0m2 * (Cl1_0 * Cl3_m2 + Cl3_0 * Cl1_m2)
+
+        # Permutation 3: kernels from ell3, Cls from ell1 and ell2
+        term3 = c3_00 * Cl1_0 * Cl2_0 \
+              + c3_m2m2 * Cl1_m2 * Cl2_m2 \
+              + c3_p2m2 * (Cl1_p2 * Cl2_m2 + Cl1_m2 * Cl2_p2) \
+              + c3_0m2 * (Cl1_0 * Cl2_m2 + Cl2_0 * Cl1_m2)
+
+        integrand = term1 + term2 + term3
+
+        # Integrate using Simpson's rule
+        integral = np.sum(integrand * simp_w) * dchi / 3.0
+
+        # Apply normalization and optional sign
+        result = integral * 8.0 / (np.pi**2)
+        if apply_sign:
+            result *= -1.0
+
+        results[idx] = result
+
+    return results
+
+
+def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
+                                     W_derivs_list=None, tr=None, Pk=None, t_grid=None):
+    """
+    Efficient computation of all bispectra for ell_list.
+
+    This function:
+    1. Loads all required data once (Cls, Am, Il, A0, A2, A4)
+    2. Generates all valid triplets
+    3. Parallelizes computation over triplets using numba
+    4. Saves results to HDF5
+
+    Parameters:
+    -----------
+    p : Param object with .which, .Newton, .rad
+    ell_list : list - ell values
+    time_dict : dict - cosmological functions
+    chi_list : array - chi values for integration
+    window_args : tuple - (r0, ddr, normW)
+    W_derivs_list : list of arrays, optional
+        Precomputed window derivatives. If None, will be computed from window_args.
+    """
+
+    print(f"="*70)
+    print(f"Computing bispectrum for ell_list={ell_list}, which={p.which}")
+    print(f"="*70)
+
+    # Determine which_code for numba
+    which_codes = {'F2': 0, 'G2': 1, 'dv2': 2}
+    if p.which in which_codes:
+        which_code = which_codes[p.which]
+    else:
+        which_code = -1
+
+    # Determine if sign flip needed
+    apply_sign = p.which in ['G2', 'd2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v']
+
+    # ========================================================================
+    # 2. Load all data once
+    # ========================================================================
+    start_time = time.time()
+    Cl_array, coeffs = load_and_compute_all_terms(
+                        p, ell_list, chi_list, time_dict, window_args, lterm_list,
+                        W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+    print(f"Data loading completed in {time.time()-start_time:.2f} seconds")
+
+    # Create ell to index mapping
+    ell_to_idx = {ell: i for i, ell in enumerate(ell_list)}
+
+    # ========================================================================
+    # 3. Generate triplet list and compute Wigner 3j symbols
+    # ========================================================================
+    config = p.configuration
+    print(f"Generating triplets for {len(ell_list)} ells (configuration: {config})...")
+    triplets = []
+    wigner_values = []
+
+    # Configuration-based triplet filtering
+    if config == 'equi':
+        # Equilateral: ell1 = ell2 = ell3
+        for i, ell in enumerate(ell_list):
+            wigner_test = float(wigner_3j(int(ell), int(ell), int(ell), 0, 0, 0))
+            if wigner_test != 0:
+                triplets.append([i, i, i])
+                wigner_values.append(wigner_test)
+        config_name = 'equilateral'
+
+    elif config == 'squ':
+        # Squeezed: ell1 fixed, ell2 = ell3 varying
+        ell1_fixed = p.ell
+        if ell1_fixed not in ell_list:
+            print(f"Warning: ell1={ell1_fixed} not in ell_list, no triplets generated")
+        else:
+            i1 = ell_to_idx[ell1_fixed]
+            for i23, ell23 in enumerate(ell_list):
+                # Triangle inequality
+                if ell23 < abs(ell1_fixed - ell23) or ell23 > ell1_fixed + ell23:
                     continue
-    
-                evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi,\
-                                time_dict['r_list'], A0_tab_ell1_arg, A2_tab_ell1, A4_tab_ell1, Am_tab_ell1, Il_tab_ell1)\
-                          +final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl1_1_chi, Cl3_1_chi, Cl1_2_chi, Cl3_2_chi,\
-                                time_dict['r_list'], A0_tab_ell2_arg, A2_tab_ell2, A4_tab_ell2, Am_tab_ell2, Il_tab_ell2)\
-                          +final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2_1_chi, Cl1_1_chi, Cl2_2_chi, Cl1_2_chi,\
-                                time_dict['r_list'], A0_tab_ell3_arg, A2_tab_ell3, A4_tab_ell3, Am_tab_ell3, Il_tab_ell3)
-    
-                val=simpson(evaluation.T, x=time_dict['r_list'])
+                wigner_test = float(wigner_3j(int(ell1_fixed), int(ell23), int(ell23), 0, 0, 0))
+                if wigner_test != 0:
+                    triplets.append([i1, i23, i23])
+                    wigner_values.append(wigner_test)
+        config_name = f'squeezed_ell{ell1_fixed}'
 
-                #if which in ['G2', 'd2vd0d', 'd1vd1d', 'd1vd2v', 'd0pd1d', 'd1vd2p', 'davd1v']:
-                if which in ['G2', 'd2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v']:
-                    val*=-1
+    elif config == 'folded':
+        # Folded: ell1 = ellmax, ell2 = ell3 varying
+        ell1_fixed = p.ellmax
+        if ell1_fixed not in ell_list:
+            print(f"Warning: ellmax={ell1_fixed} not in ell_list, no triplets generated")
+        else:
+            i1 = ell_to_idx[ell1_fixed]
+            for i23, ell23 in enumerate(ell_list):
+                # Triangle inequality
+                if ell23 < abs(ell1_fixed - ell23) or ell23 > ell1_fixed + ell23:
+                    continue
+                wigner_test = float(wigner_3j(int(ell1_fixed), int(ell23), int(ell23), 0, 0, 0))
+                if wigner_test != 0:
+                    triplets.append([i1, i23, i23])
+                    wigner_values.append(wigner_test)
+        config_name = f'folded_ell{ell1_fixed}'
 
-                # The factor 2/pi in the def of Cl is not included in general_ps. We also add here the factor 2
+    else:
+        # All configurations: generate all valid triplets
+        for i1, ell1 in enumerate(ell_list):
+            for i2, ell2 in enumerate(ell_list):
+                if ell2 < ell1:  # Only compute ell2 >= ell1 to avoid duplicates
+                    continue
+                for i3, ell3 in enumerate(ell_list):
+                    if ell3 < ell2:  # Only compute ell3 >= ell2
+                        continue
+                    # Triangle inequality: |ell1 - ell2| <= ell3 <= ell1 + ell2
+                    if ell3 < abs(ell1 - ell2) or ell3 > ell1 + ell2:
+                        continue
 
+                    # Convert to Python int for wigner_3j (which doesn't accept numpy integers)
+                    wigner_test = float(wigner_3j(int(ell1), int(ell2), int(ell3), 0, 0, 0))
+                    if wigner_test != 0:
+                        triplets.append([i1, i2, i3])
+                        wigner_values.append(wigner_test)
+        config_name = ''
 
-    
-                # Store results directly into the HDF5 datasets
-                bl[ind] = val*8./np.pi**2
-                wigner[ind] = wigner_test
-    
-                #if ind % 1000 == 0:
-                #    a=time.time()
-                #    # Save every 1000 iterations for persistence
-                #    with FileLock(lock_path): 
-                #        with h5py.File(file_path, "a") as f:
+    n_triplets = len(triplets)
+    print(f"Valid triplets (non-zero Wigner): {n_triplets}")
 
-                #            f[f"bl_ell{ell1}"][:]=bl
-                #            f[f"wigner_ell{ell1}"][:]=wigner
-                #            f.flush()  # Ensure data is written to disk
-                #    print('save: ', time.time()-a)
-        
-            ind += 1
+    if n_triplets == 0:
+        print("No valid triplets, exiting...")
+        return
 
-    with FileLock(lock_path): 
+    triplet_array = np.array(triplets, dtype=np.int64)
+    wigner_array = np.array(wigner_values)
+
+    # ========================================================================
+    # 4. Compute bispectra in parallel
+    # ========================================================================
+    print(f"Computing bispectra in parallel...")
+    start_time = time.time()
+
+    if p.which in ['F2', 'G2', 'dv2']:
+        # F2/G2/dv2: use full integration with 4 angular coefficients
+        bl_results = compute_bispectrum_parallel_efficient(
+            ell_list, Cl_array, coeffs,
+            chi_list, triplet_array, apply_sign
+        )
+    else:
+        # Quadratic terms: use simpler integration
+        is_symmetric = (p.which[:3] == p.which[3:])  # True for d2vd2v, False for d1vd1d, etc.
+        bl_results = compute_bispectrum_quadratic(
+            ell_list, Cl_array, coeffs,
+            chi_list, triplet_array, apply_sign, is_symmetric
+        )
+
+    print(f"Computation completed in {time.time()-start_time:.2f} seconds")
+
+    # ========================================================================
+    # 5. Save results to HDF5
+    # ========================================================================
+    # Construct output file name
+    if p.rad and p.which in ['F2', 'G2', 'dv2']:
+        name_suffix = '_rad'
+    elif p.Newton:
+        name_suffix = '_newton'
+    else:
+        name_suffix = ''
+
+    # Use same file regardless of configuration
+    file_path = f"{p.output_dir}bl/bl_{p.lterm}_{p.which}{name_suffix}.h5"
+    lock_path = f"{file_path}.lock"
+
+    print(f"Saving results to {file_path}...")
+
+    with FileLock(lock_path):
         with h5py.File(file_path, "a") as f:
+            # Determine group name based on configuration
+            group_name = config_name if config_name else 'all'
 
-            f[f"bl_ell{ell1}"][:]=bl
-            f[f"wigner_ell{ell1}"][:]=wigner
- 
-            # Ensure all data is saved at the end
+            # Delete existing group if it exists
+            if group_name in f:
+                del f[group_name]
+
+            # Create group
+            grp = f.create_group(group_name)
+
+            # Save based on configuration type
+            if config == 'equi':
+                # Equilateral: ell1=ell2=ell3, just store the unique ell values
+                ell_array = [ell_list[triplets[i][0]] for i in range(len(triplets))]
+                grp.create_dataset('ell', data=np.array(ell_array))
+                grp.create_dataset('bl', data=np.array(bl_results))
+                grp.create_dataset('wigner', data=np.array(wigner_values))
+                print(f"  Saved {len(triplets)} equilateral triplets in group '{group_name}'")
+
+            elif config in ['squ', 'folded']:
+                # Squeezed/Folded: ell1 fixed, ell2=ell3 varying
+                ell1_fixed = ell_list[triplets[0][0]]
+                ell23_array = [ell_list[triplets[i][1]] for i in range(len(triplets))]
+                grp.create_dataset('ell1', data=ell1_fixed)
+                grp.create_dataset('ell23', data=np.array(ell23_array))
+                grp.create_dataset('bl', data=np.array(bl_results))
+                grp.create_dataset('wigner', data=np.array(wigner_values))
+                print(f"  Saved {len(triplets)} {config} triplets with ell1={ell1_fixed} in group '{group_name}'")
+
+            else:
+                # All configurations: need full triplet specification
+                ell1_array = [ell_list[triplets[i][0]] for i in range(len(triplets))]
+                ell2_array = [ell_list[triplets[i][1]] for i in range(len(triplets))]
+                ell3_array = [ell_list[triplets[i][2]] for i in range(len(triplets))]
+                grp.create_dataset('ell1', data=np.array(ell1_array))
+                grp.create_dataset('ell2', data=np.array(ell2_array))
+                grp.create_dataset('ell3', data=np.array(ell3_array))
+                grp.create_dataset('bl', data=np.array(bl_results))
+                grp.create_dataset('wigner', data=np.array(wigner_values))
+                print(f"  Saved {len(triplets)} triplets in group '{group_name}'")
+
             f.flush()
 
+    print(f"Done! Results saved to {file_path}")
 
-def spherical_bispectrum(which, Newton, rad, lterm, ell1, ell2, ell3, time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, Nk, kmax, kmin):
-    '''
-        '''
-
-    wigner_test = float(wigner_3j(ell1, ell2, ell3, 0,0,0))
-
-    if wigner_test==0:
-        return 0., 0.
-    else:
-
-        Cl1_1_chi, Cl1_2_chi = get_cl(which, Newton, lterm, ell1, time_dict)
-        Cl2_1_chi, Cl2_2_chi = get_cl(which, Newton, lterm, ell2, time_dict)
-        Cl3_1_chi, Cl3_2_chi = get_cl(which, Newton, lterm, ell3, time_dict)
-
-        A0_tab_ell1, A2_tab_ell1, A4_tab_ell1, Am_tab_ell1, Il_tab_ell1 \
-            = get_kernels(ell1, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
-                            rmax, cp_tr, b, Nk, kmax, kmin)
-
-        A0_tab_ell2, A2_tab_ell2, A4_tab_ell2, Am_tab_ell2, Il_tab_ell2 \
-            = get_kernels(ell2, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
-                            rmax, cp_tr, b, Nk, kmax, kmin)
-
-        A0_tab_ell3, A2_tab_ell3, A4_tab_ell3, Am_tab_ell3, Il_tab_ell3 \
-            = get_kernels(ell3, Newton, rad, which, chi_list, time_dict, r0, ddr, normW, rmin,\
-                            rmax, cp_tr, b, Nk, kmax, kmin)
-        if 'dav' in which:
-            A0_tab_ell1_arg = A0_tab_ell1*Al123(ell1, ell2, ell3)*np.sqrt(ell2*(ell2+1.)*ell3*(ell3+1.))
-            A0_tab_ell2_arg = A0_tab_ell2*Al123(ell2, ell1, ell3)*np.sqrt(ell1*(ell1+1.)*ell3*(ell3+1.))
-            A0_tab_ell3_arg = A0_tab_ell3*Al123(ell3, ell2, ell1)*np.sqrt(ell2*(ell2+1.)*ell1*(ell1+1.))
-        else:
-            A0_tab_ell1_arg = A0_tab_ell1
-            A0_tab_ell2_arg = A0_tab_ell2
-            A0_tab_ell3_arg = A0_tab_ell3
-
-        evaluation=final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2_1_chi, Cl3_1_chi, Cl2_2_chi, Cl3_2_chi,\
-                                time_dict['r_list'], A0_tab_ell1_arg, A2_tab_ell1, A4_tab_ell1, Am_tab_ell1, Il_tab_ell1)\
-                          +final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl1_1_chi, Cl3_1_chi, Cl1_2_chi, Cl3_2_chi,\
-                                time_dict['r_list'], A0_tab_ell2_arg, A2_tab_ell2, A4_tab_ell2, Am_tab_ell2, Il_tab_ell2)\
-                          +final_integrand(time_dict['r_list'][:,None], which, Newton, rad, Cl2_1_chi, Cl1_1_chi, Cl2_2_chi, Cl1_2_chi,\
-                                time_dict['r_list'], A0_tab_ell3_arg, A2_tab_ell3, A4_tab_ell3, Am_tab_ell3, Il_tab_ell3)
-        val=simpson(evaluation.T, x=time_dict['r_list'])
-
-        #if which in ['G2', 'd2vd0d', 'd1vd1d', 'd1vd2v', 'd0pd1d', 'd1vd2p', 'davd1v']:
-        if which in ['G2', 'd2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v']:
-            val*=-1
-
-        # The factor 2/pi in the def of Cl is not included in general_ps. We also add here the factor 2
-        return val*8./np.pi**2, wigner_test

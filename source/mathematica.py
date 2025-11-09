@@ -425,11 +425,6 @@ def myhyp21(nu_p, t, chi, ell, t1min):
 
 @njit
 def I_nacked(nu_p, t, ell):
-    '''
-    returns the result of 4pi * \int dk k**(nu-1) jl(k*chi)jl(k*r) = chi**(-nu_p) * I_Assassi_Simonovic_Zaldarriaga
-                                                                   = 2pi^2 / r^2 * I_me
-    '''
-
     if t.real>1:
         fact=t**(-nu_p)
         t=1./t

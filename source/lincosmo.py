@@ -79,17 +79,18 @@ def growth_fct():
         Ha[ind]=H_(zi)
         Oma[ind]=Om_(zi)
 
+    mask = np.logical_and(ra[::-1]>100, ra[::-1]<8000) # unphysical small distances, avoid spline error
     dHa = dotH_(1./apy[::-1]-1.)
-    return {'a'  : apy[::-1],\
-            'ra' : ra[::-1],\
-            'Ha' : Ha[::-1],\
-            'Oma': Oma[::-1],\
-            'Da' : Dpy[::-1],\
-            'fa' : fpy[::-1],\
-            'va' : vpy[::-1],\
-            'wa' : wpy[::-1],\
-            'dHa': dHa,\
-            'mathcalR': dHa/Ha[::-1]**2+2./Ha[::-1]/ra[::-1]}
+    return {'a'  : apy[::-1][mask],\
+            'ra' : ra[::-1][mask],\
+            'Ha' : Ha[::-1][mask],\
+            'Oma': Oma[::-1][mask],\
+            'Da' : Dpy[::-1][mask],\
+            'fa' : fpy[::-1][mask],\
+            'va' : vpy[::-1][mask],\
+            'wa' : wpy[::-1][mask],\
+            'dHa': dHa[mask],\
+            'mathcalR': (dHa/Ha[::-1]**2+2./Ha[::-1]/ra[::-1])[mask]}
 
 
 ############################################################################# power spectrum
