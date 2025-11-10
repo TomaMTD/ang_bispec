@@ -151,11 +151,11 @@ def main(argv):
     # Define lterm_list based on p.lterm
     if p.Newton:
         if p.lterm == 'all':
-            lterm_list = ['density', 'rsd']
+            lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot']
         else:
             lterm_list = [p.lterm]
     elif p.lterm == 'all':
-        lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot']
+        lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_gr']
     else:
         lterm_list = [p.lterm]
 
@@ -191,7 +191,9 @@ def main(argv):
 
     else:
         if argv.which=='all':
-            which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d', 'd1vd2v', 'd1vd0d', 'd1vdod', 'davd1v', 'd0pd3v', 'd0pd1d', 'd1vd2p']
+            which_list=['F2', 'G2', 'dv2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd2vd0d', 'd1vd2v', 'd1vd0d', 'd1vdod', 'davd1v', 'd0pd3v', 'd0pd1d', 'd1vd2p']
+        elif argv.which=='rad' and p.rad:
+            which_list=['F2', 'G2', 'dv2']
         else:
             which_list=[argv.which]
 

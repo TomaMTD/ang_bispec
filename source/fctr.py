@@ -204,34 +204,34 @@ def get_coefficients(p, time_dict):
     if p.which == 'F2': 
         alpha = {
             0: (7. - 3.*time_dict['va']) / 14.,
-            1: 4.*time_dict['fa'] + 1.5*time_dict['Oma'] - 9./7.*time_dict['wa'],
-            2: 18.*time_dict['fa']**2 + 9.*time_dict['fa']**2*time_dict['Oma'] - 4.5*time_dict['fa']*time_dict['Oma']
+            1: 4.*time_dict['fa'] + 1.5*time_dict['Oma'] - 9./7.*time_dict['wa'] if not p.Newton else np.zeros_like(time_dict['fa']),
+            2: 18.*time_dict['fa']**2 + 9.*time_dict['fa']**2*time_dict['Oma'] - 4.5*time_dict['fa']*time_dict['Oma'] if not p.Newton else np.zeros_like(time_dict['fa'])
         }
         beta = {
             0: np.ones_like(time_dict['fa']),
-            1: -2*time_dict['fa']**2 + 6*time_dict['fa'] - 4.5*time_dict['Oma'],
-            2: 36.*time_dict['fa']**2 + 18.*time_dict['fa']**2*time_dict['Oma']
+            1: -2*time_dict['fa']**2 + 6*time_dict['fa'] - 4.5*time_dict['Oma'] if not p.Newton else np.zeros_like(time_dict['fa']),
+            2: 36.*time_dict['fa']**2 + 18.*time_dict['fa']**2*time_dict['Oma'] if not p.Newton else np.zeros_like(time_dict['fa'])
         }
         gamma = {
             0: np.zeros_like(time_dict['fa']),
-            1: 0.5*(-time_dict['fa']**2 + time_dict['fa'] - 3.*time_dict['Oma']),
-            2: 0.25*(18*time_dict['fa']**2 + 9.*(time_dict['fa']**2 - time_dict['fa'])*time_dict['Oma'])
+            1: 0.5*(-time_dict['fa']**2 + time_dict['fa'] - 3.*time_dict['Oma']) if not p.Newton else np.zeros_like(time_dict['fa']),
+            2: 0.25*(18*time_dict['fa']**2 + 9.*(time_dict['fa']**2 - time_dict['fa'])*time_dict['Oma']) if not p.Newton else np.zeros_like(time_dict['fa'])
         }
     else:  # G2 or dv2
         alpha = {
             0: time_dict['fa'] - 3./7.*time_dict['wa'],
-            1: -7.5*time_dict['Oma']*time_dict['fa'],
-            2: np.zeros_like(time_dict['fa'])
+            1: -7.5*time_dict['Oma']*time_dict['fa'] if not p.Newton else np.zeros_like(time_dict['fa']),
+            2: np.zeros_like(time_dict['fa']) if not p.Newton else np.zeros_like(time_dict['fa'])
         }
         beta = {
             0: time_dict['fa'],
-            1: -12.*time_dict['Oma']*time_dict['fa'],
-            2: np.zeros_like(time_dict['fa'])
+            1: -12.*time_dict['Oma']*time_dict['fa'] if not p.Newton else np.zeros_like(time_dict['fa']),
+            2: np.zeros_like(time_dict['fa']) if not p.Newton else np.zeros_like(time_dict['fa'])
         }
         gamma = {
             0: np.zeros_like(time_dict['fa']),
-            1: -2.25*time_dict['Oma']*time_dict['fa'],  # Single value for all orders
-            2: np.zeros_like(time_dict['fa'])
+            1: -2.25*time_dict['Oma']*time_dict['fa'] if not p.Newton else np.zeros_like(time_dict['fa']),  # Single value for all orders
+            2: np.zeros_like(time_dict['fa']) if not p.Newton else np.zeros_like(time_dict['fa'])
         }
     
     return alpha, beta, gamma
@@ -299,9 +299,11 @@ def compute_f_nm_unified(p, alpha, beta, gamma, time_dict, h_power):
     components = [c for c in [f_00(h_power), f_0m2(h_power), f_m2m2(h_power)] if not np.all(c == 0)]
 
     # Apply prefactor: D² * H/a
-    if p.which != 'dv2':
+    if p.which == 'F2':
         prefactor = time_dict['Da']**2 * time_dict['Ha'] / time_dict['a']
-    else:
+    elif p.which == 'G2': 
+        prefactor = -time_dict['Da']**2 * time_dict['Ha'] / time_dict['a']
+    else: # dv2
         prefactor = time_dict['Da']**2 * time_dict['Ha'] / time_dict['a'] * time_dict['Ha'] * time_dict['mathcalR']
 
     # Create splines
@@ -417,13 +419,12 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list)
                 fctr = UnivariateSpline(time_dict['ra'], \
                         time_dict['Ha']*time_dict['Da']*time_dict['Ha']/time_dict['a']*time_dict['fa']*time_dict['mathcalR'], k=5, s=0)
                 derive_start = 1
-            elif lterm == 'pot':
-                if not p.Newton: # H/a*D*((1.-R)/a+3*f*H**2)
-                    fctr = UnivariateSpline(time_dict['ra'], \
-                            time_dict['Ha']/time_dict['a']*time_dict['Da']*((1.-time_dict['mathcalR'])/time_dict['a'] \
-                                                  + 3.*time_dict['fa']*time_dict['Ha']**2), k=5, s=0)
-                else: # H/a*D*((1.-R)/a
-                    fctr = UnivariateSpline(time_dict['ra'], \
+            elif lterm == 'pot_gr': # H/a*D*3*f*H**2
+                fctr = UnivariateSpline(time_dict['ra'], \
+                            time_dict['Ha']/time_dict['a']*time_dict['Da']*(3.*time_dict['fa']*time_dict['Ha']**2), k=5, s=0)
+                derive_start = 0
+            elif lterm == 'pot': # H/a*D*(1.-R)/a
+                fctr = UnivariateSpline(time_dict['ra'], \
                             time_dict['Ha']/time_dict['a']*time_dict['Da']*(1.-time_dict['mathcalR'])/time_dict['a'], k=5, s=0)
                 derive_start = 0
             elif lterm == 'dpot': # -D*(f-1)/a*H/a
@@ -505,10 +506,9 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list)
             output_key = '{}_rad'.format(p.which)
         else:
             # Non-radiation case: compute Am terms
-            # Handle Newton cases (only dominant Newtonian terms)
-            if p.Newton:
-                if p.which in ['F2', 'dv2']:
-                    return 0  # No Newtonian terms for F2 and dv2
+            # Handle Newton cases 
+            if p.Newton and p.which in ['F2']:
+                return 0  # No Newtonian terms for F2
 
             # Get coefficients
             alpha_coeff, beta_coeff, gamma_coeff = get_coefficients(p, time_dict)
@@ -772,24 +772,27 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
         # Multiply by window
         A0_tab = cosmo_factor * Wr
 
+        if p.which in ['d2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v']:
+            A0_tab*=-1
+
         # Apply r-power division (on r_list, not ra)
         try:
             A0_tab /= r_list**(int(p.which[1]) + int(p.which[4]))
         except ValueError:
             if p.which == 'davd1v':
                 A0_tab /= r_list**2
-            else:
-                try:
-                    A0_tab /= r_list**(int(p.which[1]))
-                except ValueError:
-                    A0_tab /= r_list**(int(p.which[4]))
+
+            try:
+                A0_tab /= r_list**(int(p.which[1]))
+            except ValueError:
+                A0_tab /= r_list**(int(p.which[4]))
 
         # Reshape: add extra dimension and apply factor
         if p.which != 'd2vd2v':
             A0_tab = A0_tab[None, :] / 2.
         else:
             A0_tab = A0_tab[None, :]
-
+        
         # Tile across all ells: shape (n_ell, n_components, n_r)
         A0_all = np.tile(A0_tab[None, :, :], (n_ell, 1, 1))
 

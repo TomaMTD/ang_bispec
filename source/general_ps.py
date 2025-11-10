@@ -382,7 +382,7 @@ def compute_integral_F2_G2_dv2(p, ell_list, chi_list, r_list, t_grid, cp_dict, f
     else:
         # Non-radiation case: compute Am terms (no cp needed, just Il(-1, t, ell))
         if p.Newton:
-            if p.which in ['F2', 'dv2']:
+            if p.which in ['F2']:
                 print(f'  No Newtonian terms for {p.which}, skipping non-radiation')
                 return
             # For G2 Newton: only f0 terms
@@ -400,9 +400,16 @@ def compute_integral_F2_G2_dv2(p, ell_list, chi_list, r_list, t_grid, cp_dict, f
         # Note: component[1] = -component[0]/2 for all multipoles (derived later)
 
         # First multipole name and structure
-        first_name = 'f0' if p.which in ['G2', 'dv2'] else 'fm2'
+        if p.which in ['G2', 'dv2']:
+            if p.Newton:
+                first_name = 'f0_newton'
+            else:
+                first_name = 'f0'
+        else:
+            first_name = 'fm2'
+
         multipoles = {
-            first_name: {'qterms': [0, 1], 'level': 1}
+            first_name: {'qterms': [0, 1] if not p.Newton else [0], 'level': 1}
         }
 
         # Second multipole (only for non-Newton)
