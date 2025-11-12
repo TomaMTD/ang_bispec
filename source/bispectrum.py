@@ -319,7 +319,6 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                         Cl_array[valid_mask, :, cl_idx+idx] = interp_func(chi_list)
                     else:
                         Cl_array[valid_mask, :, cl_idx+idx] = Cl_subset
-                        np.save(f'Cl_subset_{n}', Cl_subset)
 
             else:
                 # Special combinations for d0d, d1d, dod with non-Newton

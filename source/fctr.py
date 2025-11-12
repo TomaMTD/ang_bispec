@@ -9,6 +9,7 @@ from filelock import FileLock
 from scipy.interpolate import UnivariateSpline
 import sympy as sp
 from scipy.integrate import quad
+from scipy.special import erf  # Vectorized erf for lambdify
 
 
 # Optimized version that caches the SymPy derivatives
@@ -17,7 +18,14 @@ class WindowDerivatives:
     Cache SymPy derivatives for W(r) and r^n * W(r) expressions for efficiency
     """
     def __init__(self, window_args, max_r_power=3, max_derivative=11):
-        self.xmin, self.xmax, self.H_over_a_data, self.bb = window_args
+        # Handle both old (5 args) and new (6 args) window_args format
+        if len(window_args) == 6:
+            self.xmin, self.xmax, self.H_over_a_data, self.sigma_z, self.window_type, self.n_angular_data = window_args
+        else:
+            # Backward compatibility
+            self.xmin, self.xmax, self.H_over_a_data, self.sigma_z, self.window_type = window_args
+            self.n_angular_data = None
+
         self.max_r_power = max_r_power
         self.max_derivative = max_derivative
         self._cached_expressions = {}
@@ -28,13 +36,21 @@ class WindowDerivatives:
         sp_x = sp.symbols('x')
         sp_xmin = sp.symbols('xmin')
         sp_xmax = sp.symbols('xmax')
-        sp_bb = sp.symbols('bb')
+        sp_sigma_z = sp.symbols('sigma_z')
 
-        # Define unnormalized window function (single definition!)
-        W_unnorm = (0.5+0.5*sp.tanh((sp_x-sp_xmin)/sp_bb)) *\
-                   (0.5-0.5*sp.tanh((sp_x-sp_xmax)/sp_bb))
+        
+        if self.window_type=='nbody':
+            # Define unnormalized window function (single definition!)
+            W_unnorm = (0.5+0.5*sp.tanh((sp_x-sp_xmin)/sp_sigma_z)) *\
+                       (0.5-0.5*sp.tanh((sp_x-sp_xmax)/sp_sigma_z))
 
-        # Compute normalization: ∫ (H/a * W_unnorm) dr
+        else:
+            # Use sympy versions:
+            window_lower = 0.5 * (1 + sp.erf((sp_x - sp_xmin) / (sp.sqrt(2) * sp_sigma_z)))
+            window_upper = 0.5 * (1 + sp.erf((sp_xmax - sp_x) / (sp.sqrt(2) * sp_sigma_z)))
+            W_unnorm = window_lower * window_upper
+
+        # Compute normalization: ∫ (H/a * W_unnorm) dr or ∫ (n_angular * H/a * W_unnorm) dr
         if self.H_over_a_data is not None:
             # Unpack H/a data: (ra_grid, H_over_a_values)
             ra_grid, H_over_a_values = self.H_over_a_data
@@ -42,20 +58,34 @@ class WindowDerivatives:
             # Create H/a spline
             H_over_a_spline = UnivariateSpline(ra_grid, H_over_a_values, s=0, ext=0)
 
+            # Create n_angular spline if available and not nbody
+            if self.n_angular_data is not None and self.window_type != 'nbody':
+                r_nz_grid, n_angular_values = self.n_angular_data
+                n_angular_spline = UnivariateSpline(r_nz_grid, n_angular_values, s=0, ext=0)
+                print(f"    Using n(z) angular normalization (SKA-type window)")
+            else:
+                n_angular_spline = None
+
             # Lambdify the unnormalized window for numerical integration
             W_unnorm_func = sp.lambdify(sp_x, W_unnorm.subs({sp_xmin: self.xmin,
                                                               sp_xmax: self.xmax,
-                                                              sp_bb: self.bb}), 'numpy')
+                                                              sp_sigma_z: self.sigma_z}), 'numpy')
 
-            # Integrate H/a * W_unnorm
+            # Integrand: includes n_angular if available (for SKA-type surveys)
             def integrand(r):
-                return H_over_a_spline(r) * W_unnorm_func(r)
+                H_over_a = H_over_a_spline(r)
+                W = W_unnorm_func(r)
+                if n_angular_spline is not None:
+                    return n_angular_spline(r) * H_over_a * W
+                else:
+                    return H_over_a * W
 
-            sp_normW, _ = quad(integrand, self.xmin, self.xmax, epsrel=1e-10, epsabs=0)
-            print(f"    Computed normW = ∫(H/a * W)dr = {sp_normW:.6e}")
+            sp_normW, _ = quad(integrand, min(0, self.xmin - 50*self.sigma_z), self.xmax+ 50*self.sigma_z, epsrel=1e-4, epsabs=0)
+            integral_type = "n_angular*H/a*W" if n_angular_spline is not None else "H/a*W"
+            print(f"        Computed normW = ∫({integral_type})dr = {sp_normW:.4e}")
         else:
             # Fallback: use analytical formula for ∫ W dr (old behavior)
-            sp_normW = 1./4.*self.bb*(1. + 1./np.tanh((self.xmax - self.xmin)/self.bb))*2./self.bb*(self.xmax-self.xmin)
+            sp_normW = 1./4.*self.sigma_z*(1. + 1./np.tanh((self.xmax - self.xmin)/self.sigma_z))*2./self.sigma_z*(self.xmax-self.xmin)
             print(f"  Warning: H/a data not provided, using ∫W dr normalization = {sp_normW:.6e}")
 
         # Store normW as instance variable for later use
@@ -74,10 +104,12 @@ class WindowDerivatives:
                 expr = expr.subs({sp_xmin: self.xmin, 
                                  sp_xmax: self.xmax, 
                                  sp_normW: self.normW,
-                                 sp_bb: self.bb})
+                                 sp_sigma_z: self.sigma_z})
                 
-                # Lambdify for fast numerical evaluation
-                self._cached_expressions[(r_power, deriv_order)] = sp.lambdify(sp_x, expr, 'numpy')
+                # Lambdify for fast numerical evaluation with custom namespace
+                # Include both erf (for gaussian window) and tanh (for nbody window)
+                custom_namespace = {'erf': erf, 'exp': np.exp, 'sqrt': np.sqrt, 'tanh': np.tanh}
+                self._cached_expressions[(r_power, deriv_order)] = sp.lambdify(sp_x, expr, modules=[custom_namespace, 'numpy'])
     
     def __call__(self, x, r_power=0, num_derivative=9):
         """
@@ -99,23 +131,60 @@ class WindowDerivatives:
     def get_all_derivatives(self, x, r_power=0, max_deriv=None):
         """
         Get all derivatives up to max_deriv for r^r_power * W(r)
-        
+        For SKA-type surveys (window_type != 'nbody'), this returns derivatives of n_angular(r) * W(r)
+
         Returns list [f, f', f'', f''', ...] evaluated at x
         """
         if max_deriv is None:
             max_deriv = self.max_derivative
-            
-        return [self(x, r_power=r_power, num_derivative=i) for i in range(max_deriv + 1)]
+
+        # Compute W derivatives (without n_angular)
+        W_derivs = [self(x, r_power=r_power, num_derivative=i) for i in range(max_deriv + 1)]
+
+        # If we have n_angular and not nbody, multiply by n_angular using product rule
+        if self.n_angular_data is not None and self.window_type != 'nbody':
+            r_nz_grid, n_angular_values = self.n_angular_data
+            n_angular_spline = UnivariateSpline(r_nz_grid, n_angular_values, k=5, s=0, ext=0)
+
+            # Compute n_angular derivatives using spline chain strategy
+            n_angular_derivs = [None] * (max_deriv + 1)
+
+            # Direct derivatives from spline (up to order 5 for k=5 spline)
+            n_angular_derivs[0] = n_angular_spline(x)
+            for i in range(1, min(6, max_deriv + 1)):
+                n_angular_derivs[i] = n_angular_spline.derivative(i)(x)
+
+            # For derivatives 6-10: use spline of 5th derivative
+            if max_deriv >= 6:
+                d5_n_angular = UnivariateSpline(x, n_angular_derivs[5], k=5, s=0)
+                for i in range(6, min(11, max_deriv + 1)):
+                    n_angular_derivs[i] = d5_n_angular.derivative(i - 5)(x)
+
+            # For derivative 11: use spline of 10th derivative
+            if max_deriv >= 11:
+                d10_n_angular = UnivariateSpline(x, n_angular_derivs[10], k=5, s=0)
+                n_angular_derivs[11] = d10_n_angular.derivative(1)(x)
+
+            # Apply product rule: d^n/dr^n [n_angular * W] = sum_{k=0}^n C(n,k) * n_angular^(k) * W^(n-k)
+            W_eff_derivs = []
+            for n in range(max_deriv + 1):
+                deriv_n = sum(comb(n, k) * n_angular_derivs[k] * W_derivs[n - k] for k in range(n + 1))
+                W_eff_derivs.append(deriv_n)
+
+            return W_eff_derivs
+        else:
+            # No n_angular: return W derivatives as-is
+            return W_derivs
 
 
-def load_or_compute_window_derivatives(window_args, r_list, output_dir, max_deriv=11):
+def load_or_compute_window_derivatives(p, window_args, r_list, output_dir, max_deriv=11):
     """
     Load window derivatives from cache if available and valid, otherwise compute and save.
 
     Parameters:
     -----------
     window_args : tuple
-        (xmin, xmax, H_over_a_data, bb) for window function
+        (xmin, xmax, H_over_a_data, sigma_z, window_type) for window function
         where H_over_a_data is a tuple (ra_grid, H_over_a_values)
     r_list : array
         Radial coordinates
@@ -133,7 +202,7 @@ def load_or_compute_window_derivatives(window_args, r_list, output_dir, max_deri
 
     # Check if cached file exists and is valid
     load_from_cache = False
-    if os.path.exists(window_cache_file):
+    if not p.force and os.path.exists(window_cache_file):
         print('  Found cached window derivatives, checking validity...')
         try:
             cache = np.load(window_cache_file, allow_pickle=True)
@@ -141,13 +210,37 @@ def load_or_compute_window_derivatives(window_args, r_list, output_dir, max_deri
 
             # Check if parameters match
             # Need special handling for window_args since it contains numpy arrays
-            cached_xmin, cached_xmax, cached_H_data, cached_bb = cached_params['window_args']
-            xmin, xmax, H_data, bb = window_args
+            # Handle both old (5 elements) and new (6 elements) formats
+            cached_window_args = cached_params['window_args']
+
+            if len(cached_window_args) == 6:
+                cached_xmin, cached_xmax, cached_H_data, cached_sigma_z, cached_window_type, cached_n_angular = cached_window_args
+            else:
+                cached_xmin, cached_xmax, cached_H_data, cached_sigma_z, cached_window_type = cached_window_args
+                cached_n_angular = None
+
+            if len(window_args) == 6:
+                xmin, xmax, H_data, sigma_z, window_type, n_angular_data = window_args
+            else:
+                xmin, xmax, H_data, sigma_z, window_type = window_args
+                n_angular_data = None
+
+            # Check n_angular data match
+            n_angular_match = True
+            if n_angular_data is not None and cached_n_angular is not None:
+                n_angular_match = (np.allclose(cached_n_angular[0], n_angular_data[0]) and
+                                  np.allclose(cached_n_angular[1], n_angular_data[1]))
+            elif n_angular_data is None and cached_n_angular is None:
+                n_angular_match = True
+            else:
+                n_angular_match = False
 
             window_args_match = (
                 cached_xmin == xmin and
                 cached_xmax == xmax and
-                cached_bb == bb and
+                cached_sigma_z == sigma_z and
+                cached_window_type == window_type and
+                n_angular_match and
                 H_data is not None and cached_H_data is not None and
                 np.allclose(cached_H_data[0], H_data[0]) and  # ra_grid
                 np.allclose(cached_H_data[1], H_data[1])      # H_over_a values
@@ -356,7 +449,7 @@ def product_deriv(n, fctr_derivs, W_derivs_list):
     return sum(comb(n, k) * fctr_derivs[k] * W_derivs_list[n - k] for k in range(n + 1))
  
 
-def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list):
+def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list, W_derivs_list=None):
     """
     Optimized version using cached SymPy derivatives
 
@@ -364,6 +457,8 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list)
     -----------
     lterm_list : list of str
         List of lterm values to compute (e.g., ['density', 'rsd'])
+    W_derivs_list : list, optional
+        Precomputed window derivatives. If None, will compute from window_args.
 
     Returns:
     --------
@@ -374,7 +469,7 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list)
         """
         Compute L³[f] where L = -d²/dr² + 2/r*d/dr + alpha/r²
         """
-    
+
         c6 = -1
         c5 = 6/r
         c4 = 3*(alpha - 8)/r**2
@@ -382,12 +477,15 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list)
         c2 = 3*(-alpha**2 + 34*alpha - 48)/r**4
         c1 = 18*(alpha**2 - 14*alpha + 8)/r**5
         c0 = alpha*(alpha**2 - 38*alpha + 280)/r**6
-    
+
         return c6*d6f + c5*d5f + c4*d4f + c3*d3f + c2*d2f + c1*df + c0*f
 
 
-    # Create cached derivative evaluator
-    W_derivs = WindowDerivatives(window_args)
+    # Use precomputed derivatives if available, otherwise create new evaluator
+    if W_derivs_list is None:
+        W_derivs = WindowDerivatives(window_args)
+    else:
+        W_derivs = None  # Won't need to call get_all_derivatives
 
     y_list = {'r_list': r_list, 'ell_list': ell_list}
     if p.which in ['F2', 'G2', 'dv2']:
@@ -455,10 +553,17 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list)
                 fctr_derivs[i] = fctr.derivative(i)(r_list)
 
             # Get analytical derivatives of W
-            W_derivs_list = W_derivs.get_all_derivatives(r_list, r_power=0, max_deriv=max_deriv+derive_start)
+            if W_derivs_list is None:
+                W_derivs_list_local = W_derivs.get_all_derivatives(r_list, r_power=0, max_deriv=max_deriv+derive_start)
+            else:
+                # Use precomputed derivatives (check if we have enough)
+                required_derivs = max_deriv + derive_start + 1
+                if len(W_derivs_list) < required_derivs:
+                    raise ValueError(f"W_derivs_list has {len(W_derivs_list)} derivatives but need {required_derivs}")
+                W_derivs_list_local = W_derivs_list[:required_derivs]
 
             # Compute f and derivatives with derive_start offset
-            f, df, d2f = [product_deriv(i+derive_start, fctr_derivs, W_derivs_list) for i in range(3)]
+            f, df, d2f = [product_deriv(i+derive_start, fctr_derivs, W_derivs_list_local) for i in range(3)]
 
             # Store both levels and apply mathcalD operator
             for ind_ell, ell in enumerate(ell_list):
@@ -534,7 +639,14 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list)
                 max_B_deriv = n + 7 if n > 0 else 7  # n+7 because we need indices 0 through n+6
                 max_W_deriv = derive_start + max_B_deriv - 1  # product_deriv needs this many W derivatives
 
-                W_derivs_base = W_derivs.get_all_derivatives(r_list, r_power=0, max_deriv=max_W_deriv)
+                if W_derivs_list is None:
+                    W_derivs_base = W_derivs.get_all_derivatives(r_list, r_power=0, max_deriv=max_W_deriv)
+                else:
+                    required_derivs = max_W_deriv + 1
+                    if len(W_derivs_list) < required_derivs:
+                        raise ValueError(f"W_derivs_list has {len(W_derivs_list)} derivatives but need {required_derivs}")
+                    W_derivs_base = W_derivs_list[:required_derivs]
+
                 B_derivs = [product_deriv(derive_start + i, fctr_derivs, W_derivs_base) for i in range(max_B_deriv)]
 
                 # Step 2: Apply qterm by computing derivatives of r^n * B

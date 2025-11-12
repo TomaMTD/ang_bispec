@@ -11,9 +11,9 @@ qterm=0 # 1, 2, 3, 4 only for which neq F2 G2
 
 ell=2
 ellmax=500
-Nell=20
+Nell=8
 
-Nchi=301
+Nchi=501
 
 bins = [2, 6, 14, 25, 44, 57, 73, 94, 120, 152, 194, 244, 294, 344, 394, 444, \
         494, 514] 
@@ -25,25 +25,33 @@ rad=True
 
 ####################################################
 ### Window function
-z0, dz=2, 0.25
-bb=25
+window_type='ska'
+z0, dz=0.50, 0.25
+
+sigma_input='redshift'
+sigma_z= 2e-3
 
 ####################################################
+# input ska file
+input_ska = 'ska_data/SKAO_params_fcut100.txt'
+
 ### output directory
-output_dir = 'output_z{}_dz{}_primordial/'.format(z0, dz)
+output_dir = 'output_ska/'
 
 ####################################################
-### Cosmology
-h100=67.556 
+### Cosmology Planck 2018
+h100=67.66
 h=h100/100
-omega_b=0.0482754
-omega_cdm=0.263771
+omega_b=0.02242/h**2
+omega_cdm=0.11933/h**2
 omega_m =omega_cdm + omega_b
 omega_r=9.16714e-05
 omega_k=0
 omega_l=1-omega_r-omega_cdm-omega_b
-A_s =2.215e-9
-n_s = 0.9619
+A_s=2.105e-9
+n_s=0.9665
 k_pivot=0.05
 c=2.99792458
 H0=100/c/10**5
+
+fnl_local = 1

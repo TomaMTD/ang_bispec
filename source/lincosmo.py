@@ -33,6 +33,107 @@ def get_distance(z):
             relerr=1e-10, maxEval=0, abserr=0, vectorized=True)
     return val
 
+def volume_element(z):
+    """
+    Volume element dV/(dOmega dz) in (Mpc/h)^3/steradian
+    This is r^2(z) * 1/H(z) where r is comoving distance
+    """
+    r=np.zeros((len(z)))
+    for ind, zi in enumerate(z):
+        r[ind]=get_distance(zi)
+ 
+    drdz = 1/H_(z)  # Mpc / h
+    return r, r**2 * drdz  # (Mpc/h)^3
+
+def nz_volumetric_to_angular(z, ng_volumetric):
+    """
+    Convert volumetric n(z) to angular n(z)
+
+    Parameters:
+    -----------
+    z : array
+        Redshift values
+    ng_volumetric : array
+        Volumetric galaxy density dN/dV in (h/Mpc)^3
+
+    Returns:
+    --------
+    nz_angular : array
+        Angular galaxy distribution dN/(dOmega dz) in h^3/Mpc^3 * (Mpc/h)^3/steradian = 1/steradian
+    """
+    r, dV_dOmega_dz = volume_element(z)
+    nz_angular = ng_volumetric * dV_dOmega_dz
+    return r, nz_angular
+
+def extrapolate_nz_minimal(z_data, nz_data, n_boundary_points=10, z_extend=0.05):
+    """
+    Keep original data and only add extrapolation points at boundaries
+    
+    Parameters:
+    -----------
+    z_data, nz_data : original data (e.g., 200 points)
+    n_boundary_points : number of points to add at each boundary
+    z_extend : how far to extend beyond data range
+    
+    Returns:
+    --------
+    z_extended, nz_extended : original data + boundary points
+    """
+    # Compute slopes at boundaries
+    slope_left = (nz_data[1] - nz_data[0]) / (z_data[1] - z_data[0])
+    slope_right = (nz_data[-1] - nz_data[-2]) / (z_data[-1] - z_data[-2])
+
+    # Create boundary extension points
+    z_left = np.linspace(max(0, z_data[0] - z_extend), z_data[0], n_boundary_points, endpoint=False)
+    z_right = np.linspace(z_data[-1], z_data[-1] + z_extend, n_boundary_points + 1)[1:]
+
+    # Exponential extrapolation
+    nz_left = nz_data[0] * np.exp(slope_left / nz_data[0] * (z_data[0] - z_left))
+    nz_right = nz_data[-1] * np.exp(slope_right / nz_data[-1] * (z_right - z_data[-1]))
+
+    # Combine: left boundary + original data + right boundary
+    z_extended = np.concatenate([z_left, z_data, z_right])
+    nz_extended = np.concatenate([nz_left, nz_data, nz_right])
+
+    return z_extended, nz_extended
+
+def construct_window_functions(z_range, bin_edges, nz_total, sigma_z=1e-3):
+    """
+    Construct smooth window functions for each redshift bin using error functions.
+    
+    Parameters:
+    -----------
+    z_range : array
+        Fine redshift grid for window functions
+    bin_edges : array
+        Bin edges in redshift [z_min_1, z_max_1, z_min_2, z_max_2, ..., z_max_N]
+    nz_total : array
+        Total angular galaxy distribution on z_range grid
+    sigma_z : float
+        Smoothing scale for error function (default: 1e-3, suitable for spectroscopic surveys)
+        
+    Returns:
+    --------
+    windows : array (n_bins, len(z_range))
+        Window function for each bin (normalized to unit integral)
+    nz_binned : array (n_bins, len(z_range))
+        Galaxy distribution for each bin = window * nz_total
+    norms : array
+        Normalization factors for each bin
+    """
+    n_bins = len(bin_edges) - 1
+    windows = np.zeros((n_bins, len(z_range)))
+
+    # Multiply by the total n(z) distribution
+    nz_binned = nz_total[np.newaxis, :]
+
+    # Normalize each bin to unit area
+    norms = np.trapz(nz_binned, z_range, axis=1)
+    windows_normalized = windows / norms[:, np.newaxis]
+    nz_binned_normalized = nz_binned / norms[:, np.newaxis]
+
+    return windows_normalized, nz_binned_normalized, norms
+
 ############################################################################ growth factors
 def solvr(Y, t):
     a=Y[0]
@@ -41,7 +142,7 @@ def solvr(Y, t):
     return [a*H, Y[2], -H*Y[2]+3./2.* omega_m*H0**2/a*Y[1], Y[4], -H*Y[4]+3./2.*omega_m*H0**2*(Y[3]+Y[1]**2) / a]
 
 
-def growth_fct():
+def growth_fct(input_data=0):
     print('computing growth')
     a0=1e-10
     z0=1./a0-1.
@@ -81,7 +182,8 @@ def growth_fct():
 
     mask = np.logical_and(ra[::-1]>100, ra[::-1]<8000) # unphysical small distances, avoid spline error
     dHa = dotH_(1./apy[::-1]-1.)
-    return {'a'  : apy[::-1][mask],\
+
+    time_dict = {'a'  : apy[::-1][mask],\
             'ra' : ra[::-1][mask],\
             'Ha' : Ha[::-1][mask],\
             'Oma': Oma[::-1][mask],\
@@ -91,6 +193,28 @@ def growth_fct():
             'wa' : wpy[::-1][mask],\
             'dHa': dHa[mask],\
             'mathcalR': (dHa/Ha[::-1]**2+2./Ha[::-1]/ra[::-1])[mask]}
+
+    if input_data==0:
+        return  time_dict    
+    else:
+        data = np.loadtxt(input_data)
+        z = data[:, 0]
+        ng = data[:, 1]
+        b1 = data[:, 2]
+        b2 = data[:, 3]
+
+        r, n_angular = nz_volumetric_to_angular(z, ng)
+        r_extended, n_extended = extrapolate_nz_minimal(r, n_angular, n_boundary_points=20)
+        _, b1_extended = extrapolate_nz_minimal(r, b1, n_boundary_points=20)
+        _, b2_extended = extrapolate_nz_minimal(r, b2, n_boundary_points=20)
+
+        time_dict['data'] = {'r'        :r_extended,
+                             'n_angular':n_extended,
+                             'b1'       :b1_extended,
+                             'b2'       :b2_extended}
+        return time_dict
+
+
 
 
 ############################################################################# power spectrum

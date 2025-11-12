@@ -22,7 +22,8 @@ def arguments():
     parser.add_argument('-r', '--rad',default=rad, type=int, help='Radiation: 0=No, 1=Yes')
     parser.add_argument('-z0'    , default=z0, type=float, help='center of redshift bin')
     parser.add_argument('-dz'    , default=dz, type=float, help='half width of redshift bin')
-    parser.add_argument('-bb'    , default=bb, type=float, help='How fast is the window function decaying')
+    parser.add_argument('-sigma_z'    , default=sigma_z, type=float, help='How fast is the window function decaying')
+    parser.add_argument('-window_type'    , default=window_type, type=str, help='Type of window function, eg nbody, ska')
     parser.add_argument('-f'     , '--force', default=force, type=int, help='Wether you and to overwrite all output (force computation)')
     parser.add_argument('-Nchi'  , default=Nchi, type=int, help='Number of r/chi value to evaluate cl, Am and Il')
     parser.add_argument('-ell'   , default=ell, type=int, help='')
@@ -80,7 +81,8 @@ class parameters:
         self.rad = argv.rad
         self.z0 = argv.z0
         self.dz = argv.dz
-        self.bb = argv.bb
+        self.sigma_z = argv.sigma_z
+        self.window_type = argv.window_type
         self.force = argv.force
         self.Nchi = argv.Nchi
         self.ell = argv.ell
@@ -106,20 +108,30 @@ def main(argv):
 
     p=parameters(argv)
 
-    Wrmin, Wrmax = lincosmo.get_distance(argv.z0-argv.dz)[0], lincosmo.get_distance(argv.z0+argv.dz)[0]
-    rmin, rmax = Wrmin-15*bb, Wrmax+15*bb
-
-    time_dict = lincosmo.growth_fct()
+    time_dict = lincosmo.growth_fct(input_data=globals().get('input_ska', 0))
     np.save(output_dir+'time_dict', time_dict)
 
     # Prepare H/a data for window normalization: (ra_grid, H_over_a_values)
     H_over_a_data = (time_dict['ra'], time_dict['Ha'] / time_dict['a'])
-    window_args = (Wrmin, Wrmax, H_over_a_data, bb)
+    Wrmin, Wrmax = lincosmo.get_distance(argv.z0-argv.dz)[0], \
+                   lincosmo.get_distance(argv.z0+argv.dz)[0]
 
+    if sigma_input == 'redshift':
+        argv.sigma_z = (lincosmo.get_distance(argv.z0+argv.sigma_z/2)[0]
+                        - lincosmo.get_distance(argv.z0-argv.sigma_z/2)[0])
+    rmin, rmax = Wrmin-15*argv.sigma_z, Wrmax+15*argv.sigma_z
+
+    # Prepare n_angular data if available (for SKA-type surveys)
+    if 'data' in time_dict.keys() and argv.window_type != 'nbody':
+        n_angular_data = (time_dict['data']['r'], time_dict['data']['n_angular'])
+        print('  Found n(z) angular data for SKA-type window normalization')
+    else:
+        n_angular_data = None
+
+    window_args = (Wrmin, Wrmax, H_over_a_data, argv.sigma_z, argv.window_type, n_angular_data)
     print('Window function limits: rmin={:.0f} rmax={:.0f}'.format(rmin, rmax))
 
     tr, Pk = lincosmo.get_power(0)
-    kmin, kmax = np.min(tr['k']), np.max(tr['k'])
 
     chi_list=np.linspace(rmin, rmax, argv.Nchi)
     r_list  =np.linspace(rmin, rmax, argv.Nchi)
@@ -138,15 +150,6 @@ def main(argv):
             ell_list = np.array([ell if ell % 2 == 0 else ell + 1 for ell in ell_list])
             # Remove duplicates again in case some became the same
             ell_list = np.unique(ell_list)
-        #if argv.mode in ['cl', 'cln', 'Cl', 'Cln']:
-        #else:
-        #    if argv.configuration in ['equi', 'squ', 'folded', 'esf']:
-        #        if argv.ell%2!=0: argv.ell+=1
-        #        ell_list=np.arange(argv.ell, argv.ellmax, 2)
-        #    else:
-        #        ell_list=np.arange(argv.ell, argv.ellmax, 1)
-
-
 
     # Define lterm_list based on p.lterm
     if p.Newton:
@@ -164,7 +167,7 @@ def main(argv):
     # This is cached to disk and reused by all subsequent computations
     # =========================================================================
     print('Loading/computing window function derivatives...')
-    W_derivs_list = fctr.load_or_compute_window_derivatives(window_args, r_list, output_dir, max_deriv=11)
+    W_derivs_list = fctr.load_or_compute_window_derivatives(p, window_args, r_list, output_dir, max_deriv=11)
 
     if argv.mode in ['cl', 'cln', 'Cl', 'Cln']:
         if argv.which=='all':
@@ -180,7 +183,7 @@ def main(argv):
 
         for p.which in which_list:
             # Compute fctr and cp dicts organized by lterm
-            fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list)
+            fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list, W_derivs_list=W_derivs_list)
             np.save(argv.output_dir+'fctr_of_r_{}'.format(p.which), fctr_dict)
 
             cp_dict = fftlog.apply_fftlog_dict(tr['k'], tr['dTdk'] if argv.rad else Pk, p)
@@ -204,7 +207,7 @@ def main(argv):
 
         for p.which in which_list:
             # Compute fctr and cp dicts organized by lterm
-            fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list)
+            fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list, W_derivs_list=W_derivs_list)
             #np.save(argv.output_dir+'fctr_of_r_{}'.format(p.which), fctr_dict)
 
             cp_dict = fftlog.apply_fftlog_dict(tr['k'], tr['phi'], p)
