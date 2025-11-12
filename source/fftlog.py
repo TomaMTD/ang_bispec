@@ -16,17 +16,18 @@ class FFTLogProcessor:
     
     def __init__(self, k, fctk, p):
         self.k = k
-        self.fctk = fctk
+        self.fctk = fctk if p.lterm!='density' else fctk*k**2
         self.Nk = len(k)
         self.kmin, self.kmax = np.min(k), np.max(k)
         self.which = p.which
         self.lterm = p.lterm
+        self.mode = p.mode
         self.qterm = p.qterm
         self.rad = p.rad
         
         # Pre-compute common quantities
         self.l = np.arange(self.Nk)
-        self.p_list = np.arange(-self.Nk//2, self.Nk//2+1)
+        self.p_list = np.arange(-(self.Nk//2), self.Nk//2) # TAKE CARE -(self.Nk//2) != -self.Nk//2
         self.eta_p_list = 2.*np.pi*self.p_list/np.log(self.kmax/self.kmin)
 
     def get_qterm_list(self):
@@ -120,11 +121,11 @@ class FFTLogProcessor:
     
     def get_cp_eta_p(self, fctk_list, b_list):
         """Compute cp for given functions and biases"""
-        res = np.zeros((len(fctk_list), self.Nk+1), dtype=np.complex128)
+        res = np.zeros((len(fctk_list), self.Nk), dtype=np.complex128)
         
         for ind_fct, fct_k in enumerate(fctk_list):
             b = b_list[ind_fct]
-            for p in range(-self.Nk//2, self.Nk//2+1):
+            for p in range(-self.Nk//2, self.Nk//2):
                 res[ind_fct, p+self.Nk//2] = np.sum(
                     fct_k * self.k**(-b) * self.kmin**(-1j*self.eta_p_list[p+self.Nk//2]) * 
                     np.exp(-2.*1j*np.pi*p*self.l/self.Nk)
@@ -146,12 +147,14 @@ class FFTLogProcessor:
                     'k': self.k,
                     'qterm_list': self.get_qterm_list()}
 
-        if self.which in ['FG2', 'F2', 'G2', 'dv2', 'local']:
+        if self.which in ['FG2', 'F2', 'G2', 'dv2'] or self.mode=='primordial':
             # Handle special cases
-            if not self.rad:
-                fctk_list = [self.fctk * self.k**4]
-            else:
+            if self.rad:
                 fctk_list = [self.fctk]
+            elif self.mode=='primordial':
+                fctk_list = [-self.fctk * self.k]
+            else:
+                fctk_list = [self.fctk * self.k**4]
 
             b = self.set_bias(fctk_list)
             cp = self.get_cp_eta_p(fctk_list, b)
@@ -191,7 +194,7 @@ def apply_fftlog(k, fctk, p):
 
     return results
 
-def apply_fftlog_dict(k, fctk, p, lterm_list):
+def apply_fftlog_dict(k, fctk, p):
     """
     Wrapper that returns cp as a dict organized by lterm, similar to fctr structure.
 
@@ -223,16 +226,12 @@ def apply_fftlog_dict(k, fctk, p, lterm_list):
         return cp_dict
 
     # Apply fftlog for each lterm (non-radiation or other cases)
-    for lterm in lterm_list:
-        # Temporarily set p.lterm for the processor
-        original_lterm = p.lterm
-        p.lterm = lterm
 
+    lterm_back = p.lterm
+    for p.lterm in ['density', 'not_density']:
         processor = FFTLogProcessor(k, fctk, p)
-        cp_dict[lterm] = processor.process_all_qterms()
-
-        # Restore original lterm
-        p.lterm = original_lterm
+        cp_dict[p.lterm] = processor.process_all_qterms()
+    p.lterm = lterm_back
 
     return cp_dict
 

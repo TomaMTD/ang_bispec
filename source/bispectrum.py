@@ -1,7 +1,7 @@
 import numpy as np
 from numba import njit, prange
 import cubature, time, h5py
-from scipy.integrate import simpson
+from scipy.integrate import simpson, quad
 from scipy.interpolate import interp1d
 from sympy.physics.wigner import wigner_3j
 from filelock import FileLock
@@ -123,8 +123,8 @@ def check_and_compute(cls_file, p, ell_list, chi_list, nm_pairs, which_for_cls,
             p.rad = 0
             fctr_dict = fctr.fct_of_r_analytical(p, missing_cls_ells, r_list, time_dict,
                                                   window_args, lterm_list)
-            cp_dict = apply_fftlog_dict(tr['k'], Pk, p, lterm_list)
-            general_ps.compute_integral_generalized(p, missing_cls_ells, chi_list, r_list, t_grid, cp_dict, fctr_dict)
+            cp_dict = apply_fftlog_dict(tr['k'], Pk, p)
+            general_ps.compute_integral_generalized(p, missing_cls_ells, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
             print(f"  Cls computed and saved")
 
         # Step 2: Compute Am/f-coefficient terms if needed (only for F2/G2/dv2)
@@ -134,8 +134,8 @@ def check_and_compute(cls_file, p, ell_list, chi_list, nm_pairs, which_for_cls,
             p.rad = 0
             fctr_dict = fctr.fct_of_r_analytical(p, missing_am_ells, r_list, time_dict,
                                                   window_args, lterm_list)
-            cp_dict = apply_fftlog_dict(tr['k'], Pk, p, lterm_list)
-            general_ps.compute_integral_generalized(p, missing_am_ells, chi_list, r_list, t_grid, cp_dict, fctr_dict)
+            cp_dict = apply_fftlog_dict(tr['k'], Pk, p)
+            general_ps.compute_integral_generalized(p, missing_am_ells, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
             print(f"  Am/f-coefficients computed and saved")
 
         # Step 3: Compute Il (radiation) terms if needed (only for F2/G2/dv2 with radiation)
@@ -145,8 +145,8 @@ def check_and_compute(cls_file, p, ell_list, chi_list, nm_pairs, which_for_cls,
             p.rad = 1
             fctr_dict = fctr.fct_of_r_analytical(p, missing_il_ells, r_list, time_dict,
                                                   window_args, lterm_list)
-            cp_dict = apply_fftlog_dict(tr['k'], tr['dTdk'], p, lterm_list)  # Always use dTdk for radiation
-            general_ps.compute_integral_generalized(p, missing_il_ells, chi_list, r_list, t_grid, cp_dict, fctr_dict)
+            cp_dict = apply_fftlog_dict(tr['k'], tr['dTdk'], p)  # Always use dTdk for radiation
+            general_ps.compute_integral_generalized(p, missing_il_ells, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
             print(f"  Il (radiation) computed and saved")
 
         # Restore original which
@@ -154,7 +154,7 @@ def check_and_compute(cls_file, p, ell_list, chi_list, nm_pairs, which_for_cls,
         print(f"\n  All required data computed and saved to {cls_file}\n")
 
 
-def get_nm_pairs_for_bispectrum(which, Newton):
+def get_nm_pairs_for_bispectrum(which, Newton=0):
     """
     Get nm_pairs needed for loading Cls in bispectrum (may include extra components for non-Newton)
     """
@@ -169,6 +169,9 @@ def get_nm_pairs_for_bispectrum(which, Newton):
         'd1d': [(1, 1), (-1, 1)] if not Newton else [(1, 1)],  # base + d1v for non-Newton
         'd0d': [(0, 0), (-2, 0)] if not Newton else [(0, 0)],
         'dod': [(0, 0), (-2, 0)] if not Newton else [(0, 0)],
+        'local': [(1, 0), (0, 0)],
+        'equi':  [(1, 0), (1./3., 0), (2./3., 0)],  # Needs all three: λ=1, λ=1/3, λ=2/3
+        'ortho': [(2./3., 0)]
     }
     # Default: use general_ps.get_nm_values
     return nm_mapping.get(which, [(0, 0)])
@@ -219,6 +222,12 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
         
         # Single Cl_array for all cases
         Cl_array = np.zeros((n_ell, n_chi, 3))
+    elif p.mode=='primordial':
+        nm_pairs_list = [get_nm_pairs_for_bispectrum(p.which)]
+        which_for_cls_list = [p.which]
+        
+        # Single Cl_array for all cases
+        Cl_array = np.zeros((n_ell, n_chi, len(nm_pairs_list[0])))
     else:
         # Quadratic term: concatenate nm_pairs from which[:3] and which[3:]
         nm_pairs_list = [get_nm_pairs_for_bispectrum(p.which[:3], p.Newton), get_nm_pairs_for_bispectrum(p.which[3:], p.Newton)]
@@ -229,7 +238,6 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
 
 
     kernels_array = np.zeros((n_ell, n_chi, 16))
-
     for idx, (nm_pairs, which_for_cls) in enumerate(zip(nm_pairs_list, which_for_cls_list)):
         if which_for_cls in ['d2p', 'd0p']:
             stuff = 2.0 / (3.0 * omega_m * H0**2)
@@ -237,15 +245,17 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
             stuff=1
 
         # Call check and compute function`
-        check_and_compute(cls_file, p, ell_list, chi_list, nm_pairs, which_for_cls,
-                          time_dict, window_args, lterm_list, tr=tr, Pk=Pk, t_grid=t_grid)
+        #check_and_compute(cls_file, p, ell_list, chi_list, nm_pairs, which_for_cls,
+        #                  time_dict, window_args, lterm_list, tr=tr, Pk=Pk, t_grid=t_grid)
 
         with h5py.File(cls_file, 'r') as f:
 
             if idx == 0:
                 # Get ell_list and chi_list from file
                 # They should be in each group, let's get from first group
-                first_group_name = f'n_{nm_pairs[0][0]}_m_{nm_pairs[0][1]}'
+                n, m = nm_pairs[0][0], nm_pairs[0][1]
+
+                first_group_name = f'{"primordial_" if p.mode=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}' 
                 if first_group_name not in f:
                     raise ValueError(f"Group {first_group_name} not found in {cls_file}")
 
@@ -281,7 +291,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
             if which_for_cls not in ['d0d', 'd1d', 'dod'] or p.Newton:
                 # For each (n,m) pair, sum over lterms
                 for cl_idx, (n, m) in enumerate(nm_pairs):
-                    group_name = f'n_{n}_m_{m}'
+                    group_name = f'{"primordial_" if p.mode=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}' 
 
                     if group_name not in f:
                         print(f"  Warning: Group {group_name} not found, skipping")
@@ -309,6 +319,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                         Cl_array[valid_mask, :, cl_idx+idx] = interp_func(chi_list)
                     else:
                         Cl_array[valid_mask, :, cl_idx+idx] = Cl_subset
+                        np.save(f'Cl_subset_{n}', Cl_subset)
 
             else:
                 # Special combinations for d0d, d1d, dod with non-Newton
@@ -382,247 +393,247 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 else:
                     Cl_array[valid_mask, :, idx] = Cl_subset
 
-    # ========================================================================
-    # 2. Compute A0, A2, A4 kernels for all ells directly on chi_list
-    # ========================================================================
-    print("  Computing A0, A2, A4 kernels for all ells at once...")
-    # Compute for all ells at once (no loop needed!)
-    kernels = fctr.get_bispectrum_kernels_analytical(p, ell_list, chi_list, time_dict,
-                                                      window_args=window_args, W_derivs_list=W_derivs_list)
-
-    # A0: shape (n_ell, n_components, n_chi)
-    # For F2: use analytical A0
-    # For G2/dv2: will be filled with f^(0) from file below
-    # For quadratic terms: only need A00, extract later
-    if p.which == 'F2':
-        A0 = kernels['A0']
-        n_A0_comp = A0.shape[1]
-        # Copy A00
-        kernels_array[:, :, 0] = A0[:, 0, :]
-        # A01 = -A00/2
-        kernels_array[:, :, 1] = -kernels_array[:, :, 0] / 2.
-        # Copy remaining components (A02, A03 if present)
-        for comp in range(2, n_A0_comp):
-            kernels_array[:, :, comp] = A0[:, comp, :]
-
-    # A2 and A4 (only for F2/G2/dv2)
-    if p.which in ['F2', 'G2', 'dv2'] and kernels['A2'] is not None and kernels['A4'] is not None:
-        A2 = kernels['A2']  # shape (n_ell, 2, n_chi)
-        A4 = kernels['A4']  # shape (n_ell, 1, n_chi)
-
-        np.save('A0' if not p.Newton else 'A0New', A0)
-        np.save('A2' if not p.Newton else 'A2New', A2)
-        np.save('A4' if not p.Newton else 'A4New', A4)
-
-        # A2: 2 components
-        for comp in range(2):
-            kernels_array[:, :, 4+comp] = A2[:, comp, :]
-
-        # A4: 1 component
-        kernels_array[:, :, 6] = A4[:, 0, :]
     
-    # ========================================================================
-    # 4. Load f-coefficient terms from HDF5 (F2/G2/dv2 only)
-    # ========================================================================
-    if p.which in ['F2', 'G2', 'dv2']:
-        cls_file = f"{output_dir}Cls.h5"
+    if p.mode == 'primordial':
+        return Cl_array
+    else:
+        # ========================================================================
+        # 2. Compute A0, A2, A4 kernels for all ells directly on chi_list
+        # ========================================================================
+        print("  Computing A0, A2, A4 kernels for all ells at once...")
+        # Compute for all ells at once (no loop needed!)
+        kernels = fctr.get_bispectrum_kernels_analytical(p, ell_list, chi_list, time_dict,
+                                                          window_args=window_args, W_derivs_list=W_derivs_list)
 
-        # For G2/dv2: Always need f^(0) (goes to A0 slots 0-2)
-        # For F2: Only need f^(-2) and f^(-4) if Newton=0 (goes to Am slots 7-11)
-        if p.which in ['G2', 'dv2'] or not p.Newton:
-            print("  Loading f-coefficient terms from HDF5...")
-            try:
-                with h5py.File(cls_file, 'r') as f:
-                    if p.which not in f:
-                        raise KeyError(f"Group {p.which} not found")
+        # A0: shape (n_ell, n_components, n_chi)
+        # For F2: use analytical A0
+        # For G2/dv2: will be filled with f^(0) from file below
+        # For quadratic terms: only need A00, extract later
+        if p.which == 'F2':
+            A0 = kernels['A0']
+            n_A0_comp = A0.shape[1]
+            # Copy A00
+            kernels_array[:, :, 0] = A0[:, 0, :]
+            # A01 = -A00/2
+            kernels_array[:, :, 1] = -kernels_array[:, :, 0] / 2.
+            # Copy remaining components (A02, A03 if present)
+            for comp in range(2, n_A0_comp):
+                kernels_array[:, :, comp] = A0[:, comp, :]
 
-                    group = f[p.which]
-                    ell_list_file = group['ell_list'][()]
-                    chi_list_file = group['chi_list'][()]
+        # A2 and A4 (only for F2/G2/dv2)
+        if p.which in ['F2', 'G2', 'dv2'] and kernels['A2'] is not None and kernels['A4'] is not None:
+            A2 = kernels['A2']  # shape (n_ell, 2, n_chi)
+            A4 = kernels['A4']  # shape (n_ell, 1, n_chi)
 
-                    # Check which ells are missing
-                    missing_ells = [ell for ell in ell_list if ell not in ell_list_file]
-                    if missing_ells:
-                        raise KeyError(f"ells {missing_ells} not found")
+            # A2: 2 components
+            for comp in range(2):
+                kernels_array[:, :, 4+comp] = A2[:, comp, :]
 
-                    # Extract for each ell and interpolate to chi_list
-                    chi_match = np.array_equal(chi_list_file, chi_list)
+            # A4: 1 component
+            kernels_array[:, :, 6] = A4[:, 0, :]
+        
+        # ========================================================================
+        # 4. Load f-coefficient terms from HDF5 (F2/G2/dv2 only)
+        # ========================================================================
+        if p.which in ['F2', 'G2', 'dv2']:
+            cls_file = f"{output_dir}Cls.h5"
 
-                    for i, ell in enumerate(ell_list):
-                        ell_idx = np.where(ell_list_file == ell)[0][0]
+            # For G2/dv2: Always need f^(0) (goes to A0 slots 0-2)
+            # For F2: Only need f^(-2) and f^(-4) if Newton=0 (goes to Am slots 7-11)
+            if p.which in ['G2', 'dv2'] or not p.Newton:
+                print("  Loading f-coefficient terms from HDF5...")
+                try:
+                    with h5py.File(cls_file, 'r') as f:
+                        if p.which not in f:
+                            raise KeyError(f"Group {p.which} not found")
 
-                        if p.which in ['G2', 'dv2']:
-                            # Load f^(0) directly into A0 slots (0-2)
-                            f0_data = group['f0_newton' if p.Newton else 'f0'][()]  # shape: (n_components, n_ell_file, n_chi_file)
-                            f0_comp1 = f0_data[0, ell_idx, :]  # f_{0,0}
+                        group = f[p.which]
+                        ell_list_file = group['ell_list'][()]
+                        chi_list_file = group['chi_list'][()]
 
-                            if not chi_match:
-                                interp_func = interp1d(chi_list_file, f0_comp1, kind='linear',
-                                                      bounds_error=False, fill_value=0.0)
-                                kernels_array[i, :, 0] = interp_func(chi_list)  # A00
-                                kernels_array[i, :, 1] = -kernels_array[i, :, 0] / 2.  # A01 = -f_{0,0}/2
+                        # Check which ells are missing
+                        missing_ells = [ell for ell in ell_list if ell not in ell_list_file]
+                        if missing_ells:
+                            raise KeyError(f"ells {missing_ells} not found")
 
-                            else:
-                                kernels_array[i, :, 0] = f0_comp1
-                                kernels_array[i, :, 1] = -f0_comp1 / 2.
+                        # Extract for each ell and interpolate to chi_list
+                        chi_match = np.array_equal(chi_list_file, chi_list)
 
-                            # If Newton=0, also load f^(-2) into Am slots (7-9, same as F2)
-                            if not p.Newton:
-                                f0_comp2 = f0_data[1, ell_idx, :]  # second component
+                        for i, ell in enumerate(ell_list):
+                            ell_idx = np.where(ell_list_file == ell)[0][0]
 
-                                fm2_data = group['fm2'][()]
-                                fm2_comp1 = fm2_data[0, ell_idx, :]  # Only one component for G2/dv2
+                            if p.which in ['G2', 'dv2']:
+                                # Load f^(0) directly into A0 slots (0-2)
+                                f0_data = group['f0_newton' if p.Newton else 'f0'][()]  # shape: (n_components, n_ell_file, n_chi_file)
+                                f0_comp1 = f0_data[0, ell_idx, :]  # f_{0,0}
 
                                 if not chi_match:
-                                    interp_func = interp1d(chi_list_file, f0_comp2, kind='linear',
+                                    interp_func = interp1d(chi_list_file, f0_comp1, kind='linear',
                                                           bounds_error=False, fill_value=0.0)
-                                    kernels_array[i, :, 2] = interp_func(chi_list)  # A02
+                                    kernels_array[i, :, 0] = interp_func(chi_list)  # A00
+                                    kernels_array[i, :, 1] = -kernels_array[i, :, 0] / 2.  # A01 = -f_{0,0}/2
+
+                                else:
+                                    kernels_array[i, :, 0] = f0_comp1
+                                    kernels_array[i, :, 1] = -f0_comp1 / 2.
+
+                                # If Newton=0, also load f^(-2) into Am slots (7-9, same as F2)
+                                if not p.Newton:
+                                    f0_comp2 = f0_data[1, ell_idx, :]  # second component
+
+                                    fm2_data = group['fm2'][()]
+                                    fm2_comp1 = fm2_data[0, ell_idx, :]  # Only one component for G2/dv2
+
+                                    if not chi_match:
+                                        interp_func = interp1d(chi_list_file, f0_comp2, kind='linear',
+                                                              bounds_error=False, fill_value=0.0)
+                                        kernels_array[i, :, 2] = interp_func(chi_list)  # A02
  
+                                        interp_func = interp1d(chi_list_file, fm2_comp1, kind='linear',
+                                                              bounds_error=False, fill_value=0.0)
+                                        kernels_array[i, :, 7] = interp_func(chi_list)  # Am1
+                                        kernels_array[i, :, 8] = -kernels_array[i, :, 7] / 2.  # Am2
+                                        # kernels_array[i, :, 9] remains zero (no Am3 for G2/dv2)
+                                    else:
+                                        kernels_array[i, :, 2] = f0_comp2
+                                        kernels_array[i, :, 7] = fm2_comp1
+                                        kernels_array[i, :, 8] = -fm2_comp1 / 2.
+                                        # kernels_array[i, :, 9] remains zero
+
+                            else:  # F2 with Newton=0
+                                # Load f^(-2) into Am slots (7-9)
+                                fm2_data = group['fm2'][()]
+                                fm2_comp1 = fm2_data[0, ell_idx, :]
+                                fm2_comp2 = fm2_data[1, ell_idx, :]
+
+                                if not chi_match:
                                     interp_func = interp1d(chi_list_file, fm2_comp1, kind='linear',
                                                           bounds_error=False, fill_value=0.0)
                                     kernels_array[i, :, 7] = interp_func(chi_list)  # Am1
                                     kernels_array[i, :, 8] = -kernels_array[i, :, 7] / 2.  # Am2
-                                    # kernels_array[i, :, 9] remains zero (no Am3 for G2/dv2)
+
+                                    interp_func = interp1d(chi_list_file, fm2_comp2, kind='linear',
+                                                          bounds_error=False, fill_value=0.0)
+                                    kernels_array[i, :, 9] = interp_func(chi_list)  # Am3
                                 else:
-                                    kernels_array[i, :, 2] = f0_comp2
                                     kernels_array[i, :, 7] = fm2_comp1
                                     kernels_array[i, :, 8] = -fm2_comp1 / 2.
-                                    # kernels_array[i, :, 9] remains zero
+                                    kernels_array[i, :, 9] = fm2_comp2
 
-                        else:  # F2 with Newton=0
-                            # Load f^(-2) into Am slots (7-9)
-                            fm2_data = group['fm2'][()]
-                            fm2_comp1 = fm2_data[0, ell_idx, :]
-                            fm2_comp2 = fm2_data[1, ell_idx, :]
+                                # Load f^(-4) into Am slots (10-11)
+                                fm4_data = group['fm4'][()]
+                                fm4_comp1 = fm4_data[0, ell_idx, :]
 
-                            if not chi_match:
-                                interp_func = interp1d(chi_list_file, fm2_comp1, kind='linear',
-                                                      bounds_error=False, fill_value=0.0)
-                                kernels_array[i, :, 7] = interp_func(chi_list)  # Am1
-                                kernels_array[i, :, 8] = -kernels_array[i, :, 7] / 2.  # Am2
+                                if not chi_match:
+                                    interp_func = interp1d(chi_list_file, fm4_comp1, kind='linear',
+                                                          bounds_error=False, fill_value=0.0)
+                                    kernels_array[i, :, 10] = interp_func(chi_list)  # Am4
+                                    kernels_array[i, :, 11] = -kernels_array[i, :, 10] / 2.  # Am5
+                                else:
+                                    kernels_array[i, :, 10] = fm4_comp1
+                                    kernels_array[i, :, 11] = -fm4_comp1 / 2.
 
-                                interp_func = interp1d(chi_list_file, fm2_comp2, kind='linear',
-                                                      bounds_error=False, fill_value=0.0)
-                                kernels_array[i, :, 9] = interp_func(chi_list)  # Am3
-                            else:
-                                kernels_array[i, :, 7] = fm2_comp1
-                                kernels_array[i, :, 8] = -fm2_comp1 / 2.
-                                kernels_array[i, :, 9] = fm2_comp2
+                except (FileNotFoundError, KeyError) as e:
+                    # If we get here, it means the data should have been computed in the section above
+                    # but something went wrong. Raise a clear error.
+                    raise RuntimeError(
+                        f"f-coefficient data not found: {e}\n"
+                        f"This should have been computed automatically. Check that tr/Pk/t_grid were provided."
+                    ) from e
 
-                            # Load f^(-4) into Am slots (10-11)
-                            fm4_data = group['fm4'][()]
-                            fm4_comp1 = fm4_data[0, ell_idx, :]
+        # ========================================================================
+        # 4b. Load Il terms (radiation) for F2/G2/dv2
+        # ========================================================================
+        if p.which in ['F2', 'G2', 'dv2'] and not p.Newton and p.rad:
+            print("  Loading Il (radiation) terms from HDF5...")
+            try:
+                with h5py.File(cls_file, 'r') as f:
+                    group = f[p.which]
+                    ell_list_file = group['ell_list'][()]
+                    chi_list_file = group['chi_list'][()]
 
-                            if not chi_match:
-                                interp_func = interp1d(chi_list_file, fm4_comp1, kind='linear',
-                                                      bounds_error=False, fill_value=0.0)
-                                kernels_array[i, :, 10] = interp_func(chi_list)  # Am4
-                                kernels_array[i, :, 11] = -kernels_array[i, :, 10] / 2.  # Am5
-                            else:
-                                kernels_array[i, :, 10] = fm4_comp1
-                                kernels_array[i, :, 11] = -fm4_comp1 / 2.
+                    # Check if chi grids match
+                    chi_match = np.array_equal(chi_list_file, chi_list)
+
+                    # Load radiation terms
+                    fm2_rad = group['fm2_rad'][()]  # shape: (n_components, n_ell_file, n_chi_file)
+                    fm4_rad = group['fm4_rad'][()]  # shape: (n_components, n_ell_file, n_chi_file)
+
+                    for i, ell in enumerate(ell_list):
+                        ell_idx = np.where(ell_list_file == ell)[0][0]
+
+                        # Extract first component of fm2_rad and fm4_rad
+                        fm2_comp1 = fm2_rad[0, ell_idx, :]
+                        fm4_comp1 = fm4_rad[0, ell_idx, :]
+
+                        if not chi_match:
+                            # Il1 from fm2_rad
+                            interp_func = interp1d(chi_list_file, fm2_comp1, kind='linear',
+                                                  bounds_error=False, fill_value=0.0)
+                            kernels_array[i, :, 12] = interp_func(chi_list)  # Il1
+                            kernels_array[i, :, 13] = -kernels_array[i, :, 12] / 2.  # Il2 = -Il1/2
+
+                            # Il3 from fm4_rad
+                            interp_func = interp1d(chi_list_file, fm4_comp1, kind='linear',
+                                                  bounds_error=False, fill_value=0.0)
+                            kernels_array[i, :, 14] = interp_func(chi_list)  # Il3
+                            kernels_array[i, :, 15] = -kernels_array[i, :, 14] / 2.  # Il4 = -Il3/2
+                        else:
+                            kernels_array[i, :, 12] = fm2_comp1
+                            kernels_array[i, :, 13] = -fm2_comp1 / 2.
+                            kernels_array[i, :, 14] = fm4_comp1
+                            kernels_array[i, :, 15] = -fm4_comp1 / 2.
 
             except (FileNotFoundError, KeyError) as e:
-                # If we get here, it means the data should have been computed in the section above
-                # but something went wrong. Raise a clear error.
                 raise RuntimeError(
-                    f"f-coefficient data not found: {e}\n"
+                    f"Il (radiation) data not found: {e}\n"
                     f"This should have been computed automatically. Check that tr/Pk/t_grid were provided."
                 ) from e
 
-    # ========================================================================
-    # 4b. Load Il terms (radiation) for F2/G2/dv2
-    # ========================================================================
-    if p.which in ['F2', 'G2', 'dv2'] and not p.Newton and p.rad:
-        print("  Loading Il (radiation) terms from HDF5...")
-        try:
-            with h5py.File(cls_file, 'r') as f:
-                group = f[p.which]
-                ell_list_file = group['ell_list'][()]
-                chi_list_file = group['chi_list'][()]
+        # ========================================================================
+        # 5. Precompute combined coefficients for efficient integration
+        # ========================================================================
+        print("  Precomputing angular coefficient combinations...")
 
-                # Check if chi grids match
-                chi_match = np.array_equal(chi_list_file, chi_list)
+        if p.which in ['F2', 'G2', 'dv2']:
+            # F2/G2/dv2: 4 angular combinations from the integrand formula
+            # coeff_00: for Cl2(0,0)*Cl3(0,0)
+            # coeff_m2m2: for Cl2(-2,0)*Cl3(-2,0)
+            # coeff_p2m2: for (Cl2(2,0)*Cl3(-2,0) + Cl2(-2,0)*Cl3(2,0))
+            # coeff_0m2: for (Cl2(0,0)*Cl3(-2,0) + Cl3(0,0)*Cl2(-2,0))
 
-                # Load radiation terms
-                fm2_rad = group['fm2_rad'][()]  # shape: (n_components, n_ell_file, n_chi_file)
-                fm4_rad = group['fm4_rad'][()]  # shape: (n_components, n_ell_file, n_chi_file)
+            coeffs = np.zeros((n_ell, n_chi, 4))
 
-                for i, ell in enumerate(ell_list):
-                    ell_idx = np.where(ell_list_file == ell)[0][0]
+            # Base: A0, A2, A4 contributions (now unified for all cases!)
+            coeffs[:, :, 0] = kernels_array[:, :, 0]  # A00 for Cl(0,0)*Cl(0,0)
+            coeffs[:, :, 1] = kernels_array[:, :, 3] + kernels_array[:, :, 5] + kernels_array[:, :, 6]  # A03 + A21 + A40 for Cl(-2,0)*Cl(-2,0)
+            coeffs[:, :, 2] = kernels_array[:, :, 1]  # A01 for (Cl(2,0)*Cl(-2,0) + Cl(-2,0)*Cl(2,0))
+            coeffs[:, :, 3] = kernels_array[:, :, 2] + kernels_array[:, :, 4]  # A02 + A20 for (Cl(0,0)*Cl(-2,0) + Cl(0,0)*Cl(-2,0))
 
-                    # Extract first component of fm2_rad and fm4_rad
-                    fm2_comp1 = fm2_rad[0, ell_idx, :]
-                    fm4_comp1 = fm4_rad[0, ell_idx, :]
+            # Add Am contributions (f^(-2) and f^(-4) terms)
+            # Unified formula for F2, G2, dv2!
+            # - F2: Am1-Am3 contain f^(-2), Am4-Am5 contain f^(-4)
+            # - G2/dv2: Am1-Am2 contain f^(-2), Am3 is zero, Am4-Am5 are zero
+            if not p.Newton or (p.Newton and p.which != 'F2'):
+                coeffs[:, :, 0] += kernels_array[:, :, 7] + kernels_array[:, :, 10]  # Am1 + Am4 for Cl_0*Cl_0
+                coeffs[:, :, 2] += kernels_array[:, :, 8] + kernels_array[:, :, 11]  # Am2 + Am5 for (Cl_p2*Cl_m2 + Cl_m2*Cl_p2)
+                coeffs[:, :, 3] += kernels_array[:, :, 9]  # Am3 for (Cl_0*Cl_m2 + Cl_0*Cl_m2)
 
-                    if not chi_match:
-                        # Il1 from fm2_rad
-                        interp_func = interp1d(chi_list_file, fm2_comp1, kind='linear',
-                                              bounds_error=False, fill_value=0.0)
-                        kernels_array[i, :, 12] = interp_func(chi_list)  # Il1
-                        kernels_array[i, :, 13] = -kernels_array[i, :, 12] / 2.  # Il2 = -Il1/2
+            # Add Il contributions (radiation terms)
+            if not p.Newton and p.rad:
+                coeffs[:, :, 0] += kernels_array[:, :, 12] + kernels_array[:, :, 14]  # Il1 + Il3 for Cl_0*Cl_0
+                coeffs[:, :, 2] += kernels_array[:, :, 13] + kernels_array[:, :, 15]  # Il2 + Il4 for (Cl_p2*Cl_m2 + Cl_m2*Cl_p2)
 
-                        # Il3 from fm4_rad
-                        interp_func = interp1d(chi_list_file, fm4_comp1, kind='linear',
-                                              bounds_error=False, fill_value=0.0)
-                        kernels_array[i, :, 14] = interp_func(chi_list)  # Il3
-                        kernels_array[i, :, 15] = -kernels_array[i, :, 14] / 2.  # Il4 = -Il3/2
-                    else:
-                        kernels_array[i, :, 12] = fm2_comp1
-                        kernels_array[i, :, 13] = -fm2_comp1 / 2.
-                        kernels_array[i, :, 14] = fm4_comp1
-                        kernels_array[i, :, 15] = -fm4_comp1 / 2.
+        else:
+            # Quadratic terms: only need A00
+            # Integrand is: A00 * Cl2 * Cl3 (for d2vd2v) or A00 * (Cl2_1*Cl3_2 + Cl3_1*Cl2_2) (for others)
+            # Pad to 4 components for compatibility with integration function (last 3 are zeros)
+            coeffs = np.zeros((n_ell, n_chi, 1))
+            A0 = kernels['A0']
+            coeffs[:, :, 0] = A0[:, 0, :]  # A00 (only non-zero component)
 
-        except (FileNotFoundError, KeyError) as e:
-            raise RuntimeError(
-                f"Il (radiation) data not found: {e}\n"
-                f"This should have been computed automatically. Check that tr/Pk/t_grid were provided."
-            ) from e
-
-    # ========================================================================
-    # 5. Precompute combined coefficients for efficient integration
-    # ========================================================================
-    print("  Precomputing angular coefficient combinations...")
-
-    if p.which in ['F2', 'G2', 'dv2']:
-        # F2/G2/dv2: 4 angular combinations from the integrand formula
-        # coeff_00: for Cl2(0,0)*Cl3(0,0)
-        # coeff_m2m2: for Cl2(-2,0)*Cl3(-2,0)
-        # coeff_p2m2: for (Cl2(2,0)*Cl3(-2,0) + Cl2(-2,0)*Cl3(2,0))
-        # coeff_0m2: for (Cl2(0,0)*Cl3(-2,0) + Cl3(0,0)*Cl2(-2,0))
-
-        coeffs = np.zeros((n_ell, n_chi, 4))
-
-        # Base: A0, A2, A4 contributions (now unified for all cases!)
-        coeffs[:, :, 0] = kernels_array[:, :, 0]  # A00 for Cl(0,0)*Cl(0,0)
-        coeffs[:, :, 1] = kernels_array[:, :, 3] + kernels_array[:, :, 5] + kernels_array[:, :, 6]  # A03 + A21 + A40 for Cl(-2,0)*Cl(-2,0)
-        coeffs[:, :, 2] = kernels_array[:, :, 1]  # A01 for (Cl(2,0)*Cl(-2,0) + Cl(-2,0)*Cl(2,0))
-        coeffs[:, :, 3] = kernels_array[:, :, 2] + kernels_array[:, :, 4]  # A02 + A20 for (Cl(0,0)*Cl(-2,0) + Cl(0,0)*Cl(-2,0))
-
-        # Add Am contributions (f^(-2) and f^(-4) terms)
-        # Unified formula for F2, G2, dv2!
-        # - F2: Am1-Am3 contain f^(-2), Am4-Am5 contain f^(-4)
-        # - G2/dv2: Am1-Am2 contain f^(-2), Am3 is zero, Am4-Am5 are zero
-        if not p.Newton or (p.Newton and p.which != 'F2'):
-            coeffs[:, :, 0] += kernels_array[:, :, 7] + kernels_array[:, :, 10]  # Am1 + Am4 for Cl_0*Cl_0
-            coeffs[:, :, 2] += kernels_array[:, :, 8] + kernels_array[:, :, 11]  # Am2 + Am5 for (Cl_p2*Cl_m2 + Cl_m2*Cl_p2)
-            coeffs[:, :, 3] += kernels_array[:, :, 9]  # Am3 for (Cl_0*Cl_m2 + Cl_0*Cl_m2)
-
-        # Add Il contributions (radiation terms)
-        if not p.Newton and p.rad:
-            coeffs[:, :, 0] += kernels_array[:, :, 12] + kernels_array[:, :, 14]  # Il1 + Il3 for Cl_0*Cl_0
-            coeffs[:, :, 2] += kernels_array[:, :, 13] + kernels_array[:, :, 15]  # Il2 + Il4 for (Cl_p2*Cl_m2 + Cl_m2*Cl_p2)
-
-    else:
-        # Quadratic terms: only need A00
-        # Integrand is: A00 * Cl2 * Cl3 (for d2vd2v) or A00 * (Cl2_1*Cl3_2 + Cl3_1*Cl2_2) (for others)
-        # Pad to 4 components for compatibility with integration function (last 3 are zeros)
-        coeffs = np.zeros((n_ell, n_chi, 1))
-        A0 = kernels['A0']
-        coeffs[:, :, 0] = A0[:, 0, :]  # A00 (only non-zero component)
-
-    # Return combined coefficients instead of individual kernels
-    return Cl_array, coeffs
+        # Return combined coefficients instead of individual kernels
+        return Cl_array, coeffs
 
 
 @njit
@@ -686,15 +697,16 @@ def compute_bispectrum_quadratic_symmetric(Cl_array, coeffs, chi_list, triplet_l
         term3 = A00_3 * Cl1 * Cl2
 
         integrand = term1 + term2 + term3
-
         # Integrate using Simpson's rule
         integral = np.sum(integrand * simp_w) * dchi / 3.0
+        # integral = simpson(integrand, x=chi_list)
+        
+        # spline = UnivariateSpline(chi_list, integrand, k=5, s=0)
+        # integral = quad(spline, chi_list[0], chi_list[-1])[0]
+        
+        results[idx] = integral
 
-        # Apply normalization and optional sign
-        result = integral * 8.0 / (np.pi**2)
-        results[idx] = result
-
-    return results
+    return 2.*results
 
 
 @njit(parallel=True)
@@ -744,13 +756,9 @@ def compute_bispectrum_quadratic_dav(Cl_array, coeffs, chi_list, triplet_list, A
         # Integrate using Simpson's rule
         integral = np.sum(integrand * simp_w) * dchi / 3.0
 
-        # Apply normalization and optional sign
-        result = integral * 8.0 / (np.pi**2)
-        results[idx] = result
+        results[idx] = integral
 
     return results
-
-
 
 
 @njit(parallel=True)
@@ -799,12 +807,13 @@ def compute_bispectrum_quadratic(Cl_array, coeffs, chi_list, triplet_list):
 
         # Integrate using Simpson's rule
         integral = np.sum(integrand * simp_w) * dchi / 3.0
+        # integral = simpson(integrand, x=chi_list)
+        # spline = UnivariateSpline(chi_list, integrand, k=5, s=0)
+        # integral = quad(spline, chi_list[0], chi_list[-1])[0]
 
-        # Apply normalization and optional sign
-        result = integral * 8.0 / (np.pi**2)
-        results[idx] = result
+        results[idx] = integral
 
-    return results
+    return results 
 
 
 @njit(parallel=True)
@@ -870,56 +879,12 @@ def compute_bispectrum_parallel_efficient(Cl_array, coeffs, chi_list, triplet_li
         # Integrate using Simpson's rule
         integral = np.sum(integrand * simp_w) * dchi / 3.0
 
-        # Apply normalization and optional sign
-        result = integral * 8.0 / (np.pi**2)
+        results[idx] = integral
 
-        results[idx] = result
-
-    return results
+    return 2.*results
 
 
-def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                                     W_derivs_list=None, tr=None, Pk=None, t_grid=None):
-    """
-    Efficient computation of all bispectra for ell_list.
-
-    This function:
-    1. Loads all required data once (Cls, Am, Il, A0, A2, A4)
-    2. Generates all valid triplets
-    3. Parallelizes computation over triplets using numba
-    4. Saves results to HDF5
-
-    Parameters:
-    -----------
-    p : Param object with .which, .Newton, .rad
-    ell_list : list - ell values
-    time_dict : dict - cosmological functions
-    chi_list : array - chi values for integration
-    window_args : tuple - (r0, ddr, normW)
-    W_derivs_list : list of arrays, optional
-        Precomputed window derivatives. If None, will be computed from window_args.
-    """
-
-    print(f"="*70)
-    print(f"Computing bispectrum for ell_list={ell_list}, which={p.which}")
-    print(f"="*70)
-
-    # Determine which_code for numba
-    which_codes = {'F2': 0, 'G2': 1, 'dv2': 2}
-    if p.which in which_codes:
-        which_code = which_codes[p.which]
-    else:
-        which_code = -1
-
-    # ========================================================================
-    # 2. Load all data once
-    # ========================================================================
-    start_time = time.time()
-    Cl_array, coeffs = load_and_compute_all_terms(
-                        p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                        W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
-    print(f"Data loading completed in {time.time()-start_time:.2f} seconds")
-
+def ell_configurations(p, ell_list):
     # Create ell to index mapping
     ell_to_idx = {ell: i for i, ell in enumerate(ell_list)}
 
@@ -995,23 +960,211 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
                         wigner_values.append(wigner_test)
         config_name = ''
 
-    n_triplets = len(triplets)
+    return np.array(triplets, dtype=np.int64), np.array(wigner_values), config_name
+
+
+
+def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lterm_list,
+                               W_derivs_list=None, tr=None, Pk=None, t_grid=None):
+    """
+    Compute and combine all primordial shapes: local, equilateral, orthogonal.
+
+    The shapes are combined as follows:
+    - local: computed directly with which='local'
+    - B_1_13_23: computed with which='equi'
+    - B_23_23_23: computed with which='ortho'
+    - equilateral = -3*local + 6*B_1_13_23 - 12*B_23_23_23
+    - orthogonal = 3*equilateral - 12*B_23_23_23
+
+    Parameters:
+    -----------
+    p : Param object with mode='primordial'
+    ell_list : list - ell values
+    chi_list : array - chi values for integration
+    time_dict : dict - cosmological functions
+    window_args : tuple - (r0, ddr, normW)
+    lterm_list : list - lterm values to sum over
+    W_derivs_list : optional precomputed window derivatives
+    tr : dict - transfer functions
+    Pk : array - power spectrum
+    t_grid : array - t values for FFTLog
+    """
+
+    print(f"="*70)
+    print(f"Computing all primordial shapes: local, equilateral, orthogonal")
+    print(f"="*70)
+
+    # Store original which
+    original_which = p.which
+
+    # Step 1: Compute local bispectrum
+    print(f"\n{'='*70}")
+    print(f"  Step 1/3: Computing LOCAL bispectrum")
+    print(f"{'='*70}\n")
+    p.which = 'local'
+    compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
+                                     W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+
+    # Load local results
+    file_path = f"{p.output_dir}bl/bl_{p.lterm}_local.h5"
+    with h5py.File(file_path, 'r') as f:
+        config_name = 'equilateral' if p.configuration == 'equi' else \
+                     (f'squeezed_ell{p.ell}' if p.configuration == 'squ' else \
+                      f'folded_ell{p.ellmax}' if p.configuration == 'folded' else 'all')
+        grp = f[config_name]
+        B_local = grp['bl'][:]
+
+    # Step 2: Compute B_1_13_23 (using which='equi')
+    print(f"\n{'='*70}")
+    print(f"  Step 2/3: Computing B_1_13_23 (intermediate for equilateral)")
+    print(f"{'='*70}\n")
+    p.which = 'equi'
+    compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
+                                     W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+
+    # Load B_1_13_23 results
+    file_path = f"{p.output_dir}bl/bl_{p.lterm}_equi.h5"
+    with h5py.File(file_path, 'r') as f:
+        grp = f[config_name]
+        B_1_13_23 = grp['bl'][:]
+
+    # Step 3: Compute B_23_23_23 (using which='ortho')
+    print(f"\n{'='*70}")
+    print(f"  Step 3/3: Computing B_23_23_23 (intermediate for equilateral & orthogonal)")
+    print(f"{'='*70}\n")
+    p.which = 'ortho'
+    compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
+                                     W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+
+    # Load B_23_23_23 results
+    file_path = f"{p.output_dir}bl/bl_{p.lterm}_ortho.h5"
+    with h5py.File(file_path, 'r') as f:
+        grp = f[config_name]
+        B_23_23_23 = grp['bl'][:]
+
+    # Step 4: Combine to get final equilateral and orthogonal
+    print(f"\n{'='*70}")
+    print(f"  Combining results to get final shapes...")
+    print(f"{'='*70}\n")
+
+    B_equilateral = -3.*B_local + 6.*B_1_13_23 - 12.*B_23_23_23
+    B_orthogonal = 3.*B_equilateral - 12.*B_23_23_23
+
+    # Step 5: Save all results to a single HDF5 file
+    file_path = f"{p.output_dir}bl/bl_{p.lterm}_all_primordial.h5"
+    lock_path = f"{file_path}.lock"
+    print(f"  Saving all primordial shapes to {file_path}...")
+
+    with FileLock(lock_path):
+        with h5py.File(file_path, "a") as f:
+            # Load structure from local file
+            local_file = f"{p.output_dir}bl/bl_{p.lterm}_local.h5"
+            with h5py.File(local_file, 'r') as f_local:
+                grp_local = f_local[config_name]
+
+                # Save local
+                shape_group = f'local/{config_name}' if config_name else 'local/all'
+                if shape_group in f:
+                    del f[shape_group]
+                grp = f.create_group(shape_group)
+                for key in grp_local.keys():
+                    grp.create_dataset(key, data=grp_local[key][:])
+
+                # Save equilateral
+                shape_group = f'equilateral/{config_name}' if config_name else 'equilateral/all'
+                if shape_group in f:
+                    del f[shape_group]
+                grp = f.create_group(shape_group)
+                for key in grp_local.keys():
+                    if key == 'bl':
+                        grp.create_dataset('bl', data=B_equilateral)
+                    else:
+                        grp.create_dataset(key, data=grp_local[key][:])
+
+                # Save orthogonal
+                shape_group = f'orthogonal/{config_name}' if config_name else 'orthogonal/all'
+                if shape_group in f:
+                    del f[shape_group]
+                grp = f.create_group(shape_group)
+                for key in grp_local.keys():
+                    if key == 'bl':
+                        grp.create_dataset('bl', data=B_orthogonal)
+                    else:
+                        grp.create_dataset(key, data=grp_local[key][:])
+
+            f.flush()
+
+    # Restore original which
+    p.which = original_which
+
+    print(f"\n{'='*70}")
+    print(f"All primordial shapes computed and saved successfully!")
+    print(f"  File: {file_path}")
+    print(f"  Shapes: local, equilateral, orthogonal")
+    print(f"{'='*70}\n")
+
+
+def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
+                                     W_derivs_list=None, tr=None, Pk=None, t_grid=None):
+    """
+    Efficient computation of all bispectra for ell_list.
+
+    This function:
+    1. Loads all required data once (Cls, Am, Il, A0, A2, A4)
+    2. Generates all valid triplets
+    3. Parallelizes computation over triplets using numba
+    4. Saves results to HDF5
+
+    Parameters:
+    -----------
+    p : Param object with .which, .Newton, .rad
+    ell_list : list - ell values
+    time_dict : dict - cosmological functions
+    chi_list : array - chi values for integration
+    window_args : tuple - (r0, ddr, normW)
+    W_derivs_list : list of arrays, optional
+        Precomputed window derivatives. If None, will be computed from window_args.
+    """
+
+    # Check if we need to compute all primordial shapes
+    if p.which == 'all_primordial':
+        return get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lterm_list,
+                                         W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+
+    print(f"="*70)
+    print(f"Computing bispectrum for ell_list={ell_list}, which={p.which}")
+    print(f"="*70)
+
+    # ========================================================================
+    # 2. Load all data once
+    # ========================================================================
+    start_time = time.time()
+    if p.mode=='primordial':
+        Cl_array = load_and_compute_all_terms(
+                        p, ell_list, chi_list, time_dict, window_args, lterm_list,
+                        W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+        coeffs = Cl_array[:, :, -1][:, :, None] * chi_list**2
+    else:
+        Cl_array, coeffs = load_and_compute_all_terms(
+                        p, ell_list, chi_list, time_dict, window_args, lterm_list,
+                        W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+    print(f"Data loading completed in {time.time()-start_time:.2f} seconds")
+
+    # get all ell triplets and wigner values
+    triplet_array, wigner_array, config_name = ell_configurations(p, ell_list)
+
+    n_triplets = len(triplet_array)
     print(f"Valid triplets (non-zero Wigner): {n_triplets}")
 
     if n_triplets == 0:
         print("No valid triplets, exiting...")
         return
 
-    triplet_array = np.array(triplets, dtype=np.int64)
-    wigner_array = np.array(wigner_values)
-
     # ========================================================================
     # 4. Compute bispectra in parallel
     # ========================================================================
     print(f"Computing bispectra in parallel...")
     start_time = time.time()
-
- 
 
     if p.which in ['F2', 'G2', 'dv2']:
         # F2/G2/dv2: use full integration with 4 angular coefficients
@@ -1034,7 +1187,7 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
             )
     else:
         # Quadratic terms: use simpler integration
-        is_symmetric = (p.which[:3] == p.which[3:])  # True for d2vd2v, False for d1vd1d, etc.
+        is_symmetric = (p.which[:3] == p.which[3:] or p.which in ['local', 'ortho'])  # True for d2vd2v, False for d1vd1d, etc.
 
         if is_symmetric:
             bl_results = compute_bispectrum_quadratic_symmetric(
@@ -1046,6 +1199,10 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
                 Cl_array, coeffs,
                 chi_list, triplet_array
                 )
+
+        # For ortho: divide by 6 (3 cyclic permutations * 2 from return statement)
+        if p.which == 'ortho':
+            bl_results = bl_results / 6.0
 
     print(f"Computation completed in {time.time()-start_time:.2f} seconds")
 
@@ -1079,35 +1236,35 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
             grp = f.create_group(group_name)
 
             # Save based on configuration type
-            if config == 'equi':
+            if p.configuration == 'equi':
                 # Equilateral: ell1=ell2=ell3, just store the unique ell values
-                ell_array = [ell_list[triplets[i][0]] for i in range(len(triplets))]
+                ell_array = [ell_list[triplet_array[i][0]] for i in range(len(triplet_array))]
                 grp.create_dataset('ell', data=np.array(ell_array))
                 grp.create_dataset('bl', data=np.array(bl_results))
-                grp.create_dataset('wigner', data=np.array(wigner_values))
-                print(f"  Saved {len(triplets)} equilateral triplets in group '{group_name}'")
+                grp.create_dataset('wigner', data=wigner_array)
+                print(f"  Saved {len(triplet_array)} equilateral triplet_array in group '{group_name}'")
 
-            elif config in ['squ', 'folded']:
+            elif p.configuration in ['squ', 'folded']:
                 # Squeezed/Folded: ell1 fixed, ell2=ell3 varying
-                ell1_fixed = ell_list[triplets[0][0]]
-                ell23_array = [ell_list[triplets[i][1]] for i in range(len(triplets))]
+                ell1_fixed = ell_list[triplet_array[0][0]]
+                ell23_array = [ell_list[triplet_array[i][1]] for i in range(len(triplet_array))]
                 grp.create_dataset('ell1', data=ell1_fixed)
                 grp.create_dataset('ell23', data=np.array(ell23_array))
                 grp.create_dataset('bl', data=np.array(bl_results))
-                grp.create_dataset('wigner', data=np.array(wigner_values))
-                print(f"  Saved {len(triplets)} {config} triplets with ell1={ell1_fixed} in group '{group_name}'")
+                grp.create_dataset('wigner', data=wigner_array)
+                print(f"  Saved {len(triplet_array)} {p.configuration} triplet_array with ell1={ell1_fixed} in group '{group_name}'")
 
             else:
                 # All configurations: need full triplet specification
-                ell1_array = [ell_list[triplets[i][0]] for i in range(len(triplets))]
-                ell2_array = [ell_list[triplets[i][1]] for i in range(len(triplets))]
-                ell3_array = [ell_list[triplets[i][2]] for i in range(len(triplets))]
+                ell1_array = [ell_list[triplet_array[i][0]] for i in range(len(triplet_array))]
+                ell2_array = [ell_list[triplet_array[i][1]] for i in range(len(triplet_array))]
+                ell3_array = [ell_list[triplet_array[i][2]] for i in range(len(triplet_array))]
                 grp.create_dataset('ell1', data=np.array(ell1_array))
                 grp.create_dataset('ell2', data=np.array(ell2_array))
                 grp.create_dataset('ell3', data=np.array(ell3_array))
                 grp.create_dataset('bl', data=np.array(bl_results))
-                grp.create_dataset('wigner', data=np.array(wigner_values))
-                print(f"  Saved {len(triplets)} triplets in group '{group_name}'")
+                grp.create_dataset('wigner', data=wigner_array)
+                print(f"  Saved {len(triplet_array)} triplet_array in group '{group_name}'")
 
             f.flush()
 

@@ -52,7 +52,7 @@ class WindowDerivatives:
                 return H_over_a_spline(r) * W_unnorm_func(r)
 
             sp_normW, _ = quad(integrand, self.xmin, self.xmax, epsrel=1e-10, epsabs=0)
-            print(f"  Computed normW = ∫(H/a * W)dr = {sp_normW:.6e}")
+            print(f"    Computed normW = ∫(H/a * W)dr = {sp_normW:.6e}")
         else:
             # Fallback: use analytical formula for ∫ W dr (old behavior)
             sp_normW = 1./4.*self.bb*(1. + 1./np.tanh((self.xmax - self.xmin)/self.bb))*2./self.bb*(self.xmax-self.xmin)
@@ -390,7 +390,83 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list)
     W_derivs = WindowDerivatives(window_args)
 
     y_list = {'r_list': r_list, 'ell_list': ell_list}
-    if p.which in ['FG2', 'd2v', 'd1v', 'd3v', 'd1d', 'd0d']:
+    if p.which in ['F2', 'G2', 'dv2']:
+
+        if p.which == 'F2': derive_start=0
+        elif p.which == 'G2': derive_start=2
+        else: derive_start=1  # dv2: fctr already includes mathcalR*Ha, take gradient with derive_start=1
+
+        # Setup fctr_list and qterm_list based on radiation vs non-radiation
+        if p.rad:
+            # Radiation case: use radiation multipoles (only independent components)
+            fctr_list = compute_radiation_f_nm(p, time_dict)  # Returns [fm2R_0, fm4R_0]
+            qterm_list = list(range(len(fctr_list)))  # [0, 1]
+            output_key = '{}_rad'.format(p.which)
+        else:
+            # Non-radiation case: compute Am terms
+            # Handle Newton cases 
+            if p.Newton and p.which in ['F2']:
+                return 0  # No Newtonian terms for F2
+
+            # Get coefficients
+            alpha_coeff, beta_coeff, gamma_coeff = get_coefficients(p, time_dict)
+
+            if p.which == 'F2':
+                # For F2: use fm2 and fm4 (only independent components)
+                # fm2: [f_00, f_0m2], fm4: [f_00], concatenated to [fm2_0, fm2_2, fm4_0]
+                fctr_list_fm2 = compute_f_nm_unified(p, alpha_coeff, beta_coeff, gamma_coeff, time_dict, h_power=-2)
+                fctr_list_fm4 = compute_f_nm_unified(p, alpha_coeff, beta_coeff, gamma_coeff, time_dict, h_power=-4)
+                fctr_list = fctr_list_fm2 + fctr_list_fm4
+                qterm_list = list(range(len(fctr_list)))  # [0, 1, 2]
+
+            else:
+                # For G2 and dv2: use f0 and optionally fm2 (only independent components)
+                # f0: [f_00, f_0m2, f_m2m2], take first 2: [f0_0, f0_2]
+                fctr_list_f0 = compute_f_nm_unified(p, alpha_coeff, beta_coeff, gamma_coeff, time_dict, h_power=0)
+
+                if p.Newton:
+                    # Newton case for G2: only f0 components
+                    fctr_list = fctr_list_f0  # [f0_0, f0_2]
+                    qterm_list = list(range(len(fctr_list)))  # [0, 1]
+                else:
+                    # Full GR case: include both f0 and fm2
+                    # fm2: [f_00, f_0m2], take first 1: [fm2_0]
+                    fctr_list_fm2 = compute_f_nm_unified(p, alpha_coeff, beta_coeff, gamma_coeff, time_dict, h_power=-2)
+                    fctr_list = fctr_list_f0 + fctr_list_fm2  # [f0_0, f0_2, fm2_0]
+                    qterm_list = list(range(len(fctr_list)))  # [0, 1, 2]
+
+            output_key = p.which
+
+        # Initialize y_list
+        y_list[output_key] = np.zeros((2, len(qterm_list), len(ell_list), len(r_list)), dtype=np.float64)
+
+        # Compute fctr derivatives and apply operators
+        # derive_start is already set: F2=0, dv2=1, G2=2
+        max_deriv = 2 + derive_start
+
+        for qt_ind, qt in enumerate(qterm_list):
+            fctr = fctr_list[qt]
+
+            # Compute fctr and its derivatives
+            fctr_derivs = np.zeros((max_deriv+1, len(r_list)), dtype=np.float64)
+
+            fctr_derivs[0] = fctr(r_list)
+            for i in range(1, max_deriv+1):
+                fctr_derivs[i] = fctr.derivative(i)(r_list)
+
+            # Get analytical derivatives of W
+            W_derivs_list = W_derivs.get_all_derivatives(r_list, r_power=0, max_deriv=max_deriv+derive_start)
+
+            # Compute f and derivatives with derive_start offset
+            f, df, d2f = [product_deriv(i+derive_start, fctr_derivs, W_derivs_list) for i in range(3)]
+
+            # Store both levels and apply mathcalD operator
+            for ind_ell, ell in enumerate(ell_list):
+                alpha = ell*(ell+1) - 2.
+                y_list[output_key][0, qt_ind, ind_ell] = f
+                y_list[output_key][1, qt_ind, ind_ell] = -d2f + 2./r_list*df + alpha/r_list**2*f
+
+    else:
         # lterm_list is now passed as argument
 
         if p.which=='d2v':
@@ -492,82 +568,6 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list)
                     
                     y_list[lterm][3, qt_ind, ind_ell] = compute_L3_f_analytical(f, df, d2f, d3f, d4f, d5f, d6f, r_list, alpha)
    
-    elif p.which in ['F2', 'G2', 'dv2']:
-
-        if p.which == 'F2': derive_start=0
-        elif p.which == 'G2': derive_start=2
-        else: derive_start=1  # dv2: fctr already includes mathcalR*Ha, take gradient with derive_start=1
-
-        # Setup fctr_list and qterm_list based on radiation vs non-radiation
-        if p.rad:
-            # Radiation case: use radiation multipoles (only independent components)
-            fctr_list = compute_radiation_f_nm(p, time_dict)  # Returns [fm2R_0, fm4R_0]
-            qterm_list = list(range(len(fctr_list)))  # [0, 1]
-            output_key = '{}_rad'.format(p.which)
-        else:
-            # Non-radiation case: compute Am terms
-            # Handle Newton cases 
-            if p.Newton and p.which in ['F2']:
-                return 0  # No Newtonian terms for F2
-
-            # Get coefficients
-            alpha_coeff, beta_coeff, gamma_coeff = get_coefficients(p, time_dict)
-
-            if p.which == 'F2':
-                # For F2: use fm2 and fm4 (only independent components)
-                # fm2: [f_00, f_0m2], fm4: [f_00], concatenated to [fm2_0, fm2_2, fm4_0]
-                fctr_list_fm2 = compute_f_nm_unified(p, alpha_coeff, beta_coeff, gamma_coeff, time_dict, h_power=-2)
-                fctr_list_fm4 = compute_f_nm_unified(p, alpha_coeff, beta_coeff, gamma_coeff, time_dict, h_power=-4)
-                fctr_list = fctr_list_fm2 + fctr_list_fm4
-                qterm_list = list(range(len(fctr_list)))  # [0, 1, 2]
-
-            else:
-                # For G2 and dv2: use f0 and optionally fm2 (only independent components)
-                # f0: [f_00, f_0m2, f_m2m2], take first 2: [f0_0, f0_2]
-                fctr_list_f0 = compute_f_nm_unified(p, alpha_coeff, beta_coeff, gamma_coeff, time_dict, h_power=0)
-
-                if p.Newton:
-                    # Newton case for G2: only f0 components
-                    fctr_list = fctr_list_f0  # [f0_0, f0_2]
-                    qterm_list = list(range(len(fctr_list)))  # [0, 1]
-                else:
-                    # Full GR case: include both f0 and fm2
-                    # fm2: [f_00, f_0m2], take first 1: [fm2_0]
-                    fctr_list_fm2 = compute_f_nm_unified(p, alpha_coeff, beta_coeff, gamma_coeff, time_dict, h_power=-2)
-                    fctr_list = fctr_list_f0 + fctr_list_fm2  # [f0_0, f0_2, fm2_0]
-                    qterm_list = list(range(len(fctr_list)))  # [0, 1, 2]
-
-            output_key = p.which
-
-        # Initialize y_list
-        y_list[output_key] = np.zeros((2, len(qterm_list), len(ell_list), len(r_list)), dtype=np.float64)
-
-        # Compute fctr derivatives and apply operators
-        # derive_start is already set: F2=0, dv2=1, G2=2
-        max_deriv = 2 + derive_start
-
-        for qt_ind, qt in enumerate(qterm_list):
-            fctr = fctr_list[qt]
-
-            # Compute fctr and its derivatives
-            fctr_derivs = np.zeros((max_deriv+1, len(r_list)), dtype=np.float64)
-
-            fctr_derivs[0] = fctr(r_list)
-            for i in range(1, max_deriv+1):
-                fctr_derivs[i] = fctr.derivative(i)(r_list)
-
-            # Get analytical derivatives of W
-            W_derivs_list = W_derivs.get_all_derivatives(r_list, r_power=0, max_deriv=max_deriv+derive_start)
-
-            # Compute f and derivatives with derive_start offset
-            f, df, d2f = [product_deriv(i+derive_start, fctr_derivs, W_derivs_list) for i in range(3)]
-
-            # Store both levels and apply mathcalD operator
-            for ind_ell, ell in enumerate(ell_list):
-                alpha = ell*(ell+1) - 2.
-                y_list[output_key][0, qt_ind, ind_ell] = f
-                y_list[output_key][1, qt_ind, ind_ell] = -d2f + 2./r_list*df + alpha/r_list**2*f
-
     return y_list
 
 
@@ -788,10 +788,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
                 A0_tab /= r_list**(int(p.which[4]))
 
         # Reshape: add extra dimension and apply factor
-        if p.which != 'd2vd2v':
-            A0_tab = A0_tab[None, :] / 2.
-        else:
-            A0_tab = A0_tab[None, :]
+        A0_tab = A0_tab[None, :]
         
         # Tile across all ells: shape (n_ell, n_components, n_r)
         A0_all = np.tile(A0_tab[None, :, :], (n_ell, 1, 1))

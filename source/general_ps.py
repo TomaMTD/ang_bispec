@@ -4,6 +4,7 @@ import time
 from numba import njit, prange
 import h5py
 import threading
+from fractions import Fraction
 
 from param_used import *
 from mathematica import *
@@ -175,7 +176,7 @@ def compute_integral_precompute(ell_list, chi_list, r_list, t_grid, nu_p, cp_lis
 
         s_cp_I_tab[ind_ell] = r_integration_vectorized_precompute(Nchi, r_list, chi_list, \
                 y1[ind_ell], t_grid, nu_p, cp_list, F12[:,:,ind_ell])
-    return s_cp_I_tab/ (4*np.pi) #(2*np.pi**2)
+    return s_cp_I_tab/ (4*np.pi) 
 
 
 
@@ -213,7 +214,7 @@ def compute_integral_Am_numba(chi_list, r_list, fctr_r, ell):
 
 
 
-def save_to_hdf5(filename, group_path, data, metadata=None):
+def save_to_hdf5(p, filename, group_path, data, metadata=None):
     """Thread-safe HDF5 saving function with selective overwriting"""
     with hdf5_lock:
         with h5py.File(filename, 'a') as f:
@@ -248,19 +249,19 @@ def save_to_hdf5(filename, group_path, data, metadata=None):
                     else:
                         print(f'    chi_list or ell_list do not match!')
                         print(f'    chi_match: {chi_match}, ell_match: {ell_match}')
-                        if not force:
-                            print(f'    Use force=True to overwrite entire group')
+                        if not p.force:
+                            print(f'    Use p.force=True to overwrite entire group')
                             return False
                         else:
-                            print(f'    force=True: removing and recreating group')
+                            print(f'    p.force=True: removing and recreating group')
                             del f[group_path]
                 else:
                     print(f'    chi_list or ell_list missing in existing group')
-                    if not force:
-                        print(f'    Use force=True to overwrite entire group')
+                    if not p.force:
+                        print(f'    Use p.force=True to overwrite entire group')
                         return False
                     else:
-                        print(f'    force=True: removing and recreating group')
+                        print(f'    p.force=True: removing and recreating group')
                         del f[group_path]
             
             # Create new group if it doesn't exist or was deleted
@@ -318,7 +319,7 @@ def compute_integral_F2_G2_dv2(p, ell_list, chi_list, r_list, t_grid, cp_dict, f
             'multipole': multipole_name,
             'rad': is_radiation
         }
-        save_to_hdf5(output_filename, p.which, data_to_save, metadata)
+        save_to_hdf5(p, output_filename, p.which, data_to_save, metadata)
 
     if p.rad:
         # Radiation case: use cp_dict for Il integrals
@@ -457,12 +458,16 @@ def get_nm_values(which):
         'd1v': [(-1, 1)],
         'd2v': [(0, 2)],
         'd3v': [(1, 3)],
-        'd1d': [(1, 1)]
+        'd1d': [(1, 1)],
+        'all_primordial': [(1, 0), (0, 0), (1./3., 0), (2./3., 0)],
+        'local': [(1, 0), (0, 0)],
+        'equi':  [(1, 0), (1./3., 0), (2./3., 0)],  # Needs all three: λ=1, λ=1/3, λ=2/3
+        'ortho': [(2./3., 0)],
     }
     return nm_mapping.get(which, [(0, 0)]) 
 
 
-def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict):
+def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list):
     """
     Generalized computation function
 
@@ -479,14 +484,14 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
     print('----------------------------------------------------')
     
 
-    def check_computation_exists(filename, n, m, lterm):
+    def check_computation_exists(filename, group_path, lterm):
         """Check if a specific computation already exists"""
         try:
             with h5py.File(filename, 'r') as f:
-                group_path = f'n_{n}_m_{m}'
                 exists = group_path in f and lterm in f[group_path]
                 return exists
         except (OSError, KeyError, IOError):
+            print(f'        group {nm_name} does not exist')
             return False
 
     # Determine if we're processing F2/G2/dv2 or FG2/d1v/etc
@@ -496,9 +501,9 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
         return
 
     # Original behavior for FG2/d1v/etc
-    for lterm in cp_dict.keys():
+    for lterm in lterm_list:
         # Extract cp and fctr for current lterm
-        cp = cp_dict[lterm]
+        cp = cp_dict[lterm if lterm=='density' else 'not_density']
         fctr = fctr_dict[lterm]
 
         middle = len(cp['eta_p']) // 2
@@ -518,34 +523,33 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
         
         # Main computation loop
         nm_pairs = get_nm_values(p.which)
-        kpow = 2 if lterm == 'density' and p.which in ['FG2', 'F2', 'G2'] else 0 
-
         
         # Compute factors that depend on lterm and which
-        if lterm not in ['pot', 'dpot']:
-            stuff2 = (2./3./omega_m/H0**2)**2
-        elif lterm in ['pot', 'dpot']:
+        if p.mode=='primordial':
             stuff2 = (2./3./omega_m/H0**2)
-        else:
-            stuff2 = 1.0
+        else: 
+            stuff2 = (2./3./omega_m/H0**2)**2
+
+        if lterm in ['pot', 'dpot']:
+            stuff2 /= (2./3./omega_m/H0**2)
 
         print(f'  Computing for lterm = {lterm}')
         for n, m in nm_pairs:
             # for m==0, the n values are taken into account in cp
             n_eff = n if m == 0 else 0
 
-            if n_eff + kpow == 2:
+            if n_eff == 2:
                 power_reduction = 1
-            elif n_eff + kpow == 4:
+            elif n_eff == 4:
                 power_reduction = 2
             else:
                 power_reduction = 0
             
-            print(f'    Computing for (n,m) = ({n},{m}) with power_reduction = {power_reduction}')
+            group_path = f'{"primordial_" if p.mode=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}' 
 
             # Check if computation already exists
-            if not force and check_computation_exists(output_filename, n, m, lterm):
-                print(f'    Results for (n,m)=({n},{m}), lterm={lterm} already exist, skipping (use force=True to overwrite)')
+            if not p.force and check_computation_exists(output_filename, group_path, lterm):
+                print(f'    Results for (n,m)=({group_path}), lterm={lterm} already exist, skipping (use force=True to overwrite)')
                 continue
 
 
@@ -557,13 +561,18 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
                 if len(cp['qterm_list'])>1: print(f'      Computing qterm: {qt}/{len(cp["qterm_list"])}')
                 
                 # Compute nu_p
-                nu_p = 1 + cp[qt]['b'] + 1j*cp['eta_p'] + n_eff + kpow - 2*power_reduction
+                if p.mode == 'primordial':
+                    power_reduction = 2 if n_eff==0 else 1
+
+                    nu_p = 2 + cp[qt]['b'] + 1j*cp['eta_p'] + n_eff*(n_s-4) - 2*power_reduction
+                else:
+                    nu_p = 1 + cp[qt]['b'] + 1j*cp['eta_p'] + n_eff - 2*power_reduction
                 
                 # Precompute hypergeometric function
                 #start_time = time.time()
                 F12 = compute_hyp21_grid_numba(t_grid, nu_p[:middle+1], ell_list)
                 #print(f'        2F1 precomputation done in {time.time()-start_time:.2f} seconds')
-                
+
                 # Compute integral
                 start_time = time.time()
                 integral_result = compute_integral_precompute(
@@ -572,12 +581,14 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
                 )
                 
                 # Sum the contribution
-                result += stuff2 * integral_result
+                if p.mode == 'primordial':
+                    result += (2*np.pi**2*A_s/(k_pivot/h)**(n_s-1))**n * stuff2 * integral_result
+                else:
+                    result += stuff2 * integral_result
                 print(f'        Integral computation done in {time.time()-start_time:.2f} seconds')
             
-            group_path = f'n_{n}_m_{m}'
             data_to_save = {
-                lterm: result,
+                lterm: 2./np.pi*result,
                 'ell_list': ell_list,  # Add ell_list to each group
                 'chi_list': chi_list   # Add chi_list to each group
             }
@@ -588,5 +599,5 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
                 'lterm': lterm,
             }
             
-            save_to_hdf5(output_filename, group_path, data_to_save, metadata)
+            save_to_hdf5(p, output_filename, group_path, data_to_save, metadata)
 

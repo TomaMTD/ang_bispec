@@ -183,11 +183,37 @@ def main(argv):
             fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list)
             np.save(argv.output_dir+'fctr_of_r_{}'.format(p.which), fctr_dict)
 
-            cp_dict = fftlog.apply_fftlog_dict(tr['k'], tr['dTdk'] if argv.rad else Pk, p, lterm_list)
+            cp_dict = fftlog.apply_fftlog_dict(tr['k'], tr['dTdk'] if argv.rad else Pk, p)
             np.save(f'cp_{p.which}', cp_dict)
 
-            general_ps.compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict)
+            general_ps.compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
 
+
+    elif argv.mode in ['primordial']:
+        p.rad = 0
+        p.Newton = 0
+
+        if argv.which=='all':
+            which_list=['local', 'ortho', 'equi']
+        else:
+            which_list=[argv.which]
+
+        print('Computing generalised power spectra for:')
+        print('     which={}'.format(which_list))
+        print('     ell_list={}'.format(ell_list))
+
+        for p.which in which_list:
+            # Compute fctr and cp dicts organized by lterm
+            fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list)
+            #np.save(argv.output_dir+'fctr_of_r_{}'.format(p.which), fctr_dict)
+
+            cp_dict = fftlog.apply_fftlog_dict(tr['k'], tr['phi'], p)
+            #np.save(f'cp_{p.which}', cp_dict)
+
+            general_ps.compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
+
+            bispectrum.compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
+                                                   W_derivs_list=W_derivs_list, tr=tr, Pk=tr['phi'], t_grid=t_grid)
 
     else:
         if argv.which=='all':
