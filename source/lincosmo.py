@@ -65,38 +65,6 @@ def nz_volumetric_to_angular(z, ng_volumetric):
     nz_angular = ng_volumetric * dV_dOmega_dz
     return r, nz_angular
 
-def extrapolate_nz_minimal(z_data, nz_data, n_boundary_points=10, z_extend=0.05):
-    """
-    Keep original data and only add extrapolation points at boundaries
-    
-    Parameters:
-    -----------
-    z_data, nz_data : original data (e.g., 200 points)
-    n_boundary_points : number of points to add at each boundary
-    z_extend : how far to extend beyond data range
-    
-    Returns:
-    --------
-    z_extended, nz_extended : original data + boundary points
-    """
-    # Compute slopes at boundaries
-    slope_left = (nz_data[1] - nz_data[0]) / (z_data[1] - z_data[0])
-    slope_right = (nz_data[-1] - nz_data[-2]) / (z_data[-1] - z_data[-2])
-
-    # Create boundary extension points
-    z_left = np.linspace(max(0, z_data[0] - z_extend), z_data[0], n_boundary_points, endpoint=False)
-    z_right = np.linspace(z_data[-1], z_data[-1] + z_extend, n_boundary_points + 1)[1:]
-
-    # Exponential extrapolation
-    nz_left = nz_data[0] * np.exp(slope_left / nz_data[0] * (z_data[0] - z_left))
-    nz_right = nz_data[-1] * np.exp(slope_right / nz_data[-1] * (z_right - z_data[-1]))
-
-    # Combine: left boundary + original data + right boundary
-    z_extended = np.concatenate([z_left, z_data, z_right])
-    nz_extended = np.concatenate([nz_left, nz_data, nz_right])
-
-    return z_extended, nz_extended
-
 def construct_window_functions(z_range, bin_edges, nz_total, sigma_z=1e-3):
     """
     Construct smooth window functions for each redshift bin using error functions.
@@ -204,14 +172,10 @@ def growth_fct(input_data=0):
         b2 = data[:, 3]
 
         r, n_angular = nz_volumetric_to_angular(z, ng)
-        r_extended, n_extended = extrapolate_nz_minimal(r, n_angular, n_boundary_points=20)
-        _, b1_extended = extrapolate_nz_minimal(r, b1, n_boundary_points=20)
-        _, b2_extended = extrapolate_nz_minimal(r, b2, n_boundary_points=20)
-
-        time_dict['data'] = {'r'        :r_extended,
-                             'n_angular':n_extended,
-                             'b1'       :b1_extended,
-                             'b2'       :b2_extended}
+        time_dict['data'] = {'r'        :r,
+                             'n_angular':n_angular,
+                             'b1'       :b1,
+                             'b2'       :b2}
         return time_dict
 
 

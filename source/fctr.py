@@ -12,6 +12,61 @@ from scipy.integrate import quad
 from scipy.special import erf  # Vectorized erf for lambdify
 
 
+def compute_spline_derivatives(spline, data_grid, eval_grid, max_deriv=11, smooth_s=0):
+    """
+    Compute high-order derivatives of a spline using chain strategy.
+
+    Parameters:
+    -----------
+    spline : UnivariateSpline
+        The spline to differentiate
+    data_grid : array
+        Full grid where spline is defined (for computing derivatives)
+    eval_grid : array
+        Grid where derivatives should be evaluated
+    max_deriv : int
+        Maximum derivative order (default 11)
+    smooth_s : float
+        Smoothing parameter for intermediate splines (default 0)
+
+    Returns:
+    --------
+    derivs : list of arrays
+        List of derivatives [f, f', f'', ..., f^(max_deriv)] evaluated on eval_grid
+    """
+
+    # Compute derivatives on full data grid
+    derivs_full = [None] * (max_deriv + 1)
+
+    # Direct derivatives (0-5)
+    derivs_full[0] = spline(data_grid)
+    for i in range(1, min(6, max_deriv + 1)):
+        derivs_full[i] = spline.derivative(i)(data_grid)
+
+    # Derivatives 6-10 from spline of 5th derivative
+    if max_deriv >= 6:
+        d5_spline = UnivariateSpline(data_grid, derivs_full[5], k=5, s=smooth_s)
+        derivs_full[i] = d5_spline(data_grid)
+        for i in range(6, min(11, max_deriv + 1)):
+            derivs_full[i] = d5_spline.derivative(i - 5)(data_grid)
+
+    # Derivative 11 from spline of 10th derivative
+    if max_deriv >= 11:
+        d10_spline = UnivariateSpline(data_grid, derivs_full[10], k=5, s=smooth_s)
+        derivs_full[11] = d10_spline.derivative(1)(data_grid)
+
+    # Evaluate on target grid
+    derivs = [None] * (max_deriv + 1)
+    for i in range(max_deriv + 1):
+        if np.array_equal(data_grid, eval_grid):
+            derivs[i] = derivs_full[i]
+        else:
+            deriv_spline = UnivariateSpline(data_grid, derivs_full[i], k=5, s=0, ext=0)
+            derivs[i] = deriv_spline(eval_grid)
+
+    return derivs
+
+
 # Optimized version that caches the SymPy derivatives
 class WindowDerivatives:
     """
@@ -80,7 +135,7 @@ class WindowDerivatives:
                 else:
                     return H_over_a * W
 
-            sp_normW, _ = quad(integrand, min(0, self.xmin - 50*self.sigma_z), self.xmax+ 50*self.sigma_z, epsrel=1e-4, epsabs=0)
+            sp_normW, _ = quad(integrand, min(0, self.xmin - 20*self.sigma_z), self.xmax+ 20*self.sigma_z, epsrel=1e-4, epsabs=0)
             integral_type = "n_angular*H/a*W" if n_angular_spline is not None else "H/a*W"
             print(f"        Computed normW = ∫({integral_type})dr = {sp_normW:.4e}")
         else:
@@ -146,30 +201,20 @@ class WindowDerivatives:
             r_nz_grid, n_angular_values = self.n_angular_data
             n_angular_spline = UnivariateSpline(r_nz_grid, n_angular_values, k=5, s=0, ext=0)
 
-            # Compute n_angular derivatives using spline chain strategy
-            n_angular_derivs = [None] * (max_deriv + 1)
-
-            # Direct derivatives from spline (up to order 5 for k=5 spline)
-            n_angular_derivs[0] = n_angular_spline(x)
-            for i in range(1, min(6, max_deriv + 1)):
-                n_angular_derivs[i] = n_angular_spline.derivative(i)(x)
-
-            # For derivatives 6-10: use spline of 5th derivative
-            if max_deriv >= 6:
-                d5_n_angular = UnivariateSpline(x, n_angular_derivs[5], k=5, s=0)
-                for i in range(6, min(11, max_deriv + 1)):
-                    n_angular_derivs[i] = d5_n_angular.derivative(i - 5)(x)
-
-            # For derivative 11: use spline of 10th derivative
-            if max_deriv >= 11:
-                d10_n_angular = UnivariateSpline(x, n_angular_derivs[10], k=5, s=0)
-                n_angular_derivs[11] = d10_n_angular.derivative(1)(x)
+            # Compute n_angular derivatives using the new function
+            # Use full data grid for accuracy, then evaluate on x
+            n_angular_derivs = compute_spline_derivatives(n_angular_spline, r_nz_grid, x,
+                                                          max_deriv=max_deriv, smooth_s=1e-6)
 
             # Apply product rule: d^n/dr^n [n_angular * W] = sum_{k=0}^n C(n,k) * n_angular^(k) * W^(n-k)
             W_eff_derivs = []
             for n in range(max_deriv + 1):
                 deriv_n = sum(comb(n, k) * n_angular_derivs[k] * W_derivs[n - k] for k in range(n + 1))
                 W_eff_derivs.append(deriv_n)
+
+            ## Save for visualization
+            #np.save('r_nz_grid', x)
+            #np.save('n_angular', W_eff_derivs)
 
             return W_eff_derivs
         else:
@@ -542,15 +587,25 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
         # derive_start is already set: F2=0, dv2=1, G2=2
         max_deriv = 2 + derive_start
 
+        # For F2/G2/dv2: compute b1 derivatives if available
+        if p.which=='F2' and 'data' in time_dict and 'b1' in time_dict['data']:
+            print('Adding linear bias b1 to F2/G2/dv2 terms')
+            b1_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1'], k=5, s=0)
+            b1_derivs_list = compute_spline_derivatives(b1_spline, time_dict['data']['r'], r_list,
+                                                        max_deriv=max_deriv+derive_start, smooth_s=1e-6)
+            b1_derivs = np.array(b1_derivs_list)
+            use_b1 = True
+        else:
+            b1_derivs = None
+            use_b1 = False
+
         for qt_ind, qt in enumerate(qterm_list):
             fctr = fctr_list[qt]
 
-            # Compute fctr and its derivatives
-            fctr_derivs = np.zeros((max_deriv+1, len(r_list)), dtype=np.float64)
-
-            fctr_derivs[0] = fctr(r_list)
-            for i in range(1, max_deriv+1):
-                fctr_derivs[i] = fctr.derivative(i)(r_list)
+            # Compute fctr and its derivatives using the new function
+            fctr_derivs_list = compute_spline_derivatives(fctr, time_dict['ra'], r_list,
+                                                          max_deriv=max_deriv, smooth_s=0)
+            fctr_derivs = np.array(fctr_derivs_list)
 
             # Get analytical derivatives of W
             if W_derivs_list is None:
@@ -562,8 +617,14 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                     raise ValueError(f"W_derivs_list has {len(W_derivs_list)} derivatives but need {required_derivs}")
                 W_derivs_list_local = W_derivs_list[:required_derivs]
 
-            # Compute f and derivatives with derive_start offset
-            f, df, d2f = [product_deriv(i+derive_start, fctr_derivs, W_derivs_list_local) for i in range(3)]
+            # Compute fctr * W derivatives
+            fctr_W_derivs = [product_deriv(i+derive_start, fctr_derivs, W_derivs_list_local) for i in range(3)]
+
+            # If b1 is present, apply second product rule: b1 * (fctr * W)
+            if use_b1:
+                f, df, d2f = [product_deriv(i, b1_derivs, fctr_W_derivs) for i in range(3)]
+            else:
+                f, df, d2f = fctr_W_derivs
 
             # Store both levels and apply mathcalD operator
             for ind_ell, ell in enumerate(ell_list):
@@ -615,18 +676,25 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                 print('no code for {}'.format(lterm))
                 raise ValueError(f"Invalid 'lterm' parameter: {lterm}")
             
-            fctr_derivs = np.zeros((12, len(r_list)), dtype=np.float64)  # 0th through 8th derivatives
-            fctr_derivs[0] = fctr(r_list)
-            for i in range(1, 6):  # 1st through 8th derivatives
-                fctr_derivs[i] = fctr.derivative(i)(r_list)
+            # Compute fctr derivatives using the new function
+            # Use time_dict['ra'] as the full data grid for accuracy
+            fctr_derivs_list = compute_spline_derivatives(fctr, time_dict['ra'], r_list, max_deriv=11, smooth_s=0)
+            fctr_derivs = np.array(fctr_derivs_list)
 
-            d5fctr = UnivariateSpline(r_list, fctr_derivs[5], k=5, s=0)
-            for i in range(6, 11):  # 6th through 8th derivatives    
-               # For higher derivatives, use spline of d5H
-               fctr_derivs[i] = d5fctr.derivative(i-5)(r_list)
+            # For density term: compute b1 derivatives if available
+            if lterm == 'density' and 'data' in time_dict and 'b1' in time_dict['data']:
+                print('Adding linear bias b1 to linear terms')
+                b1_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1'], k=5, s=0)
+                b1_derivs_list = compute_spline_derivatives(b1_spline, time_dict['data']['r'], r_list,
+                                                            max_deriv=11, smooth_s=1e-6)
+                b1_derivs = np.array(b1_derivs_list)
+                #np.save('b1', b1_derivs)
 
-            d10fctr = UnivariateSpline(r_list, fctr_derivs[10], k=5, s=0)
-            fctr_derivs[11] = d10fctr.derivative(1)(r_list)
+
+                use_b1 = True
+            else:
+                b1_derivs = None
+                use_b1 = False
 
             for qt_ind, qt in enumerate(qterm_list):
                 r_power_and_derivative = qt-1  if qt in [4, 3, 2] else 0
@@ -647,7 +715,14 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                         raise ValueError(f"W_derivs_list has {len(W_derivs_list)} derivatives but need {required_derivs}")
                     W_derivs_base = W_derivs_list[:required_derivs]
 
-                B_derivs = [product_deriv(derive_start + i, fctr_derivs, W_derivs_base) for i in range(max_B_deriv)]
+                # Compute fctr * W derivatives
+                fctr_W_derivs = [product_deriv(derive_start + i, fctr_derivs, W_derivs_base) for i in range(max_B_deriv)]
+
+                # If b1 is present (density term), apply second product rule: b1 * (fctr * W)
+                if use_b1:
+                    B_derivs = [product_deriv(i, b1_derivs, fctr_W_derivs) for i in range(max_B_deriv)]
+                else:
+                    B_derivs = fctr_W_derivs
 
                 # Step 2: Apply qterm by computing derivatives of r^n * B
                 if n > 0:
@@ -760,6 +835,20 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
         [f4_spline] = compute_f_nm_unified(p, alpha_coeff, beta_coeff, gamma_coeff, time_dict, h_power=4)
 
         # ====================================================================
+        # Precompute b1 derivatives if available (for F2 only)
+        # ====================================================================
+        if p.which == 'F2' and 'data' in time_dict and 'b1' in time_dict['data']:
+            print('Adding linear bias b1 to F2 kernels')
+            b1_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1'], k=5, s=0)
+            b1_derivs_list = compute_spline_derivatives(b1_spline, time_dict['data']['r'], r_list,
+                                                        max_deriv=max_deriv_total, smooth_s=1e-6)
+            b1_derivs = np.array(b1_derivs_list)
+            use_b1 = True
+        else:
+            b1_derivs = None
+            use_b1 = False
+
+        # ====================================================================
         # Precompute all spline derivatives ONCE (independent of ell!)
         # ====================================================================
         # A0: f^(0) evaluated at r_list
@@ -768,23 +857,27 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
         # A2: f^(2) and its derivatives
         f2_derivs_list = []  # List of (max_deriv_inner+1, n_r) arrays
         for f2_spline in f2_splines:
-            fctr_derivs = np.zeros((max_deriv_inner+1, n_r))
-            fctr_derivs[0] = f2_spline(r_list)
-            for d in range(1, max_deriv_inner+1):
-                fctr_derivs[d] = f2_spline.derivative(d)(r_list)
+            fctr_derivs_list = compute_spline_derivatives(f2_spline, time_dict['ra'], r_list,
+                                                          max_deriv=max_deriv_inner, smooth_s=0)
+            fctr_derivs = np.array(fctr_derivs_list)
             f2_derivs_list.append(fctr_derivs)
 
         # A4: f^(4) and its derivatives
-        f4_derivs = np.zeros((max_deriv_total+1, n_r))
-        f4_derivs[0] = f4_spline(r_list)
-        for d in range(1, max_deriv_total+1):
-            f4_derivs[d] = f4_spline.derivative(d)(r_list)
+        f4_derivs_list = compute_spline_derivatives(f4_spline, time_dict['ra'], r_list,
+                                                    max_deriv=max_deriv_total, smooth_s=0)
+        f4_derivs = np.array(f4_derivs_list)
 
         # Precompute products of fctr*W for A2
         f2_products_list = []  # List of product derivatives for each f2
         for fctr_derivs in f2_derivs_list:
             if p.which == 'F2':
-                f, df, d2f = [product_deriv(j, fctr_derivs, W_derivs_list) for j in range(3)]
+                # Compute fctr * W
+                fctr_W = [product_deriv(j, fctr_derivs, W_derivs_list) for j in range(3)]
+                # If b1 present, multiply by b1
+                if use_b1:
+                    f, df, d2f = [product_deriv(j, b1_derivs, fctr_W) for j in range(3)]
+                else:
+                    f, df, d2f = fctr_W
                 f2_products_list.append((f, df, d2f))
             elif p.which == 'G2':
                 d2f = product_deriv(2, fctr_derivs, W_derivs_list)
@@ -794,7 +887,13 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
                 f2_products_list.append((None, df, None))
 
         # Precompute products of f4*W for A4
-        f, df, d2f, d3f, d4f = [product_deriv(j, f4_derivs, W_derivs_list) for j in range(5)]
+        # Compute fctr * W
+        fctr_W_f4 = [product_deriv(j, f4_derivs, W_derivs_list) for j in range(5)]
+        # If b1 present for F2, multiply by b1
+        if use_b1:
+            f, df, d2f, d3f, d4f = [product_deriv(j, b1_derivs, fctr_W_f4) for j in range(5)]
+        else:
+            f, df, d2f, d3f, d4f = fctr_W_f4
         f4_products = (f, df, d2f, d3f, d4f)
 
         # ====================================================================
@@ -849,6 +948,15 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             if p.which in ['d1vd0d']:
                 cosmo_factor_ra *= time_dict['Ha'] * time_dict['mathcalR']
 
+        elif p.which in ['d0dd0d']:
+            # Similar to d2vd0d but with b2/2 instead of fa
+            if 'data' not in time_dict or 'b2' not in time_dict['data']:
+                raise ValueError("d0dd0d requires b2 in time_dict['data']")
+            # For d0dd0d: need to handle b2 separately to avoid extrapolation
+            # Don't create cosmo_factor_ra here, will handle below
+            cosmo_factor_ra = None
+            use_b2 = True
+
         elif p.which in ['d1vdod']:
             cosmo_factor_ra = time_dict['Da'] * time_dict['fa']
 
@@ -866,11 +974,6 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             elif p.which in ['davd1v']:
                 cosmo_factor_ra *= time_dict['Ha']
 
-        # Create spline and interpolate to r_list
-        # For quadratic terms, include H/a factor to convert W to W_tilde = H/a * W (as in old code)
-        cosmo_spline = UnivariateSpline(ra, cosmo_factor_ra * time_dict['Ha'] / time_dict['a'], s=0, ext=0)
-        cosmo_factor = cosmo_spline(r_list)
-
         # Get window function on r_list
         if W_derivs_list is None:
             if window_args is None:
@@ -881,10 +984,32 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             # Use precomputed (just need 0th derivative = window function itself)
             Wr = W_derivs_list[0]
 
-        # Multiply by window
-        A0_tab = cosmo_factor * Wr
+        # Handle d0dd0d separately to avoid extrapolation of b2
+        if p.which in ['d0dd0d']:
+            # Create Da² * H/a spline on ra grid
+            print(time_dict['fa'] [10:] , time_dict['fa'] [-10:])
+            print(time_dict['data']['b2'][:10]/2.0, time_dict['data']['b2'][-10:]/2.0 )
+            cosmo_Da2_Ha_ra = time_dict['Da']**2 * time_dict['Ha'] / time_dict['a']
+            cosmo_Da2_Ha_spline = UnivariateSpline(ra, cosmo_Da2_Ha_ra, s=0, ext=0)
+            cosmo_Da2_Ha = cosmo_Da2_Ha_spline(r_list)
 
-        if p.which in ['d2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v']:
+            # Create b2/2 spline on data grid
+            #b2_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b2']/2.0, k=5, s=0)
+            b2_spline = UnivariateSpline(time_dict['ra'], time_dict['Da']**2 * time_dict['Ha'] / time_dict['a'], k=5, s=0)
+            b2_half = b2_spline(r_list)
+
+            # Multiply: (Da² * H/a) * (b2/2) * W
+            A0_tab = cosmo_Da2_Ha * b2_half * Wr
+        else:
+            # Standard case: create spline and interpolate to r_list
+            # For quadratic terms, include H/a factor to convert W to W_tilde = H/a * W (as in old code)
+            cosmo_spline = UnivariateSpline(ra, cosmo_factor_ra * time_dict['Ha'] / time_dict['a'], s=0, ext=0)
+            cosmo_factor = cosmo_spline(r_list)
+
+            # Multiply by window
+            A0_tab = cosmo_factor * Wr
+
+        if p.which in ['d2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v', 'd0dd0d']:
             A0_tab*=-1
 
         # Apply r-power division (on r_list, not ra)

@@ -25,18 +25,19 @@ rad=True
 
 ####################################################
 ### Window function
-window_type='ska'
-z0, dz=0.50, 0.25
+window_type='nbody' #'ska'
+z0, dz=2, 0.25 #0.50, 0.20
 
-sigma_input='redshift'
-sigma_z= 2e-3
+sigma_input='distance' #'redshift'
+sigma_z=25 #5e-3
 
 ####################################################
-# input ska file
-input_ska = 'ska_data/SKAO_params_fcut100.txt'
+# input ska file#
+#input_ska ='ska_data/SKAO_params_fcut100.txt'
 
 ### output directory
-output_dir = 'output_ska/'
+output_dir = 'output_z{}_dz{}_primordial/'.format(z0, dz)
+ #'output_ska/'
 
 ####################################################
 ### Cosmology Planck 2018
