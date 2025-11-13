@@ -111,15 +111,23 @@ def main(argv):
     time_dict = lincosmo.growth_fct(input_data=globals().get('input_ska', 0))
     np.save(output_dir+'time_dict', time_dict)
 
-    Wrmin, Wrmax = lincosmo.get_distance(argv.z0-argv.dz)[0], \
-                   lincosmo.get_distance(argv.z0+argv.dz)[0]
+    if argv.window_type == 'nbody':
+        Wrmin, Wrmax = lincosmo.get_distance(argv.z0-argv.dz)[0], \
+                       lincosmo.get_distance(argv.z0+argv.dz)[0]
 
-    if sigma_input == 'redshift':
-        argv.sigma_z = (lincosmo.get_distance(argv.z0+argv.sigma_z/2)[0]
-                        - lincosmo.get_distance(argv.z0-argv.sigma_z/2)[0])
-    #Wrmin, Wrmax = rmin+20*argv.sigma_z, rmax-20*argv.sigma_z
-    rmin, rmax = Wrmin-20*argv.sigma_z, Wrmax+20*argv.sigma_z
+        if sigma_input == 'redshift':
+            argv.sigma_z = (lincosmo.get_distance(argv.z0+argv.sigma_z/2)[0]
+                            - lincosmo.get_distance(argv.z0-argv.sigma_z/2)[0])
+        rmin, rmax = Wrmin-20*argv.sigma_z, Wrmax+20*argv.sigma_z
 
+    else:
+        rmin, rmax = lincosmo.get_distance(argv.z0-argv.dz)[0], \
+                     lincosmo.get_distance(argv.z0+argv.dz)[0]
+
+        if sigma_input == 'redshift':
+            argv.sigma_z = (lincosmo.get_distance(argv.z0+argv.sigma_z/2)[0]
+                            - lincosmo.get_distance(argv.z0-argv.sigma_z/2)[0])
+        Wrmin, Wrmax = rmin+10*argv.sigma_z, rmax-10*argv.sigma_z
 
     # Prepare n_angular data if available (for SKA-type surveys)
     if 'data' in time_dict.keys() and argv.window_type != 'nbody':
