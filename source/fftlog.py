@@ -64,19 +64,13 @@ class FFTLogProcessor:
         
         fctr_scaled =fctk*k**4
         if self.which == 'd2v':
-            if self.lterm == 'density':
-                fctr_scaled *= k**2
-    
             spline = UnivariateSpline(k, fctr_scaled, k=5, s=0)
             return [spline.derivative(2)(k),\
                     -2./k * spline.derivative(1)(k),\
                     fctr_scaled/k**2]
     
         elif self.which in ['d1v', 'd1d']:
-            if self.lterm == 'density':
-                fctr_scaled *= k
-            else:
-                fctr_scaled /= k
+            fctr_scaled /= k
             
             if self.which == 'd1d':
                 fctr_scaled *= k**2
@@ -85,10 +79,7 @@ class FFTLogProcessor:
             return [spline.derivative(1)(k), -fctr_scaled/k]
     
         elif self.which == 'd3v':
-            if self.lterm == 'density':
-                fctr_scaled *= k**3
-            else:
-                fctr_scaled *= k
+            fctr_scaled *= k
     
             spline = UnivariateSpline(k, fctr_scaled, k=5, s=0)
             return [spline.derivative(3)(k),
@@ -97,8 +88,6 @@ class FFTLogProcessor:
                     -fctr_scaled / k**3]
     
         elif self.which == 'd0d':
-            if self.lterm != 'density':
-                fctr_scaled /= k**2
             return [fctr_scaled * k**2]
         
         else:
