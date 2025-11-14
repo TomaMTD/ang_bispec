@@ -288,7 +288,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 ell_indices = np.array(ell_indices)
                 valid_mask = ell_indices >= 0
             
-            if which_for_cls not in ['d0d', 'd1d', 'dod'] or p.Newton:
+            if which_for_cls not in ['d0d', 'd1d', 'dod'] or (p.Newton and which_for_cls not in ['dod']):
                 # For each (n,m) pair, sum over lterms
                 for cl_idx, (n, m) in enumerate(nm_pairs):
                     group_name = f'{"primordial_" if p.mode=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}' 
@@ -380,7 +380,10 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     factor1 = factor1_spline(chi_list_file)
                     factor2 = factor2_spline(chi_list_file)
 
-                    Cl_combined = factor1[None, :] * Cl_nm_list[0] + factor2[None, :] * Cl_nm_list[1]
+                    if p.Newton:
+                        Cl_combined = factor1[None, :] * Cl_nm_list[0] 
+                    else:
+                        Cl_combined = factor1[None, :] * Cl_nm_list[0] + factor2[None, :] * Cl_nm_list[1]
 
                 # Extract and interpolate the combined result
                 Cl_subset = Cl_combined[ell_indices[valid_mask], :]  # shape (n_valid_ells, n_chi_file)
@@ -465,7 +468,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                                 # Load f^(0) directly into A0 slots (0-2)
                                 f0_data = group['f0_newton' if p.Newton else 'f0'][()]  # shape: (n_components, n_ell_file, n_chi_file)
                                 f0_comp1 = f0_data[0, ell_idx, :]  # f_{0,0}
-
+                        
                                 if not chi_match:
                                     interp_func = interp1d(chi_list_file, f0_comp1, kind='linear',
                                                           bounds_error=False, fill_value=0.0)
@@ -700,8 +703,8 @@ def compute_bispectrum_quadratic_symmetric(Cl_array, coeffs, chi_list, triplet_l
         integral = np.sum(integrand * simp_w) * dchi / 3.0
         # integral = simpson(integrand, x=chi_list)
         
-        # spline = UnivariateSpline(chi_list, integrand, k=5, s=0)
-        # integral = quad(spline, chi_list[0], chi_list[-1])[0]
+        #spline = UnivariateSpline(chi_list, integrand, k=5, s=0)
+        #integral = quad(spline, chi_list[0], chi_list[-1])[0]
         
         results[idx] = integral
 
@@ -807,8 +810,8 @@ def compute_bispectrum_quadratic(Cl_array, coeffs, chi_list, triplet_list):
         # Integrate using Simpson's rule
         integral = np.sum(integrand * simp_w) * dchi / 3.0
         # integral = simpson(integrand, x=chi_list)
-        # spline = UnivariateSpline(chi_list, integrand, k=5, s=0)
-        # integral = quad(spline, chi_list[0], chi_list[-1])[0]
+        #spline = UnivariateSpline(chi_list, integrand, k=5, s=0)
+        #integral = quad(spline, chi_list[0], chi_list[-1])[0]
 
         results[idx] = integral
 
@@ -877,6 +880,9 @@ def compute_bispectrum_parallel_efficient(Cl_array, coeffs, chi_list, triplet_li
 
         # Integrate using Simpson's rule
         integral = np.sum(integrand * simp_w) * dchi / 3.0
+
+        #spline = UnivariateSpline(chi_list, integrand, k=5, s=1e-1)
+        #integral = quad(spline, chi_list[0], chi_list[-1])[0]
 
         results[idx] = integral
 
@@ -1174,8 +1180,8 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
     elif p.which == 'davd1v':
         Al1l2l3 = np.zeros((len(triplet_array), 3))
         for idx in range(len(triplet_array)):
-            ell1, ell2, ell3 = ell_list[triplet_array[idx, 0]], ell_list[triplet_array[idx, 1]], ell_list[triplet_array[idx, 2]]
-            
+            ell1, ell2, ell3 = int(ell_list[triplet_array[idx, 0]]), int(ell_list[triplet_array[idx, 1]]), int(ell_list[triplet_array[idx, 2]])
+
             Al1l2l3[idx,0] = Al123(ell1, ell2, ell3)*np.sqrt(ell2*(ell2+1.)*ell3*(ell3+1.))
             Al1l2l3[idx,1] = Al123(ell2, ell1, ell3)*np.sqrt(ell1*(ell1+1.)*ell3*(ell3+1.))
             Al1l2l3[idx,2] = Al123(ell3, ell2, ell1)*np.sqrt(ell2*(ell2+1.)*ell1*(ell1+1.))

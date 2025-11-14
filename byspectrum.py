@@ -127,7 +127,7 @@ def main(argv):
         if sigma_input == 'redshift':
             argv.sigma_z = (lincosmo.get_distance(argv.z0+argv.sigma_z/2)[0]
                             - lincosmo.get_distance(argv.z0-argv.sigma_z/2)[0])
-        Wrmin, Wrmax = rmin+10*argv.sigma_z, rmax-10*argv.sigma_z
+        Wrmin, Wrmax = rmin+20*argv.sigma_z, rmax-20*argv.sigma_z
 
     # Prepare n_angular data if available (for SKA-type surveys)
     if 'data' in time_dict.keys() and argv.window_type != 'nbody':
@@ -150,12 +150,15 @@ def main(argv):
     if argv.ellmax<=argv.ell:
         ell_list=np.array([argv.ell])
     else:
-        log_vals = np.logspace(np.log10(argv.ell), np.log10(argv.ellmax), num=argv.Nell)  # Adjust `num` as needed
-        # Round to nearest integer and remove duplicates
-        ell_list = np.unique(np.round(log_vals).astype(int))
+        if ell_spacing=='log':
+            log_vals = np.logspace(np.log10(argv.ell), np.log10(argv.ellmax), num=argv.Nell)  # Adjust `num` as needed
+            # Round to nearest integer and remove duplicates
+            ell_list = np.unique(np.round(log_vals).astype(int))
+        else:
+            ell_list = np.array(range(argv.ell, argv.ellmax, 1), dtype=np.int64)
 
         # For specific configurations, ensure all ells are even
-        if argv.configuration in ['equi', 'squ', 'folded']:
+        if argv.configuration in ['equi', 'squ', 'folded', 'esf']:
             # Add 1 to odd ells to make them even
             ell_list = np.array([ell if ell % 2 == 0 else ell + 1 for ell in ell_list])
             # Remove duplicates again in case some became the same
@@ -165,10 +168,14 @@ def main(argv):
     if p.Newton:
         if p.lterm == 'all':
             lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot']
+        elif p.lterm == 'noproj':
+            lterm_list = ['density', 'rsd']
         else:
             lterm_list = [p.lterm]
     elif p.lterm == 'all':
         lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_gr']
+    elif p.lterm == 'noproj':
+        lterm_list = ['density', 'rsd', 'pot_gr']
     else:
         lterm_list = [p.lterm]
 
@@ -181,9 +188,12 @@ def main(argv):
 
     if argv.mode in ['cl', 'cln', 'Cl', 'Cln']:
         if argv.which=='all':
-            which_list=['FG2', 'd2v', 'd1v', 'd3v', 'd1d', 'F2', 'G2', 'dv2']
-        elif argv.which in ['F2', 'G2', 'dv2']:
-            which_list=['FG2', argv.which]
+            if argv.rad:
+                which_list=['F2', 'G2', 'dv2']
+            else:
+                which_list=['FG2', 'd2v', 'd1v', 'd3v', 'd1d', 'F2', 'G2', 'dv2']
+        #elif argv.which in ['F2', 'G2', 'dv2']:
+        #    which_list=['FG2', argv.which]
         else:
             which_list=[argv.which]
 
@@ -231,8 +241,16 @@ def main(argv):
                                                    W_derivs_list=W_derivs_list, tr=tr, Pk=tr['phi'], t_grid=t_grid)
 
     else:
+        if argv.configuration=='esf':
+            config_list = ['equi', 'squ', 'folded']
+        else:
+            config_list = [argv.configuration]
+
         if argv.which=='all':
-            which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', \
+            if p.lterm == 'noproj':
+                which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d']
+            else:    
+                which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d', \
                             'dv2', 'd2vd0d', 'd1vd2v', 'd1vd0d', 'd1vdod', 'davd1v',\
                             'd0pd3v', 'd0pd1d', 'd1vd2p']
         elif argv.which=='rad' and p.rad:
@@ -240,8 +258,9 @@ def main(argv):
         else:
             which_list=[argv.which]
 
-        for p.which in which_list:
-            bispectrum.compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
+        for p.configuration in config_list:
+            for p.which in which_list:
+                bispectrum.compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
                                                    W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
 
         #cp_tr, b = fftlog.get_cp_of_r(tr['k'], tr['dTdk'], '', 'FG2', 0, 1)

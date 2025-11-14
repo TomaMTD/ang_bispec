@@ -987,15 +987,13 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
         # Handle d0dd0d separately to avoid extrapolation of b2
         if p.which in ['d0dd0d']:
             # Create Da² * H/a spline on ra grid
-            print(time_dict['fa'] [10:] , time_dict['fa'] [-10:])
-            print(time_dict['data']['b2'][:10]/2.0, time_dict['data']['b2'][-10:]/2.0 )
             cosmo_Da2_Ha_ra = time_dict['Da']**2 * time_dict['Ha'] / time_dict['a']
             cosmo_Da2_Ha_spline = UnivariateSpline(ra, cosmo_Da2_Ha_ra, s=0, ext=0)
             cosmo_Da2_Ha = cosmo_Da2_Ha_spline(r_list)
 
             # Create b2/2 spline on data grid
-            #b2_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b2']/2.0, k=5, s=0)
-            b2_spline = UnivariateSpline(time_dict['ra'], time_dict['Da']**2 * time_dict['Ha'] / time_dict['a'], k=5, s=0)
+            b2_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b2']/2.0, k=5, s=0)
+            #b2_spline = UnivariateSpline(time_dict['ra'], time_dict['Da']**2 * time_dict['Ha'] / time_dict['a'], k=5, s=0)
             b2_half = b2_spline(r_list)
 
             # Multiply: (Da² * H/a) * (b2/2) * W
@@ -1009,7 +1007,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             # Multiply by window
             A0_tab = cosmo_factor * Wr
 
-        if p.which in ['d2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v', 'd0dd0d']:
+        if p.which in ['d2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v']:
             A0_tab*=-1
 
         # Apply r-power division (on r_list, not ra)

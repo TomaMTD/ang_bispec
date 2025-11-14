@@ -5,6 +5,8 @@ from numba import njit, prange
 import h5py
 import threading
 from fractions import Fraction
+from scipy.interpolate import UnivariateSpline
+from scipy.integrate import quad
 
 from param_used import *
 from mathematica import *
@@ -162,6 +164,9 @@ def r_integration_vectorized_precompute(Nchi, r_list, chi_list, y1, t_grid, nu_p
         
         # Integrate using Simpson's rule
         s_cp_I_list[ind] = simpson_numba(integrand1, r_list)
+
+        #spline = UnivariateSpline(r_list, integrand1, k=5, s=0)
+        #s_cp_I_list[ind]= quad(spline, r_list[0], r_list[-1])[0]
     
     return s_cp_I_list
 
