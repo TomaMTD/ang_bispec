@@ -222,200 +222,84 @@ def compute_integral_Am_numba(chi_list, r_list, fctr_r, ell):
 
 
 def save_to_hdf5(p, filename, group_path, data, metadata=None):
-    """Multi-process safe HDF5 saving function with ell merging support for job arrays"""
-    # Use HDF5's built-in file locking (remove FileLock to avoid conflicts)
-    # The 'locking=True' ensures HDF5 handles multi-process access
+    """
+    Multi-process safe HDF5 saving function with simple structure.
+
+    New structure: Instead of storing data as (n_ell, n_chi) arrays,
+    each ell is stored as a separate dataset under each lterm subgroup:
+
+    group_path/
+        lterm1/
+            ell_2: (n_chi,)
+            ell_3: (n_chi,)
+            ...
+        lterm2/
+            ell_2: (n_chi,)
+            ...
+        chi_list: (n_chi,)
+
+    This eliminates the need for array expansion and complex merging.
+    """
     max_retries = 10
     retry_delay = 2  # seconds
 
     for attempt in range(max_retries):
         try:
             with h5py.File(filename, 'a', locking=True) as f:
-                # Check if group exists
-                if group_path in f:
+                # Create or get the main group
+                if group_path not in f:
+                    group = f.create_group(group_path)
+                    print(f'    Created group: {group_path}')
+                else:
                     group = f[group_path]
 
-                    # Check if chi_list and ell_list exist
-                    if 'chi_list' in group and 'ell_list' in group:
-                        chi_match = np.array_equal(group['chi_list'][:], data['chi_list'])
+                # Save chi_list at group level (only once)
+                if 'chi_list' not in group:
+                    group.create_dataset('chi_list', data=data['chi_list'])
 
-                        if not chi_match:
-                            print(f'    ERROR: chi_list mismatch!')
-                            print(f'    Existing: {group["chi_list"][:5]}... (length {len(group["chi_list"])})')
-                            print(f'    New:      {data["chi_list"][:5]}... (length {len(data["chi_list"])})')
-                            if not p.force:
-                                return False
-                            else:
-                                print(f'    p.force=True: removing and recreating group')
-                                del f[group_path]
-                                group = f.create_group(group_path)
-                                for key, value in data.items():
-                                    group.create_dataset(key, data=value)
-                                if metadata:
-                                    for key, value in metadata.items():
-                                        group.attrs[key] = value
-                                return True
+                # Get ell_list from data
+                ell_list = data['ell_list']
 
-                        # chi_list matches, now handle ell_list merging
-                        stored_ell_list = group['ell_list'][:]
-                        new_ell_list = data['ell_list']
+                # For each data key (e.g., 'density', 'rsd', 'f0', 'fm2'), create subgroup
+                for key, value in data.items():
+                    if key in ['chi_list', 'ell_list']:
+                        continue  # Skip coordinate arrays
 
-                        # Find which ells are new and which exist
-                        ells_to_add = []
-                        ells_to_update = []
-
-                        for ell in new_ell_list:
-                            if ell in stored_ell_list:
-                                ells_to_update.append(ell)
-                            else:
-                                ells_to_add.append(ell)
-
-                        if len(ells_to_add) == 0 and len(ells_to_update) > 0:
-                            # Only updating existing ells (but may have new datasets like fm2 after f0)
-                            print(f'    Updating data for ell={ells_to_update}')
-
-                            for key, value in data.items():
-                                if key in ['chi_list', 'ell_list']:
-                                    continue  # Skip coordinate arrays
-
-                                if key in group:
-                                    # Update existing dataset
-                                    existing_shape = group[key].shape
-                                    new_shape = value.shape
-
-                                    print(f'      Updating dataset {key}: existing_shape={existing_shape}, new_shape={new_shape}')
-
-                                    for ell in ells_to_update:
-                                        new_idx = np.where(new_ell_list == ell)[0][0]
-                                        stored_idx = np.where(stored_ell_list == ell)[0][0]
-
-                                        print(f'        ell={ell}: new_idx={new_idx}, stored_idx={stored_idx}')
-
-                                        # Handle different data structures:
-                                        # G2/F2/dv2: shape is (n_components, n_ell, n_chi)
-                                        # FG2/d1v/etc: shape is (n_ell, n_chi)
-                                        if len(existing_shape) == 3 and len(new_shape) == 3:
-                                            # Both have component dimension
-                                            print(f'        Updating 3D: group[{key}][:, {stored_idx}, :] = value[:, {new_idx}, :]')
-                                            group[key][:, stored_idx, :] = value[:, new_idx, :]
-                                        elif len(existing_shape) == 2 and len(new_shape) == 2:
-                                            # Neither has component dimension
-                                            print(f'        Updating 2D: group[{key}][{stored_idx}, :] = value[{new_idx}, :]')
-                                            group[key][stored_idx, :] = value[new_idx, :]
-                                        else:
-                                            print(f'      WARNING: Shape mismatch for {key}: existing={existing_shape}, new={new_shape}')
-                                            print(f'      Skipping update for {key}')
-                                else:
-                                    # Create new dataset (e.g., fm2 being added after f0)
-                                    print(f'      Creating new dataset: {key}')
-                                    group.create_dataset(key, data=value)
-
-                            # Update metadata
-                            if metadata:
-                                for key, value in metadata.items():
-                                    group.attrs[key] = value
-
-                            return True
-
-                        elif len(ells_to_add) > 0:
-                            # Need to expand datasets to include new ells
-                            print(f'    Adding new ells: {ells_to_add}')
-                            print(f'    Updating existing ells: {ells_to_update}')
-
-                            # Merge and sort ell_lists
-                            merged_ell_list = np.sort(np.concatenate([stored_ell_list, ells_to_add]))
-                            n_ell_new = len(merged_ell_list)
-                            n_ell_old = len(stored_ell_list)
-
-                            # Create mapping: where does each ell go in merged list?
-                            old_to_merged = {ell: np.where(merged_ell_list == ell)[0][0]
-                                            for ell in stored_ell_list}
-                            new_to_merged = {ell: np.where(merged_ell_list == ell)[0][0]
-                                            for ell in new_ell_list}
-
-                            # Resize/recreate datasets
-                            for key, value in data.items():
-                                if key == 'ell_list':
-                                    del group[key]
-                                    group.create_dataset(key, data=merged_ell_list)
-                                elif key != 'chi_list':
-                                    if key in group:
-                                        # Dataset exists - expand it
-                                        print(f'      Expanding dataset {key}')
-                                        old_data = group[key][:]
-                                        old_shape = old_data.shape
-
-                                        # Assuming shape is (..., n_ell, n_chi)
-                                        new_shape = list(old_shape)
-                                        new_shape[-2] = n_ell_new  # ell dimension
-
-                                        expanded_data = np.zeros(new_shape, dtype=old_data.dtype)
-
-                                        # Copy old data to correct positions
-                                        for old_ell in stored_ell_list:
-                                            old_idx = np.where(stored_ell_list == old_ell)[0][0]
-                                            merged_idx = old_to_merged[old_ell]
-                                            expanded_data[..., merged_idx, :] = old_data[..., old_idx, :]
-
-                                        # Add new data
-                                        for new_ell in new_ell_list:
-                                            new_idx = np.where(new_ell_list == new_ell)[0][0]
-                                            merged_idx = new_to_merged[new_ell]
-                                            expanded_data[..., merged_idx, :] = value[..., new_idx, :]
-
-                                        # Replace dataset
-                                        del group[key]
-                                        group.create_dataset(key, data=expanded_data)
-                                    else:
-                                        # Dataset doesn't exist - create it fresh (properly shaped)
-                                        print(f'      Creating new dataset {key} with expanded shape')
-                                        # Need to create with proper shape for merged ell_list
-                                        new_shape = list(value.shape)
-                                        new_shape[-2] = n_ell_new  # ell dimension
-                                        expanded_data = np.zeros(new_shape, dtype=value.dtype)
-
-                                        # Add new data at correct positions
-                                        for new_ell in new_ell_list:
-                                            new_idx = np.where(new_ell_list == new_ell)[0][0]
-                                            merged_idx = new_to_merged[new_ell]
-                                            expanded_data[..., merged_idx, :] = value[..., new_idx, :]
-
-                                        group.create_dataset(key, data=expanded_data)
-
-                            if metadata:
-                                for key, value in metadata.items():
-                                    group.attrs[key] = value
-
-                            return True
-                        else:
-                            # Exact match
-                            print(f'    ell_list matches exactly, updating all data')
-                            for key, value in data.items():
-                                if key in group:
-                                    del group[key]
-                                group.create_dataset(key, data=value)
-                            if metadata:
-                                for key, val in metadata.items():
-                                    group.attrs[key] = val
-                            return True
-
+                    # Create subgroup for this lterm/multipole if it doesn't exist
+                    if key not in group:
+                        subgroup = group.create_group(key)
+                        print(f'    Created subgroup: {group_path}/{key}')
                     else:
-                        print(f'    chi_list or ell_list missing, recreating group')
-                        if not p.force:
-                            return False
-                        del f[group_path]
+                        subgroup = group[key]
 
-                # Create new group if it doesn't exist
-                if group_path not in f:
-                    print(f'    Creating new group: {group_path}')
-                    group = f.create_group(group_path)
+                    # Save data for each ell separately
+                    # value shape can be (n_ell, n_chi) or (n_components, n_ell, n_chi)
+                    for i, ell in enumerate(ell_list):
+                        ell_key = f'ell_{ell}'
 
-                    for key, value in data.items():
-                        group.create_dataset(key, data=value)
+                        # Extract data for this ell
+                        if len(value.shape) == 3:
+                            # Shape is (n_components, n_ell, n_chi)
+                            ell_data = value[:, i, :]  # shape: (n_components, n_chi)
+                        elif len(value.shape) == 2:
+                            # Shape is (n_ell, n_chi)
+                            ell_data = value[i, :]  # shape: (n_chi,)
+                        else:
+                            print(f'      WARNING: Unexpected shape for {key}: {value.shape}')
+                            continue
 
-                    if metadata:
-                        for key, value in metadata.items():
-                            group.attrs[key] = value
+                        # Save or overwrite this ell's data
+                        if ell_key in subgroup:
+                            # Overwrite existing
+                            del subgroup[ell_key]
+
+                        subgroup.create_dataset(ell_key, data=ell_data)
+                        print(f'      Saved {group_path}/{key}/{ell_key} with shape {ell_data.shape}')
+
+                # Save metadata
+                if metadata:
+                    for key, value in metadata.items():
+                        group.attrs[key] = value
 
                 return True
 
