@@ -283,18 +283,24 @@ def save_to_hdf5(p, filename, group_path, data, metadata=None):
                                     existing_shape = group[key].shape
                                     new_shape = value.shape
 
+                                    print(f'      Updating dataset {key}: existing_shape={existing_shape}, new_shape={new_shape}')
+
                                     for ell in ells_to_update:
                                         new_idx = np.where(new_ell_list == ell)[0][0]
                                         stored_idx = np.where(stored_ell_list == ell)[0][0]
+
+                                        print(f'        ell={ell}: new_idx={new_idx}, stored_idx={stored_idx}')
 
                                         # Handle different data structures:
                                         # G2/F2/dv2: shape is (n_components, n_ell, n_chi)
                                         # FG2/d1v/etc: shape is (n_ell, n_chi)
                                         if len(existing_shape) == 3 and len(new_shape) == 3:
                                             # Both have component dimension
+                                            print(f'        Updating 3D: group[{key}][:, {stored_idx}, :] = value[:, {new_idx}, :]')
                                             group[key][:, stored_idx, :] = value[:, new_idx, :]
                                         elif len(existing_shape) == 2 and len(new_shape) == 2:
                                             # Neither has component dimension
+                                            print(f'        Updating 2D: group[{key}][{stored_idx}, :] = value[{new_idx}, :]')
                                             group[key][stored_idx, :] = value[new_idx, :]
                                         else:
                                             print(f'      WARNING: Shape mismatch for {key}: existing={existing_shape}, new={new_shape}')
