@@ -280,10 +280,25 @@ def save_to_hdf5(p, filename, group_path, data, metadata=None):
 
                                 if key in group:
                                     # Update existing dataset
+                                    existing_shape = group[key].shape
+                                    new_shape = value.shape
+
                                     for ell in ells_to_update:
                                         new_idx = np.where(new_ell_list == ell)[0][0]
                                         stored_idx = np.where(stored_ell_list == ell)[0][0]
-                                        group[key][..., stored_idx, :] = value[..., new_idx, :]
+
+                                        # Handle different data structures:
+                                        # G2/F2/dv2: shape is (n_components, n_ell, n_chi)
+                                        # FG2/d1v/etc: shape is (n_ell, n_chi)
+                                        if len(existing_shape) == 3 and len(new_shape) == 3:
+                                            # Both have component dimension
+                                            group[key][:, stored_idx, :] = value[:, new_idx, :]
+                                        elif len(existing_shape) == 2 and len(new_shape) == 2:
+                                            # Neither has component dimension
+                                            group[key][stored_idx, :] = value[new_idx, :]
+                                        else:
+                                            print(f'      WARNING: Shape mismatch for {key}: existing={existing_shape}, new={new_shape}')
+                                            print(f'      Skipping update for {key}')
                                 else:
                                     # Create new dataset (e.g., fm2 being added after f0)
                                     print(f'      Creating new dataset: {key}')
