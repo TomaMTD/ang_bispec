@@ -271,17 +271,29 @@ def save_to_hdf5(p, filename, group_path, data, metadata=None):
                                 ells_to_add.append(ell)
 
                         if len(ells_to_add) == 0 and len(ells_to_update) > 0:
-                            # Only updating existing ells
+                            # Only updating existing ells (but may have new datasets like fm2 after f0)
                             print(f'    Updating data for ell={ells_to_update}')
-                            for ell in ells_to_update:
-                                new_idx = np.where(new_ell_list == ell)[0][0]
-                                stored_idx = np.where(stored_ell_list == ell)[0][0]
 
-                                # Update datasets (dimension 1 is ell dimension)
-                                for key, value in data.items():
-                                    if key not in ['chi_list', 'ell_list'] and key in group:
-                                        # Replace data at stored_idx with data at new_idx
+                            for key, value in data.items():
+                                if key in ['chi_list', 'ell_list']:
+                                    continue  # Skip coordinate arrays
+
+                                if key in group:
+                                    # Update existing dataset
+                                    for ell in ells_to_update:
+                                        new_idx = np.where(new_ell_list == ell)[0][0]
+                                        stored_idx = np.where(stored_ell_list == ell)[0][0]
                                         group[key][..., stored_idx, :] = value[..., new_idx, :]
+                                else:
+                                    # Create new dataset (e.g., fm2 being added after f0)
+                                    print(f'      Creating new dataset: {key}')
+                                    group.create_dataset(key, data=value)
+
+                            # Update metadata
+                            if metadata:
+                                for key, value in metadata.items():
+                                    group.attrs[key] = value
+
                             return True
 
                         elif len(ells_to_add) > 0:

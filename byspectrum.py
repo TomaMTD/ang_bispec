@@ -204,6 +204,7 @@ def main(argv):
         print('     radiation={}'.format(argv.rad))
 
         for p.which in which_list:
+            print(f'Processing which={p.which}')
             # Compute fctr and cp dicts organized by lterm
             fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list, W_derivs_list=W_derivs_list)
             np.save(argv.output_dir+'fctr_of_r_{}'.format(p.which), fctr_dict)
