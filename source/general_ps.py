@@ -339,31 +339,48 @@ def save_to_hdf5(p, filename, group_path, data, metadata=None):
                                     del group[key]
                                     group.create_dataset(key, data=merged_ell_list)
                                 elif key != 'chi_list':
-                                    # Get shape and create expanded array
-                                    old_data = group[key][:]
-                                    old_shape = old_data.shape
+                                    if key in group:
+                                        # Dataset exists - expand it
+                                        print(f'      Expanding dataset {key}')
+                                        old_data = group[key][:]
+                                        old_shape = old_data.shape
 
-                                    # Assuming shape is (..., n_ell, n_chi)
-                                    new_shape = list(old_shape)
-                                    new_shape[-2] = n_ell_new  # ell dimension
+                                        # Assuming shape is (..., n_ell, n_chi)
+                                        new_shape = list(old_shape)
+                                        new_shape[-2] = n_ell_new  # ell dimension
 
-                                    expanded_data = np.zeros(new_shape, dtype=old_data.dtype)
+                                        expanded_data = np.zeros(new_shape, dtype=old_data.dtype)
 
-                                    # Copy old data to correct positions
-                                    for old_ell in stored_ell_list:
-                                        old_idx = np.where(stored_ell_list == old_ell)[0][0]
-                                        merged_idx = old_to_merged[old_ell]
-                                        expanded_data[..., merged_idx, :] = old_data[..., old_idx, :]
+                                        # Copy old data to correct positions
+                                        for old_ell in stored_ell_list:
+                                            old_idx = np.where(stored_ell_list == old_ell)[0][0]
+                                            merged_idx = old_to_merged[old_ell]
+                                            expanded_data[..., merged_idx, :] = old_data[..., old_idx, :]
 
-                                    # Add new data
-                                    for new_ell in new_ell_list:
-                                        new_idx = np.where(new_ell_list == new_ell)[0][0]
-                                        merged_idx = new_to_merged[new_ell]
-                                        expanded_data[..., merged_idx, :] = value[..., new_idx, :]
+                                        # Add new data
+                                        for new_ell in new_ell_list:
+                                            new_idx = np.where(new_ell_list == new_ell)[0][0]
+                                            merged_idx = new_to_merged[new_ell]
+                                            expanded_data[..., merged_idx, :] = value[..., new_idx, :]
 
-                                    # Replace dataset
-                                    del group[key]
-                                    group.create_dataset(key, data=expanded_data)
+                                        # Replace dataset
+                                        del group[key]
+                                        group.create_dataset(key, data=expanded_data)
+                                    else:
+                                        # Dataset doesn't exist - create it fresh (properly shaped)
+                                        print(f'      Creating new dataset {key} with expanded shape')
+                                        # Need to create with proper shape for merged ell_list
+                                        new_shape = list(value.shape)
+                                        new_shape[-2] = n_ell_new  # ell dimension
+                                        expanded_data = np.zeros(new_shape, dtype=value.dtype)
+
+                                        # Add new data at correct positions
+                                        for new_ell in new_ell_list:
+                                            new_idx = np.where(new_ell_list == new_ell)[0][0]
+                                            merged_idx = new_to_merged[new_ell]
+                                            expanded_data[..., merged_idx, :] = value[..., new_idx, :]
+
+                                        group.create_dataset(key, data=expanded_data)
 
                             if metadata:
                                 for key, value in metadata.items():
