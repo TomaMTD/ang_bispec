@@ -253,8 +253,16 @@ def save_to_hdf5(p, filename, group_path, data, metadata=None):
                 else:
                     group = f[group_path]
 
-                # Save chi_list at group level (only once)
-                if 'chi_list' not in group:
+                # Save chi_list at group level
+                # If it exists but has wrong size, delete and recreate
+                if 'chi_list' in group:
+                    old_size = len(group['chi_list'])
+                    new_size = len(data['chi_list'])
+                    if old_size != new_size:
+                        del group['chi_list']
+                        group.create_dataset('chi_list', data=data['chi_list'])
+                        print(f'    Updated chi_list (size changed from {old_size} to {new_size})')
+                else:
                     group.create_dataset('chi_list', data=data['chi_list'])
 
                 # Get ell_list from data
