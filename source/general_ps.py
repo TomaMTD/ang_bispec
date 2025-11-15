@@ -533,13 +533,30 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
 
     def check_computation_exists(filename, group_path, lterm):
         """Check if a specific computation already exists"""
-        try:
-            with h5py.File(filename, 'r') as f:
-                exists = group_path in f and lterm in f[group_path]
-                return exists
-        except (OSError, KeyError, IOError):
-            print(f'        group {nm_name} does not exist')
-            return False
+        max_retries = 5
+        retry_delay = 1
+
+        for attempt in range(max_retries):
+            try:
+                with h5py.File(filename, 'r') as f:
+                    exists = group_path in f and lterm in f[group_path]
+                    return exists
+            except (BlockingIOError, OSError) as e:
+                # Handle locking errors (errno 11)
+                if hasattr(e, 'errno') and e.errno == 11 or isinstance(e, BlockingIOError):
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        # After max retries, assume doesn't exist
+                        return False
+                # Other OSErrors - file doesn't exist
+                return False
+            except (KeyError, IOError, FileNotFoundError):
+                # File or group doesn't exist yet - this is expected on first run
+                return False
+
+        return False
 
     # Determine if we're processing F2/G2/dv2 or FG2/d1v/etc
     if p.which in ['F2', 'G2', 'dv2']:
