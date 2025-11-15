@@ -531,16 +531,26 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
     print('---------------------------------------------------- Integration processing')
     
 
-    def check_computation_exists(filename, group_path, lterm):
-        """Check if a specific computation already exists"""
+    def check_computation_exists(filename, group_path, lterm, ell_list):
+        """Check if a specific computation already exists for all ells in ell_list"""
         max_retries = 5
         retry_delay = 1
 
         for attempt in range(max_retries):
             try:
                 with h5py.File(filename, 'r') as f:
-                    exists = group_path in f and lterm in f[group_path]
-                    return exists
+                    # Check if group and lterm subgroup exist
+                    if group_path not in f or lterm not in f[group_path]:
+                        return False
+
+                    # Check if all ells exist within the lterm subgroup
+                    lterm_group = f[group_path][lterm]
+                    for ell in ell_list:
+                        ell_key = f'ell_{ell}'
+                        if ell_key not in lterm_group:
+                            return False  # At least one ell is missing
+
+                    return True  # All ells exist
             except (BlockingIOError, OSError) as e:
                 # Handle locking errors (errno 11)
                 if hasattr(e, 'errno') and e.errno == 11 or isinstance(e, BlockingIOError):
@@ -602,9 +612,9 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
             
             group_path = f'{"primordial_" if p.mode=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}' 
 
-            # Check if computation already exists
-            if not p.force and check_computation_exists(output_filename, group_path, lterm):
-                print(f'    Results for (n,m)=({group_path}), lterm={lterm} already exist, skipping (use force=True to overwrite)')
+            # Check if computation already exists for all ells
+            if not p.force and check_computation_exists(output_filename, group_path, lterm, ell_list):
+                print(f'    Results for (n,m)=({group_path}), lterm={lterm} already exist for all ells, skipping (use force=True to overwrite)')
                 continue
 
 
