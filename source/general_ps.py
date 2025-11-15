@@ -303,12 +303,25 @@ def save_to_hdf5(p, filename, group_path, data, metadata=None):
 
                 return True
 
-        except BlockingIOError as e:
-            if attempt < max_retries - 1:
-                print(f'    File locked (attempt {attempt+1}/{max_retries}), retrying in {retry_delay}s...')
-                time.sleep(retry_delay)
+        except (BlockingIOError, OSError) as e:
+            # Both BlockingIOError and OSError with errno 11 are locking errors
+            if hasattr(e, 'errno') and e.errno == 11:
+                # errno 11 = Resource temporarily unavailable (lock conflict)
+                if attempt < max_retries - 1:
+                    print(f'    File locked (attempt {attempt+1}/{max_retries}), retrying in {retry_delay}s...')
+                    time.sleep(retry_delay)
+                else:
+                    print(f'    ERROR: Failed to acquire lock after {max_retries} attempts')
+                    raise
+            elif isinstance(e, BlockingIOError):
+                if attempt < max_retries - 1:
+                    print(f'    File locked (attempt {attempt+1}/{max_retries}), retrying in {retry_delay}s...')
+                    time.sleep(retry_delay)
+                else:
+                    print(f'    ERROR: Failed to acquire lock after {max_retries} attempts')
+                    raise
             else:
-                print(f'    ERROR: Failed to acquire lock after {max_retries} attempts')
+                # Some other OSError, re-raise immediately
                 raise
         except Exception as e:
             print(f'    ERROR in save_to_hdf5: {e}')
