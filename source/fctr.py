@@ -589,7 +589,7 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
 
         # For F2/G2/dv2: compute b1 derivatives if available
         if p.which=='F2' and 'data' in time_dict and 'b1' in time_dict['data']:
-            print('Adding linear bias b1 to F2/G2/dv2 terms')
+            print('         Adding linear bias b1 to F2/G2/dv2 terms')
             b1_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1'], k=5, s=0)
             b1_derivs_list = compute_spline_derivatives(b1_spline, time_dict['data']['r'], r_list,
                                                         max_deriv=max_deriv+derive_start, smooth_s=1e-6)

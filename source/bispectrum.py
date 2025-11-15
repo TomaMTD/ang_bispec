@@ -255,12 +255,30 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 # They should be in each group, let's get from first group
                 n, m = nm_pairs[0][0], nm_pairs[0][1]
 
-                first_group_name = f'{"primordial_" if p.mode=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}' 
+                first_group_name = f'{"primordial_" if p.mode=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}'
                 if first_group_name not in f:
                     raise ValueError(f"Group {first_group_name} not found in {cls_file}")
 
-                ell_list_file = f[first_group_name]['ell_list'][()]
-                chi_list_file = f[first_group_name]['chi_list'][()]
+                # NEW STRUCTURE: Get chi_list from group, get ell_list by scanning datasets
+                first_group = f[first_group_name]
+                chi_list_file = first_group['chi_list'][()]
+
+                # Get available ells by scanning the first lterm subgroup (e.g., 'density')
+                # Find first lterm subgroup
+                lterm_subgroups = [key for key in first_group.keys() if key != 'chi_list']
+                if len(lterm_subgroups) == 0:
+                    raise ValueError(f"No lterm subgroups found in {first_group_name}")
+
+                first_lterm = lterm_subgroups[0]
+                lterm_group = first_group[first_lterm]
+
+                # Extract ell values from dataset names (ell_2, ell_3, ...)
+                ell_list_file = []
+                for key in lterm_group.keys():
+                    if key.startswith('ell_'):
+                        ell_val = int(key.split('_')[1])
+                        ell_list_file.append(ell_val)
+                ell_list_file = np.array(sorted(ell_list_file))
 
                 # Check if ell_list and chi_list match
                 ell_match = np.array_equal(ell_list_file, ell_list)
@@ -276,17 +294,13 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     print(f"    File has {len(chi_list_file)} chi points: [{chi_list_file[0]:.3f}, {chi_list_file[-1]:.3f}]")
                     print(f"    Requested {len(chi_list)} chi points: [{chi_list[0]:.3f}, {chi_list[-1]:.3f}]")
 
-                # Precompute ell indices once (outside the loop)
-                ell_indices = []
-                for ell in ell_list:
-                    idx_ell = np.where(ell_list_file == ell)[0]
-                    if len(idx_ell) == 0:
-                        print(f"  Warning: ell={ell} not found in file")
-                        ell_indices.append(-1)
-                    else:
-                        ell_indices.append(idx_ell[0])
-                ell_indices = np.array(ell_indices)
-                valid_mask = ell_indices >= 0
+                # Check if requested ells are available
+                missing_ells = [ell for ell in ell_list if ell not in ell_list_file]
+                if missing_ells:
+                    print(f"  Warning: ells {missing_ells} not found in file")
+
+                # Create mask for valid ells
+                valid_mask = np.array([ell in ell_list_file for ell in ell_list])
             
             if which_for_cls not in ['d0d', 'd1d', 'dod'] or (p.Newton and which_for_cls not in ['dod']):
                 # For each (n,m) pair, sum over lterms
@@ -300,16 +314,25 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     group = f[group_name]
 
                     # Sum over requested lterms
+                    # NEW STRUCTURE: each lterm is a subgroup with ell_X datasets
                     Cl_nm_summed = np.zeros((len(ell_list_file), len(chi_list_file)))
 
                     for lt in lterm_list:
                         if lt in group:
-                            Cl_nm_summed += group[lt][()]
+                            lt_group = group[lt]
+                            # Load each ell from the subgroup
+                            for i_ell, ell in enumerate(ell_list_file):
+                                ell_key = f'ell_{ell}'
+                                if ell_key in lt_group:
+                                    Cl_nm_summed[i_ell, :] += lt_group[ell_key][()]
+                                else:
+                                    print(f"  Warning: {ell_key} not found in {group_name}/{lt}")
                         else:
-                            print(f"  Warning: Dataset {lt} not found in {group_name}")
+                            print(f"  Warning: Subgroup {lt} not found in {group_name}")
 
-                    # Extract all requested ells at once using fancy indexing
-                    Cl_subset = Cl_nm_summed[ell_indices[valid_mask], :]/stuff  # shape (n_valid_ells, n_chi_file)
+                    # Extract requested ells (they match indices now since we built ell_list_file by scanning)
+                    valid_ell_indices = [i for i, ell in enumerate(ell_list_file) if ell in ell_list]
+                    Cl_subset = Cl_nm_summed[valid_ell_indices, :]/stuff  # shape (n_valid_ells, n_chi_file)
 
                     # Interpolate all ells at once if needed
                     if not chi_match:
@@ -337,13 +360,21 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     group = f[group_name]
 
                     # Sum over requested lterms
+                    # NEW STRUCTURE: each lterm is a subgroup with ell_X datasets
                     Cl_nm_summed = np.zeros((len(ell_list_file), len(chi_list_file)))
 
                     for lt in lterm_list:
                         if lt in group:
-                            Cl_nm_summed += group[lt][()]
+                            lt_group = group[lt]
+                            # Load each ell from the subgroup
+                            for i_ell, ell in enumerate(ell_list_file):
+                                ell_key = f'ell_{ell}'
+                                if ell_key in lt_group:
+                                    Cl_nm_summed[i_ell, :] += lt_group[ell_key][()]
+                                else:
+                                    print(f"  Warning: {ell_key} not found in {group_name}/{lt}")
                         else:
-                            print(f"  Warning: Dataset {lt} not found in {group_name}")
+                            print(f"  Warning: Subgroup {lt} not found in {group_name}")
 
                     Cl_nm_list.append(Cl_nm_summed)
 
@@ -386,7 +417,9 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                         Cl_combined = factor1[None, :] * Cl_nm_list[0] + factor2[None, :] * Cl_nm_list[1]
 
                 # Extract and interpolate the combined result
-                Cl_subset = Cl_combined[ell_indices[valid_mask], :]  # shape (n_valid_ells, n_chi_file)
+                # Extract requested ells (they match indices now since we built ell_list_file by scanning)
+                valid_ell_indices = [i for i, ell in enumerate(ell_list_file) if ell in ell_list]
+                Cl_subset = Cl_combined[valid_ell_indices, :]  # shape (n_valid_ells, n_chi_file)
 
                 if not chi_match:
                     interp_func = interp1d(chi_list_file, Cl_subset, kind='linear',
@@ -450,24 +483,31 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                             raise KeyError(f"Group {p.which} not found")
 
                         group = f[p.which]
-                        ell_list_file = group['ell_list'][()]
                         chi_list_file = group['chi_list'][()]
 
-                        # Check which ells are missing
-                        missing_ells = [ell for ell in ell_list if ell not in ell_list_file]
-                        if missing_ells:
-                            raise KeyError(f"ells {missing_ells} not found")
-
-                        # Extract for each ell and interpolate to chi_list
+                        # Check if chi grids match
                         chi_match = np.array_equal(chi_list_file, chi_list)
 
+                        # NEW STRUCTURE: each multipole is a subgroup with ell_XXX datasets
                         for i, ell in enumerate(ell_list):
-                            ell_idx = np.where(ell_list_file == ell)[0][0]
+                            ell_key = f'ell_{ell}'
 
                             if p.which in ['G2', 'dv2']:
                                 # Load f^(0) directly into A0 slots (0-2)
-                                f0_data = group['f0_newton' if p.Newton else 'f0'][()]  # shape: (n_components, n_ell_file, n_chi_file)
-                                f0_comp1 = f0_data[0, ell_idx, :]  # f_{0,0}
+                                multipole_name = 'f0_newton' if p.Newton else 'f0'
+
+                                if multipole_name not in group:
+                                    raise KeyError(f"Multipole {multipole_name} not found in {p.which}")
+
+                                multipole_group = group[multipole_name]
+
+                                if ell_key not in multipole_group:
+                                    # Skip missing ells
+                                    continue
+
+                                # Load data for this ell: shape is (n_components, n_chi_file)
+                                f0_data_ell = multipole_group[ell_key][()]
+                                f0_comp1 = f0_data_ell[0, :]  # f_{0,0}
                         
                                 if not chi_match:
                                     interp_func = interp1d(chi_list_file, f0_comp1, kind='linear',
@@ -481,16 +521,25 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
 
                                 # If Newton=0, also load f^(-2) into Am slots (7-9, same as F2)
                                 if not p.Newton:
-                                    f0_comp2 = f0_data[1, ell_idx, :]  # second component
+                                    f0_comp2 = f0_data_ell[1, :]  # second component
 
-                                    fm2_data = group['fm2'][()]
-                                    fm2_comp1 = fm2_data[0, ell_idx, :]  # Only one component for G2/dv2
+                                    # Load fm2 data for this ell
+                                    if 'fm2' not in group:
+                                        raise KeyError(f"Multipole fm2 not found in {p.which}")
+
+                                    fm2_group = group['fm2']
+                                    if ell_key not in fm2_group:
+                                        # Skip missing ells
+                                        continue
+
+                                    fm2_data_ell = fm2_group[ell_key][()]
+                                    fm2_comp1 = fm2_data_ell[0, :]  # Only one component for G2/dv2
 
                                     if not chi_match:
                                         interp_func = interp1d(chi_list_file, f0_comp2, kind='linear',
                                                               bounds_error=False, fill_value=0.0)
                                         kernels_array[i, :, 2] = interp_func(chi_list)  # A02
- 
+
                                         interp_func = interp1d(chi_list_file, fm2_comp1, kind='linear',
                                                               bounds_error=False, fill_value=0.0)
                                         kernels_array[i, :, 7] = interp_func(chi_list)  # Am1
@@ -504,9 +553,17 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
 
                             else:  # F2 with Newton=0
                                 # Load f^(-2) into Am slots (7-9)
-                                fm2_data = group['fm2'][()]
-                                fm2_comp1 = fm2_data[0, ell_idx, :]
-                                fm2_comp2 = fm2_data[1, ell_idx, :]
+                                if 'fm2' not in group:
+                                    raise KeyError(f"Multipole fm2 not found in {p.which}")
+
+                                fm2_group = group['fm2']
+                                if ell_key not in fm2_group:
+                                    # Skip missing ells
+                                    continue
+
+                                fm2_data_ell = fm2_group[ell_key][()]
+                                fm2_comp1 = fm2_data_ell[0, :]
+                                fm2_comp2 = fm2_data_ell[1, :]
 
                                 if not chi_match:
                                     interp_func = interp1d(chi_list_file, fm2_comp1, kind='linear',
@@ -523,8 +580,16 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                                     kernels_array[i, :, 9] = fm2_comp2
 
                                 # Load f^(-4) into Am slots (10-11)
-                                fm4_data = group['fm4'][()]
-                                fm4_comp1 = fm4_data[0, ell_idx, :]
+                                if 'fm4' not in group:
+                                    raise KeyError(f"Multipole fm4 not found in {p.which}")
+
+                                fm4_group = group['fm4']
+                                if ell_key not in fm4_group:
+                                    # Skip missing ells
+                                    continue
+
+                                fm4_data_ell = fm4_group[ell_key][()]
+                                fm4_comp1 = fm4_data_ell[0, :]
 
                                 if not chi_match:
                                     interp_func = interp1d(chi_list_file, fm4_comp1, kind='linear',
@@ -551,22 +616,34 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
             try:
                 with h5py.File(cls_file, 'r') as f:
                     group = f[p.which]
-                    ell_list_file = group['ell_list'][()]
                     chi_list_file = group['chi_list'][()]
 
                     # Check if chi grids match
                     chi_match = np.array_equal(chi_list_file, chi_list)
 
-                    # Load radiation terms
-                    fm2_rad = group['fm2_rad'][()]  # shape: (n_components, n_ell_file, n_chi_file)
-                    fm4_rad = group['fm4_rad'][()]  # shape: (n_components, n_ell_file, n_chi_file)
+                    # NEW STRUCTURE: radiation terms are in subgroups
+                    if 'fm2_rad' not in group:
+                        raise KeyError(f"Multipole fm2_rad not found in {p.which}")
+                    if 'fm4_rad' not in group:
+                        raise KeyError(f"Multipole fm4_rad not found in {p.which}")
+
+                    fm2_rad_group = group['fm2_rad']
+                    fm4_rad_group = group['fm4_rad']
 
                     for i, ell in enumerate(ell_list):
-                        ell_idx = np.where(ell_list_file == ell)[0][0]
+                        ell_key = f'ell_{ell}'
 
-                        # Extract first component of fm2_rad and fm4_rad
-                        fm2_comp1 = fm2_rad[0, ell_idx, :]
-                        fm4_comp1 = fm4_rad[0, ell_idx, :]
+                        if ell_key not in fm2_rad_group or ell_key not in fm4_rad_group:
+                            # Skip missing ells
+                            continue
+
+                        # Load data for this ell: shape is (n_components, n_chi_file)
+                        fm2_rad_ell = fm2_rad_group[ell_key][()]
+                        fm4_rad_ell = fm4_rad_group[ell_key][()]
+
+                        # Extract first component
+                        fm2_comp1 = fm2_rad_ell[0, :]
+                        fm4_comp1 = fm4_rad_ell[0, :]
 
                         if not chi_match:
                             # Il1 from fm2_rad

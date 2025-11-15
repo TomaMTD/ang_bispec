@@ -507,7 +507,7 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
     # Ensure ell_list is numpy array for numba compatibility
     ell_list = np.asarray(ell_list)
 
-    print('----------------------------------------------------')
+    print('---------------------------------------------------- Integration processing')
     
 
     def check_computation_exists(filename, group_path, lterm):
