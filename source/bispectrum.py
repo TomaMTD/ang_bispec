@@ -780,8 +780,8 @@ def compute_bispectrum_quadratic_symmetric(Cl_array, coeffs, chi_list, triplet_l
         integral = np.sum(integrand * simp_w) * dchi / 3.0
         # integral = simpson(integrand, x=chi_list)
         
-        #spline = UnivariateSpline(chi_list, integrand, k=5, s=0)
-        #integral = quad(spline, chi_list[0], chi_list[-1])[0]
+#        spline = UnivariateSpline(chi_list, integrand, k=3, s=0)
+#        integral = quad(spline, chi_list[0], chi_list[-1])[0]
         
         results[idx] = integral
 
@@ -887,8 +887,8 @@ def compute_bispectrum_quadratic(Cl_array, coeffs, chi_list, triplet_list):
         # Integrate using Simpson's rule
         integral = np.sum(integrand * simp_w) * dchi / 3.0
         # integral = simpson(integrand, x=chi_list)
-        #spline = UnivariateSpline(chi_list, integrand, k=5, s=0)
-        #integral = quad(spline, chi_list[0], chi_list[-1])[0]
+#        spline = UnivariateSpline(chi_list, integrand, k=3, s=0)
+#        integral = quad(spline, chi_list[0], chi_list[-1])[0]
 
         results[idx] = integral
 
@@ -971,9 +971,36 @@ def ell_configurations(p, ell_list):
     ell_to_idx = {ell: i for i, ell in enumerate(ell_list)}
 
     # ========================================================================
-    # 3. Generate triplet list and compute Wigner 3j symbols
+    # Cache filename based on ell_list and configuration
     # ========================================================================
     config = p.configuration
+    ell_hash = hash(tuple(ell_list))
+
+    if config == 'equi':
+        cache_file = f'{p.output_dir}triplets_cache_equi_{ell_hash}.npz'
+        config_name = 'equilateral'
+    elif config == 'squ':
+        cache_file = f'{p.output_dir}triplets_cache_squ_ell{p.ell}_{ell_hash}.npz'
+        config_name = f'squeezed_ell{p.ell}'
+    elif config == 'folded':
+        cache_file = f'{p.output_dir}triplets_cache_folded_ell{p.ellmax}_{ell_hash}.npz'
+        config_name = f'folded_ell{p.ellmax}'
+    else:
+        cache_file = f'{p.output_dir}triplets_cache_all_{ell_hash}.npz'
+        config_name = ''
+
+    # Try to load from cache
+    if os.path.exists(cache_file):
+        print(f"Loading triplets from cache: {cache_file}")
+        data = np.load(cache_file)
+        triplets = data['triplets']
+        wigner_values = data['wigner_values']
+        print(f"  Loaded {len(triplets)} triplets from cache")
+        return triplets, wigner_values, config_name
+
+    # ========================================================================
+    # 3. Generate triplet list and compute Wigner 3j symbols
+    # ========================================================================
     print(f"Generating triplets for {len(ell_list)} ells (configuration: {config})...")
     triplets = []
     wigner_values = []
@@ -1025,6 +1052,7 @@ def ell_configurations(p, ell_list):
     else:
         # All configurations: generate all valid triplets
         for i1, ell1 in enumerate(ell_list):
+            print(f'     ell1={ell1} ({i1}/{len(ell_list)})')
             for i2, ell2 in enumerate(ell_list):
                 if ell2 < ell1:  # Only compute ell2 >= ell1 to avoid duplicates
                     continue
@@ -1042,7 +1070,16 @@ def ell_configurations(p, ell_list):
                         wigner_values.append(wigner_test)
         config_name = ''
 
-    return np.array(triplets, dtype=np.int64), np.array(wigner_values), config_name
+    # Convert to arrays
+    triplets = np.array(triplets, dtype=np.int64)
+    wigner_values = np.array(wigner_values)
+
+    # Save to cache for future use
+    print(f"Saving triplets to cache: {cache_file}")
+    np.savez(cache_file, triplets=triplets, wigner_values=wigner_values)
+    print(f"  Saved {len(triplets)} triplets to cache")
+
+    return triplets, wigner_values, config_name
 
 
 
@@ -1150,7 +1187,12 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
                     del f[shape_group]
                 grp = f.create_group(shape_group)
                 for key in grp_local.keys():
-                    grp.create_dataset(key, data=grp_local[key][:])
+                    # Handle both scalar and array datasets
+                    dset = grp_local[key]
+                    if dset.shape == ():  # Scalar dataset
+                        grp.create_dataset(key, data=dset[()])
+                    else:  # Array dataset
+                        grp.create_dataset(key, data=dset[:])
 
                 # Save equilateral
                 shape_group = f'equilateral/{config_name}' if config_name else 'equilateral/all'
@@ -1161,7 +1203,12 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
                     if key == 'bl':
                         grp.create_dataset('bl', data=B_equilateral)
                     else:
-                        grp.create_dataset(key, data=grp_local[key][:])
+                        # Handle both scalar and array datasets
+                        dset = grp_local[key]
+                        if dset.shape == ():  # Scalar dataset
+                            grp.create_dataset(key, data=dset[()])
+                        else:  # Array dataset
+                            grp.create_dataset(key, data=dset[:])
 
                 # Save orthogonal
                 shape_group = f'orthogonal/{config_name}' if config_name else 'orthogonal/all'
@@ -1172,7 +1219,12 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
                     if key == 'bl':
                         grp.create_dataset('bl', data=B_orthogonal)
                     else:
-                        grp.create_dataset(key, data=grp_local[key][:])
+                        # Handle both scalar and array datasets
+                        dset = grp_local[key]
+                        if dset.shape == ():  # Scalar dataset
+                            grp.create_dataset(key, data=dset[()])
+                        else:  # Array dataset
+                            grp.create_dataset(key, data=dset[:])
 
             f.flush()
 
