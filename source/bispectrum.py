@@ -966,6 +966,14 @@ def compute_bispectrum_parallel_efficient(Cl_array, coeffs, chi_list, triplet_li
     return 2.*results
 
 
+def _compute_wigner_wrapper(args):
+    """Helper function for parallel Wigner 3j computation (must be at module level for pickling)"""
+    triplet, ell_list = args
+    i1, i2, i3 = triplet
+    wigner_val = float(wigner_3j(int(ell_list[i1]), int(ell_list[i2]), int(ell_list[i3]), 0, 0, 0))
+    return (triplet, wigner_val) if wigner_val != 0 else None
+
+
 def ell_configurations(p, ell_list):
     # Create ell to index mapping
     ell_to_idx = {ell: i for i, ell in enumerate(ell_list)}
@@ -1051,23 +1059,51 @@ def ell_configurations(p, ell_list):
 
     else:
         # All configurations: generate all valid triplets
-        for i1, ell1 in enumerate(ell_list):
-            print(f'     ell1={ell1} ({i1}/{len(ell_list)})')
-            for i2, ell2 in enumerate(ell_list):
-                if ell2 < ell1:  # Only compute ell2 >= ell1 to avoid duplicates
-                    continue
-                for i3, ell3 in enumerate(ell_list):
-                    if ell3 < ell2:  # Only compute ell3 >= ell2
-                        continue
+        # First, generate candidate triplets (fast)
+        candidates = []
+        for i1 in range(len(ell_list)):
+            if i1%50==0: print(f'     {i1+1}/{len(ell_list)}')
+            for i2 in range(i1, len(ell_list)):
+                for i3 in range(i2, len(ell_list)):
                     # Triangle inequality: |ell1 - ell2| <= ell3 <= ell1 + ell2
-                    if ell3 < abs(ell1 - ell2) or ell3 > ell1 + ell2:
+                    if ell_list[i3] < abs(ell_list[i1] - ell_list[i2]) or ell_list[i3] > ell_list[i1] + ell_list[i2]:
                         continue
 
-                    # Convert to Python int for wigner_3j (which doesn't accept numpy integers)
-                    wigner_test = float(wigner_3j(int(ell1), int(ell2), int(ell3), 0, 0, 0))
-                    if wigner_test != 0:
-                        triplets.append([i1, i2, i3])
-                        wigner_values.append(wigner_test)
+                    # Parity rule: ell1 + ell2 + ell3 must be even (major optimization!)
+                    if (ell_list[i1] + ell_list[i2] + ell_list[i3]) % 2 != 0:
+                        continue
+
+                    candidates.append((i1, i2, i3))
+
+        print(f'  Generated {len(candidates)} candidate triplets, computing Wigner 3j symbols...')
+
+        # Compute Wigner 3j in parallel
+        from multiprocessing import Pool, cpu_count
+        n_cores = min(cpu_count(), 16)  # Use up to 8 cores
+
+        print(f'  Using {n_cores} cores for parallel Wigner 3j computation...')
+        # Prepare arguments: each candidate needs access to ell_list
+        args_list = [(cand, ell_list) for cand in candidates]
+
+        with Pool(n_cores) as pool:
+            # Use imap to get results as they complete (allows progress tracking)
+            results_iter = pool.imap(_compute_wigner_wrapper, args_list, chunksize=1000)
+
+            # Process results and show progress
+            total = len(candidates)
+            processed = 0
+            for result in results_iter:
+                processed += 1
+                if processed % 10000 == 0 or processed == total:
+                    print(f'    Progress: {processed}/{total} ({100*processed/total:.1f}%)')
+
+                if result is not None:
+                    triplet, wigner_val = result
+                    triplets.append(list(triplet))
+                    wigner_values.append(wigner_val)
+
+        print(f'  Kept {len(triplets)} triplets with non-zero Wigner 3j')
+
         config_name = ''
 
     # Convert to arrays
