@@ -240,8 +240,8 @@ def save_to_hdf5(p, filename, group_path, data, metadata=None):
 
     This eliminates the need for array expansion and complex merging.
     """
-    max_retries = 10
-    retry_delay = 2  # seconds
+    max_retries = 50
+    retry_delay = 10  # seconds
 
     for attempt in range(max_retries):
         try:
