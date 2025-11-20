@@ -7,6 +7,7 @@ from sympy.physics.wigner import wigner_3j
 from filelock import FileLock
 import os
 from scipy.interpolate import UnivariateSpline
+from pywigxjpf import wig3jj, wig_temp_init, wig_table_init
 
 from fftlog import *
 from mathematica import *
@@ -324,7 +325,10 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                             for i_ell, ell in enumerate(ell_list_file):
                                 ell_key = f'ell_{ell}'
                                 if ell_key in lt_group:
-                                    Cl_nm_summed[i_ell, :] += lt_group[ell_key][()]
+                                    try:
+                                        Cl_nm_summed[i_ell, :] += lt_group[ell_key][()]
+                                    except ValueError:
+                                        print(ell_key, Cl_nm_summed.shape, (lt_group[ell_key][()]).shape)
                                 else:
                                     print(f"  Warning: {ell_key} not found in {group_name}/{lt}")
                         else:
@@ -447,25 +451,56 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
         if p.which == 'F2':
             A0 = kernels['A0']
             n_A0_comp = A0.shape[1]
-            # Copy A00
-            kernels_array[:, :, 0] = A0[:, 0, :]
-            # A01 = -A00/2
-            kernels_array[:, :, 1] = -kernels_array[:, :, 0] / 2.
-            # Copy remaining components (A02, A03 if present)
-            for comp in range(2, n_A0_comp):
-                kernels_array[:, :, comp] = A0[:, comp, :]
+
+            # Check if bs_terms are present
+            if 'bs_terms' in kernels:
+                bs_terms = kernels['bs_terms']  # shape (n_ell, 3, n_chi)
+                print("  Adding b_s corrections to A0, A2, A4 kernels...")
+
+                # A00: base + b_s/6 * f_bs (eq. 20: f^(0)_{0,0} += b_s/6)
+                kernels_array[:, :, 0] = A0[:, 0, :] + 1./6.* bs_terms[:, 0, :]
+
+                # A01: base relation -A00/2 + b_s/4 * f_bs (eq. 20: f^(0)_{2,-2} += b_s/4, and f^(0)_{2,-2} = -f^(0)_{0,0}/2 baseline)
+                kernels_array[:, :, 1] = -A0[:, 0, :] / 2. + 1./4. * bs_terms[:, 0, :]
+
+                # Copy remaining components (A02, A03 if present)
+                for comp in range(2, n_A0_comp):
+                    kernels_array[:, :, comp] = A0[:, comp, :]
+            else:
+                # No bs_terms: use standard formulas
+                # Copy A00
+                kernels_array[:, :, 0] = A0[:, 0, :]
+                # A01 = -A00/2
+                kernels_array[:, :, 1] = -kernels_array[:, :, 0] / 2.
+                # Copy remaining components (A02, A03 if present)
+                for comp in range(2, n_A0_comp):
+                    kernels_array[:, :, comp] = A0[:, comp, :]
 
         # A2 and A4 (only for F2/G2/dv2)
         if p.which in ['F2', 'G2', 'dv2'] and kernels['A2'] is not None and kernels['A4'] is not None:
             A2 = kernels['A2']  # shape (n_ell, 2, n_chi)
             A4 = kernels['A4']  # shape (n_ell, 1, n_chi)
 
-            # A2: 2 components
-            for comp in range(2):
-                kernels_array[:, :, 4+comp] = A2[:, comp, :]
+            # Check if bs_terms are present
+            if 'bs_terms' in kernels:
+                bs_terms = kernels['bs_terms']  # shape (n_ell, 3, n_chi)
 
-            # A4: 1 component
-            kernels_array[:, :, 6] = A4[:, 0, :]
+                # A2: 2 components with b_s corrections
+                # A20: base + (-b_s/2) * D[f_bs] (eq. 20: f^(2)_{0,-2} += -b_s/2)
+                kernels_array[:, :, 4] = A2[:, 0, :]  - 1./2. * bs_terms[:, 1, :]
+                kernels_array[:, :, 5] = A2[:, 1, :]
+
+                # A4: 1 component with b_s correction
+                # A40: base + (b_s/4) * D²[f_bs] (eq. 20: f^(4)_{-2,-2} += b_s/4)
+                kernels_array[:, :, 6] = A4[:, 0, :] + 1./4. * bs_terms[:, 2, :]
+            else:
+                # No bs_terms: use standard formulas
+                # A2: 2 components
+                for comp in range(2):
+                    kernels_array[:, :, 4+comp] = A2[:, comp, :]
+
+                # A4: 1 component
+                kernels_array[:, :, 6] = A4[:, 0, :]
         
         # ========================================================================
         # 4. Load f-coefficient terms from HDF5 (F2/G2/dv2 only)
@@ -780,7 +815,7 @@ def compute_bispectrum_quadratic_symmetric(Cl_array, coeffs, chi_list, triplet_l
         integral = np.sum(integrand * simp_w) * dchi / 3.0
         # integral = simpson(integrand, x=chi_list)
         
-#        spline = UnivariateSpline(chi_list, integrand, k=3, s=0)
+#        spline = UnivariateSpline(chi_list, integrand, k=5, s=0)
 #        integral = quad(spline, chi_list[0], chi_list[-1])[0]
         
         results[idx] = integral
@@ -887,7 +922,7 @@ def compute_bispectrum_quadratic(Cl_array, coeffs, chi_list, triplet_list):
         # Integrate using Simpson's rule
         integral = np.sum(integrand * simp_w) * dchi / 3.0
         # integral = simpson(integrand, x=chi_list)
-#        spline = UnivariateSpline(chi_list, integrand, k=3, s=0)
+#        spline = UnivariateSpline(chi_list, integrand, k=5, s=0)
 #        integral = quad(spline, chi_list[0], chi_list[-1])[0]
 
         results[idx] = integral
@@ -966,11 +1001,33 @@ def compute_bispectrum_parallel_efficient(Cl_array, coeffs, chi_list, triplet_li
     return 2.*results
 
 
+def _init_wigner_worker(max_two_j):
+    """Initialize pywigxjpf tables once per worker process"""
+    try:
+        # Initialize factorials table (shared, only needs to be done once per process)
+        wig_table_init(2 * max_two_j, 3)
+        # Initialize temp array for this worker
+        wig_temp_init(max_two_j)
+    except Exception as e:
+        print(f'Warning: pywigxjpf initialization failed: {e}')
+
+
 def _compute_wigner_wrapper(args):
     """Helper function for parallel Wigner 3j computation (must be at module level for pickling)"""
     triplet, ell_list = args
     i1, i2, i3 = triplet
-    wigner_val = float(wigner_3j(int(ell_list[i1]), int(ell_list[i2]), int(ell_list[i3]), 0, 0, 0))
+
+    # Use fast pywigxjpf if available, otherwise fall back to sympy
+    try:
+        # wig3jj expects 2*j values (uses half-integer convention)
+        # wig3jj(two_j1, two_j2, two_j3, two_m1, two_m2, two_m3)
+        # Note: tables are already initialized by _init_wigner_worker
+        wigner_val = wig3jj(2*int(ell_list[i1]), 2*int(ell_list[i2]), 2*int(ell_list[i3]), 0, 0, 0)
+    except (ImportError, Exception) as e:
+        # Fallback to sympy
+        print(f'pywigxjpf failed ({e}), try sympy (slower)')
+        wigner_val = float(wigner_3j(int(ell_list[i1]), int(ell_list[i2]), int(ell_list[i3]), 0, 0, 0))
+
     return (triplet, wigner_val) if wigner_val != 0 else None
 
 
@@ -982,19 +1039,35 @@ def ell_configurations(p, ell_list):
     # Cache filename based on ell_list and configuration
     # ========================================================================
     config = p.configuration
-    ell_hash = hash(tuple(ell_list))
+
+    # Create descriptive filename from ell_list properties
+    ell_min = int(ell_list[0])
+    ell_max = int(ell_list[-1])
+    n_ells = len(ell_list)
+
+    # Detect spacing type (linear, log, custom)
+    if n_ells > 1:
+        diffs = np.diff(ell_list)
+        if np.allclose(diffs, diffs[0], rtol=0.01):
+            spacing = f'lin{int(diffs[0])}'
+        else:
+            spacing = 'custom'
+    else:
+        spacing = 'single'
+
+    ell_descriptor = f'ell{ell_min}to{ell_max}_n{n_ells}_{spacing}'
 
     if config == 'equi':
-        cache_file = f'{p.output_dir}triplets_cache_equi_{ell_hash}.npz'
+        cache_file = f'{p.output_dir}triplets_cache_equi_{ell_descriptor}.npz'
         config_name = 'equilateral'
     elif config == 'squ':
-        cache_file = f'{p.output_dir}triplets_cache_squ_ell{p.ell}_{ell_hash}.npz'
+        cache_file = f'{p.output_dir}triplets_cache_squ_ell{p.ell}_{ell_descriptor}.npz'
         config_name = f'squeezed_ell{p.ell}'
     elif config == 'folded':
-        cache_file = f'{p.output_dir}triplets_cache_folded_ell{p.ellmax}_{ell_hash}.npz'
+        cache_file = f'{p.output_dir}triplets_cache_folded_ell{p.ellmax}_{ell_descriptor}.npz'
         config_name = f'folded_ell{p.ellmax}'
     else:
-        cache_file = f'{p.output_dir}triplets_cache_all_{ell_hash}.npz'
+        cache_file = f'{p.output_dir}triplets_cache_all_{ell_descriptor}.npz'
         config_name = ''
 
     # Try to load from cache
@@ -1085,7 +1158,14 @@ def ell_configurations(p, ell_list):
         # Prepare arguments: each candidate needs access to ell_list
         args_list = [(cand, ell_list) for cand in candidates]
 
-        with Pool(n_cores) as pool:
+        # max_two_j is 2 * max(ell) (pywigxjpf uses 2*j convention)
+        max_two_j = 2 * int(max(ell_list))
+
+        # Use initializer to set up pywigxjpf once per worker (huge speedup!)
+        from functools import partial
+        initializer = partial(_init_wigner_worker, max_two_j)
+
+        with Pool(n_cores, initializer=initializer) as pool:
             # Use imap to get results as they complete (allows progress tracking)
             results_iter = pool.imap(_compute_wigner_wrapper, args_list, chunksize=1000)
 
@@ -1094,7 +1174,7 @@ def ell_configurations(p, ell_list):
             processed = 0
             for result in results_iter:
                 processed += 1
-                if processed % 10000 == 0 or processed == total:
+                if processed % 50000 == 0 or processed == total:
                     print(f'    Progress: {processed}/{total} ({100*processed/total:.1f}%)')
 
                 if result is not None:

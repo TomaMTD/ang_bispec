@@ -64,7 +64,7 @@ def compute_spline_derivatives(spline, data_grid, eval_grid, max_deriv=11, smoot
             deriv_spline = UnivariateSpline(data_grid, derivs_full[i], k=5, s=0, ext=0)
             derivs[i] = deriv_spline(eval_grid)
 
-    return derivs
+    return np.array(derivs)
 
 
 # Optimized version that caches the SymPy derivatives
@@ -378,7 +378,7 @@ def get_coefficients(p, time_dict):
 # Coefficients f_nm - Unified computation following eq. B10
 # ============================================================================
 
-def compute_f_nm_unified(p, alpha, beta, gamma, time_dict, h_power):
+def compute_f_nm_unified(p, alpha, beta, gamma, time_dict, h_power, use_b1=False):
     """
     Unified computation of f^(m)_nm multipoles for any m following eq. B10.
 
@@ -387,7 +387,7 @@ def compute_f_nm_unified(p, alpha, beta, gamma, time_dict, h_power):
     Pattern from eq. B10:
     - f^(m)_{0,0}   = (β - α)/2 - 2γ   [with appropriate coeff index]
     - f^(m)_{2,-2}  = (α - β)/4 + γ     [only for h_power=0]
-    - f^(m)_{0,-2}  = H²/2 * (β/2 - α)  [uses next coeff index]
+    - f^(m)_{0,-2}  = 1/2 * (β/2 - α)  [uses next coeff index]
     - f^(m)_{-2,-2} = α/4               [only for h_power=0,4]
 
     Parameters:
@@ -399,12 +399,26 @@ def compute_f_nm_unified(p, alpha, beta, gamma, time_dict, h_power):
         Cosmological time-dependent functions
     h_power : int
         Power m in f^(m): -4, -2, 0, 2, or 4
+    use_b1 : bool
+        If True, return just the prefactor spline (for b_s computation)
 
     Returns:
     --------
-    list or array
-        list of UnivariateSplines
+    list of UnivariateSplines (if use_b1=False) or single UnivariateSpline (if use_b1=True)
     """
+
+    # Apply prefactor: D² * H/a
+    if p.which == 'F2':
+        prefactor = time_dict['Da']**2 * time_dict['Ha'] / time_dict['a']
+    elif p.which == 'G2':
+        prefactor = -time_dict['Da']**2 * time_dict['Ha'] / time_dict['a']
+    else: # dv2
+        prefactor = time_dict['Da']**2 * time_dict['Ha'] / time_dict['a'] * time_dict['Ha'] * time_dict['mathcalR']
+
+    if use_b1:
+        # For b_s terms: just return the prefactor as a spline
+        # The b_s coefficients (1/6, 1/4, -1/2, etc.) will be applied in get_bispectrum_kernels_analytical
+        return UnivariateSpline(time_dict['ra'], prefactor, k=5, s=0)
 
     # Helper functions following eq. B10 pattern
     # Return 0 when the component doesn't exist for that h_power
@@ -435,14 +449,6 @@ def compute_f_nm_unified(p, alpha, beta, gamma, time_dict, h_power):
     # Compute all components and filter out zero arrays
     # Note: f_{2,-2} = -f_{0,0}/2 is recovered later (not stored here)
     components = [c for c in [f_00(h_power), f_0m2(h_power), f_m2m2(h_power)] if not np.all(c == 0)]
-
-    # Apply prefactor: D² * H/a
-    if p.which == 'F2':
-        prefactor = time_dict['Da']**2 * time_dict['Ha'] / time_dict['a']
-    elif p.which == 'G2': 
-        prefactor = -time_dict['Da']**2 * time_dict['Ha'] / time_dict['a']
-    else: # dv2
-        prefactor = time_dict['Da']**2 * time_dict['Ha'] / time_dict['a'] * time_dict['Ha'] * time_dict['mathcalR']
 
     # Create splines
     splines = []
@@ -591,9 +597,8 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
         if p.which=='F2' and 'data' in time_dict and 'b1' in time_dict['data']:
             print('         Adding linear bias b1 to F2/G2/dv2 terms')
             b1_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1'], k=5, s=0)
-            b1_derivs_list = compute_spline_derivatives(b1_spline, time_dict['data']['r'], r_list,
+            b1_derivs= compute_spline_derivatives(b1_spline, time_dict['data']['r'], r_list,
                                                         max_deriv=max_deriv+derive_start, smooth_s=1e-6)
-            b1_derivs = np.array(b1_derivs_list)
             use_b1 = True
         else:
             b1_derivs = None
@@ -603,10 +608,8 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
             fctr = fctr_list[qt]
 
             # Compute fctr and its derivatives using the new function
-            fctr_derivs_list = compute_spline_derivatives(fctr, time_dict['ra'], r_list,
+            fctr_derivs = compute_spline_derivatives(fctr, time_dict['ra'], r_list,
                                                           max_deriv=max_deriv, smooth_s=0)
-            fctr_derivs = np.array(fctr_derivs_list)
-
             # Get analytical derivatives of W
             if W_derivs_list is None:
                 W_derivs_list_local = W_derivs.get_all_derivatives(r_list, r_power=0, max_deriv=max_deriv+derive_start)
@@ -678,16 +681,14 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
             
             # Compute fctr derivatives using the new function
             # Use time_dict['ra'] as the full data grid for accuracy
-            fctr_derivs_list = compute_spline_derivatives(fctr, time_dict['ra'], r_list, max_deriv=11, smooth_s=0)
-            fctr_derivs = np.array(fctr_derivs_list)
+            fctr_derivs = compute_spline_derivatives(fctr, time_dict['ra'], r_list, max_deriv=11, smooth_s=0)
 
             # For density term: compute b1 derivatives if available
             if lterm == 'density' and 'data' in time_dict and 'b1' in time_dict['data']:
                 print('Adding linear bias b1 to linear terms')
                 b1_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1'], k=5, s=0)
-                b1_derivs_list = compute_spline_derivatives(b1_spline, time_dict['data']['r'], r_list,
+                b1_derivs = compute_spline_derivatives(b1_spline, time_dict['data']['r'], r_list,
                                                             max_deriv=11, smooth_s=1e-6)
-                b1_derivs = np.array(b1_derivs_list)
                 #np.save('b1', b1_derivs)
 
 
@@ -820,6 +821,81 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             if len(W_derivs_list) < max_deriv_total + 1:
                 raise ValueError(f"W_derivs_list must contain at least {max_deriv_total+1} derivatives (0 to {max_deriv_total})")
 
+
+        # ====================================================================
+        # Precompute b1 and b_s derivatives if available (for F2 only)
+        # ====================================================================
+        # TESTING FLAG: Set to False to disable b_s (keeping b1) for comparison
+        COMPUTE_BS = False #True
+
+        use_b1 = False
+        bs_terms_all = None  # Will be (n_ell, 3, n_r) if computed
+
+        if p.which == 'F2' and 'data' in time_dict and 'b1' in time_dict['data']:
+            # Compute b1 derivatives (for f-coefficient product rule)
+            b1_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1'], k=5, s=0)
+            b1_derivs = compute_spline_derivatives(b1_spline, time_dict['data']['r'], r_list,
+                                                   max_deriv=max_deriv_total, smooth_s=1e-6)
+            use_b1 = True
+
+            if COMPUTE_BS:
+                print('     Adding linear bias b1 and b_s = -2/7*(b1-1) to F2 kernels')
+                # d^n/dr^n[b_s] = -2/7 * d^n/dr^n[b1] for n≥1
+                # For n=0: b_s = -2/7 * (b1 - 1)
+                bs_derivs = -2./7. * b1_derivs.copy()
+                bs_derivs[0] = -2./7. * (b1_derivs[0] - 1.)
+            else:
+                print('     Adding linear bias b1 to F2 kernels (b_s disabled for testing)')
+                bs_derivs = None
+
+            # Compute b_s terms only if enabled
+            if bs_derivs is not None:
+                # Get prefactor spline (D² * H/a) for b_s terms
+                prefactor_spline = compute_f_nm_unified(p, alpha_coeff, beta_coeff, gamma_coeff,
+                                                        time_dict, h_power=0, use_b1=True)
+
+                # Compute prefactor derivatives
+                prefactor_derivs = compute_spline_derivatives(prefactor_spline, time_dict['ra'], r_list,
+                                                             max_deriv=max_deriv_total, smooth_s=0)
+
+                # Compute product: fctr_bs = prefactor * b_s
+                fctr_bs_derivs = [product_deriv(j, prefactor_derivs, bs_derivs) for j in range(5)]
+
+                # Compute product: fctr_bs * W
+                fctr_bs_W_derivs = [product_deriv(j, fctr_bs_derivs, W_derivs_list) for j in range(5)]
+
+                # Now we have f_bs = prefactor * b_s * W and its derivatives
+                # Initialize bs_terms_all: (n_ell, 3, n_r)
+                # [0]: f_bs (for A0 terms)
+                # [1]: D[f_bs] (for A2 terms)
+                # [2]: D²[f_bs] (for A4 terms)
+                bs_terms_all = np.zeros((n_ell, 3, n_r))
+
+                f_bs, df_bs, d2f_bs, d3f_bs, d4f_bs = fctr_bs_W_derivs
+
+                # Loop over ells to apply ell-dependent operators
+                for ell_idx, ell in enumerate(ell_list):
+                    alpha_ell = ell*(ell+1) - 2.
+
+                    # Level 0: f_bs (no operator)
+                    bs_terms_all[ell_idx, 0, :] = f_bs
+
+                    # Level 1: D[f_bs] = -d²f_bs + 2/r * df_bs + α/r² * f_bs
+                    # This is the "inner operator" for F2
+                    y_bs = -d2f_bs + 2./r_list*df_bs + alpha_ell/r_list**2*f_bs
+                    bs_terms_all[ell_idx, 1, :] = y_bs
+
+                    # Level 2: D²[f_bs] = D[D[f_bs]] for A4
+                    # Compute derivatives of y_bs = D[f_bs]
+                    dy_bs = -d3f_bs + 2./r_list*d2f_bs + (alpha_ell-2.)/r_list**2*df_bs - 2.*alpha_ell/r_list**3*f_bs
+                    d2y_bs = -d4f_bs + 2./r_list*d3f_bs + (alpha_ell-4.)/r_list**2*d2f_bs - 4.*(alpha_ell-1.)/r_list**3*df_bs + 6.*alpha_ell/r_list**4*f_bs
+
+                    # Apply D operator again (outer operator)
+                    bs_terms_all[ell_idx, 2, :] = -d2y_bs + 2./r_list*dy_bs + alpha_ell/r_list**2*y_bs
+        else:
+            print('     Assuming b1=1, b_s=0')
+            b1_derivs = None
+
         # Determine number of components for each kernel
         # A0: for F2 can have up to 4 components, for G2/dv2 typically 1-2
         f0_splines = compute_f_nm_unified(p, alpha_coeff, beta_coeff, gamma_coeff, time_dict, h_power=0)
@@ -835,20 +911,6 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
         [f4_spline] = compute_f_nm_unified(p, alpha_coeff, beta_coeff, gamma_coeff, time_dict, h_power=4)
 
         # ====================================================================
-        # Precompute b1 derivatives if available (for F2 only)
-        # ====================================================================
-        if p.which == 'F2' and 'data' in time_dict and 'b1' in time_dict['data']:
-            print('Adding linear bias b1 to F2 kernels')
-            b1_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1'], k=5, s=0)
-            b1_derivs_list = compute_spline_derivatives(b1_spline, time_dict['data']['r'], r_list,
-                                                        max_deriv=max_deriv_total, smooth_s=1e-6)
-            b1_derivs = np.array(b1_derivs_list)
-            use_b1 = True
-        else:
-            b1_derivs = None
-            use_b1 = False
-
-        # ====================================================================
         # Precompute all spline derivatives ONCE (independent of ell!)
         # ====================================================================
         # A0: f^(0) evaluated at r_list
@@ -857,15 +919,13 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
         # A2: f^(2) and its derivatives
         f2_derivs_list = []  # List of (max_deriv_inner+1, n_r) arrays
         for f2_spline in f2_splines:
-            fctr_derivs_list = compute_spline_derivatives(f2_spline, time_dict['ra'], r_list,
+            fctr_derivs= compute_spline_derivatives(f2_spline, time_dict['ra'], r_list,
                                                           max_deriv=max_deriv_inner, smooth_s=0)
-            fctr_derivs = np.array(fctr_derivs_list)
             f2_derivs_list.append(fctr_derivs)
 
         # A4: f^(4) and its derivatives
-        f4_derivs_list = compute_spline_derivatives(f4_spline, time_dict['ra'], r_list,
+        f4_derivs= compute_spline_derivatives(f4_spline, time_dict['ra'], r_list,
                                                     max_deriv=max_deriv_total, smooth_s=0)
-        f4_derivs = np.array(f4_derivs_list)
 
         # Precompute products of fctr*W for A2
         f2_products_list = []  # List of product derivatives for each f2
@@ -933,7 +993,13 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             # Apply outer mathcalD
             A4_all[ell_idx, 0, :] = -d2y + 2./r_list*dy + alpha/r_list**2*y
 
-        return {'r_list': r_list, 'ell_list': ell_list, 'A0': A0_all, 'A2': A2_all, 'A4': A4_all}
+        result = {'r_list': r_list, 'ell_list': ell_list, 'A0': A0_all, 'A2': A2_all, 'A4': A4_all}
+
+        # Add bs_terms if computed
+        if bs_terms_all is not None:
+            result['bs_terms'] = bs_terms_all
+
+        return result
 
     else:
         # Other cases (d2vd0d, d1vd1d, d1vd0d, etc.): compute A0 directly from formulas
