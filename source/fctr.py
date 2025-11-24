@@ -826,7 +826,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
         # Precompute b1 and b_s derivatives if available (for F2 only)
         # ====================================================================
         # TESTING FLAG: Set to False to disable b_s (keeping b1) for comparison
-        COMPUTE_BS = False #True
+        COMPUTE_BS = True
 
         use_b1 = False
         bs_terms_all = None  # Will be (n_ell, 3, n_r) if computed

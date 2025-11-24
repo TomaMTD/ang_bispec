@@ -1063,10 +1063,9 @@ def _compute_wigner_wrapper(args):
 
 def ell_configurations(p, ell_list):
     """
-    Generate triplet configurations, compute Wigner 3j symbols, Al123 coefficients, and variance.
+    Generate triplet configurations, compute Wigner 3j symbols and Al123 coefficients.
 
-    The variance V_ell1ell2ell3 = C_ell1 * C_ell2 * C_ell3 is computed if the
-    power spectrum file exists at {p.output_dir}/Cl_{p.lterm}.h5.
+    This function computes purely geometric quantities that are independent of cosmology.
 
     Parameters:
     -----------
@@ -1078,7 +1077,6 @@ def ell_configurations(p, ell_list):
     triplets : array of shape (n_triplets, 3) - indices into ell_list
     wigner_values : array of shape (n_triplets,)
     config_name : string
-    variance_values : array of shape (n_triplets,) if C_ell file exists, else None
     Al1l2l3_values : array of shape (n_triplets, 3) - Al123 coefficients for davd1v term
     """
     # Create ell to index mapping
@@ -1125,36 +1123,13 @@ def ell_configurations(p, ell_list):
         data = np.load(cache_file)
         triplets = data['triplets']
         wigner_values = data['wigner_values']
-        # Load variance if available in cache
-        variance_values = data['variance_values'] if 'variance_values' in data else None
         # Load Al1l2l3 if available in cache
         Al1l2l3_values = data['Al1l2l3_values'] if 'Al1l2l3_values' in data else None
         print(f"  Loaded {len(triplets)} triplets from cache")
-        if variance_values is not None:
-            print(f"  Loaded variance for {len(triplets)} triplets")
         if Al1l2l3_values is not None:
             print(f"  Loaded Al1l2l3 coefficients for {len(triplets)} triplets")
 
-        return triplets, wigner_values, config_name, variance_values, Al1l2l3_values
-
-    # ========================================================================
-    # Try to load C_ell from file
-    # ========================================================================
-    C_ell = None
-    cl_file = os.path.join(p.output_dir, f'Cl_{p.lterm}.h5')
-    if os.path.exists(cl_file):
-        print(f"  Loading power spectrum from {cl_file}...")
-        with h5py.File(cl_file, 'r') as f:
-            ell_file = f['ell'][:]
-            C_ell_file = f['C_ell'][:]
-
-        # Interpolate to match ell_list if needed
-        if np.array_equal(ell_file, ell_list):
-            C_ell = C_ell_file
-        else:
-            raise ValueError(f"ell_file must match ell_list")
-
-        print(f"  Loaded C_ell for {len(C_ell)} multipoles")
+        return triplets, wigner_values, config_name, Al1l2l3_values
 
     # ========================================================================
     # 3. Generate triplet list and compute Wigner 3j symbols
@@ -1289,27 +1264,56 @@ def ell_configurations(p, ell_list):
     wigner_values = np.array(wigner_values)
     Al1l2l3_values = np.array(Al1l2l3_values)
 
-    # ========================================================================
-    # Compute variance V_ell1ell2ell3 = C_ell1 * C_ell2 * C_ell3 if C_ell available
-    # ========================================================================
-    variance_values = None
-    if C_ell is not None:
-        print("  Computing variance V_ell1ell2ell3 = C_ell1 * C_ell2 * C_ell3...")
-        variance_values = np.zeros(len(triplets))
-        for i, (i1, i2, i3) in enumerate(triplets):
-            variance_values[i] = C_ell[i1] * C_ell[i2] * C_ell[i3]
-        print(f"  Computed variance for {len(triplets)} triplets")
-
-    # Save to cache for future use (including variance and Al1l2l3 if available)
+    # Save to cache for future use
     print(f"Saving triplets to cache: {cache_file}")
-    save_dict = {'triplets': triplets, 'wigner_values': wigner_values, 'Al1l2l3_values': Al1l2l3_values}
-    if variance_values is not None:
-        save_dict['variance_values'] = variance_values
-    np.savez(cache_file, **save_dict)
+    np.savez(cache_file, triplets=triplets, wigner_values=wigner_values, Al1l2l3_values=Al1l2l3_values)
     print(f"  Saved {len(triplets)} triplets with Al1l2l3 to cache")
 
-    return triplets, wigner_values, config_name, variance_values, Al1l2l3_values
+    return triplets, wigner_values, config_name, Al1l2l3_values
 
+
+def compute_variance_for_triplets(p, ell_list, triplet_array):
+    """
+    Compute variance V_ell1ell2ell3 = C_ell1 * C_ell2 * C_ell3 for all triplets.
+
+    This is cosmology-dependent and should be computed separately from geometric quantities.
+
+    Parameters:
+    -----------
+    p : parameter object
+    ell_list : array of multipoles
+    triplet_array : array of shape (n_triplets, 3) - indices into ell_list
+
+    Returns:
+    --------
+    variance_values : array of shape (n_triplets,) if C_ell file exists, else None
+    """
+    cl_file = os.path.join(p.output_dir, f'Cl_{p.lterm}.h5')
+    if not os.path.exists(cl_file):
+        print(f"  C_ell file not found at {cl_file}, skipping variance computation")
+        return None
+
+    print(f"  Loading power spectrum from {cl_file}...")
+    with h5py.File(cl_file, 'r') as f:
+        ell_file = f['ell'][:]
+        C_ell_file = f['C_ell'][:]
+
+    # Interpolate to match ell_list if needed
+    if np.array_equal(ell_file, ell_list):
+        C_ell = C_ell_file
+    else:
+        raise ValueError(f"ell_file must match ell_list")
+
+    print(f"  Loaded C_ell for {len(C_ell)} multipoles")
+
+    # Compute variance
+    print("  Computing variance V_ell1ell2ell3 = C_ell1 * C_ell2 * C_ell3...")
+    variance_values = np.zeros(len(triplet_array))
+    for i, (i1, i2, i3) in enumerate(triplet_array):
+        variance_values[i] = C_ell[i1] * C_ell[i2] * C_ell[i3]
+    print(f"  Computed variance for {len(triplet_array)} triplets")
+
+    return variance_values
 
 
 def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lterm_list,
@@ -1463,8 +1467,8 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
                         W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
     print(f"Data loading completed in {time.time()-start_time:.2f} seconds")
 
-    # get all ell triplets, wigner values, and Al1l2l3 coefficients
-    triplet_array, wigner_array, config_name, var_array, Al1l2l3_array = ell_configurations(p, ell_list)
+    # get all ell triplets, wigner values, and Al1l2l3 coefficients (geometry only, cosmology-independent)
+    triplet_array, wigner_array, config_name, Al1l2l3_array = ell_configurations(p, ell_list)
 
     n_triplets = len(triplet_array)
     print(f"Valid triplets (non-zero Wigner): {n_triplets}")
@@ -1472,6 +1476,9 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
     if n_triplets == 0:
         print("No valid triplets, exiting...")
         return
+
+    # Initialize variance (will be computed on-demand if needed and not already in HDF5)
+    var_array = None
 
     # ========================================================================
     # 4. Compute bispectra in parallel
@@ -1537,6 +1544,14 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
             grp = f.create_group(group_name)
         else:
             grp = f[group_name]
+
+        # Check if variance already exists (for 'all' config only)
+        variance_exists = (p.configuration not in ['equi', 'squ', 'folded']) and ('variance' in grp)
+
+        # If variance doesn't exist and we need it, compute it now
+        if not variance_exists and p.configuration not in ['equi', 'squ', 'folded']:
+            if var_array is None:
+                var_array = compute_variance_for_triplets(p, ell_list, triplet_array)
 
         # Prepare shared data based on configuration type
         if p.configuration == 'equi':
