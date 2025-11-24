@@ -65,10 +65,7 @@ def ensure_directory_exists(path):
     """checks wether the output path exists"""
     if not os.path.exists(path):
         os.makedirs(path)
-        os.makedirs(path+'/Am')
-        os.makedirs(path+'/Il')
         os.makedirs(path+'/bl')
-        os.makedirs(path+'/cln')
         print(f"output dir created : {path}")
 
 
@@ -118,7 +115,7 @@ def main(argv):
         if sigma_input == 'redshift':
             argv.sigma_z = (lincosmo.get_distance(argv.z0+argv.sigma_z/2)[0]
                             - lincosmo.get_distance(argv.z0-argv.sigma_z/2)[0])
-        rmin, rmax = Wrmin-20*argv.sigma_z, Wrmax+20*argv.sigma_z
+        rmin, rmax = Wrmin-30*argv.sigma_z, Wrmax+30*argv.sigma_z
 
     else:
         rmin, rmax = lincosmo.get_distance(argv.z0-argv.dz)[0], \
@@ -128,6 +125,7 @@ def main(argv):
             argv.sigma_z = (lincosmo.get_distance(argv.z0+argv.sigma_z/2)[0]
                             - lincosmo.get_distance(argv.z0-argv.sigma_z/2)[0])
         Wrmin, Wrmax = rmin+20*argv.sigma_z, rmax-20*argv.sigma_z
+        # 20 for ska 0.5 \pm 0.2
 
     # Prepare n_angular data if available (for SKA-type surveys)
     if 'data' in time_dict.keys() and argv.window_type != 'nbody':
@@ -139,7 +137,9 @@ def main(argv):
     # Prepare H/a data for window normalization: (ra_grid, H_over_a_values)
     H_over_a_data = (time_dict['ra'], time_dict['Ha'] / time_dict['a'])
     window_args = (Wrmin, Wrmax, H_over_a_data, argv.sigma_z, argv.window_type, n_angular_data)
-    print('Window function limits: rmin={:.0f} rmax={:.0f}'.format(rmin, rmax))
+    print('Integration range: rmin={:.0f} Mpc/h, rmax={:.0f} Mpc/h, Dz={:.2f} Mpc/h'.format(rmin, rmax, (rmax-rmin)/2))
+    print('Window function limits: Wrmin={:.0f} Mpc/h, Wrmax={:.0f} Mpc/h, Dz={:.2f} Mpc/h'.format(Wrmin, Wrmax, (Wrmax-Wrmin)/2))
+    print('Window decay scale sigma_z={:.2f} Mpc/h, {:.2f}\\% of the window function size'.format(argv.sigma_z, 100*argv.sigma_z/(Wrmax-Wrmin)*2))
 
     tr, Pk = lincosmo.get_power(0)
 
@@ -163,6 +163,11 @@ def main(argv):
             ell_list = np.array([ell if ell % 2 == 0 else ell + 1 for ell in ell_list])
             # Remove duplicates again in case some became the same
             ell_list = np.unique(ell_list)
+    #ell_list = np.array([4   ,5  , 6  , 7  , 8  , 9  ,10  ,11  ,12  ,13  ,14  ,15  ,16  ,17  ,18,  19,
+    #                      20,  21 , 22 , 23,  25,  26,  27,  28,  29,  31,  32,  34,  36,  37,  39,  41,  43,  45,
+    #                      47,  49 , 51 , 54,  56,  59,  62,  65,  68,  71,  75,  78,  82,  86,  90,  94,  99, 103,
+    #                     108, 113 ,119 ,124, 130, 136, 143, 150, 157, 164, 172, 180, 189, 198, 207, 217, 227, 238,
+    #                     249, 261 ,274 ,287, 300, 314, 329, 345, 361, 378, 396, 415, 435, 456, 477, 500])
 
     # Define lterm_list based on p.lterm
     if p.Newton:
@@ -187,32 +192,38 @@ def main(argv):
     W_derivs_list = fctr.load_or_compute_window_derivatives(p, window_args, r_list, output_dir, max_deriv=11)
 
     if argv.mode in ['cl', 'cln', 'Cl', 'Cln']:
-        if argv.which=='all':
-            if argv.rad:
-                which_list=['F2', 'G2', 'dv2']
-            else:
-                which_list=['FG2', 'd2v', 'd1v', 'd3v', 'd1d', 'F2', 'G2', 'dv2']
-        #elif argv.which in ['F2', 'G2', 'dv2']:
-        #    which_list=['FG2', argv.which]
+        if argv.which=='cl':
+            Cl = general_ps.compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_list, W_derivs_list)
+
         else:
-            which_list=[argv.which]
+            if argv.which=='all':
+                if argv.rad:
+                    which_list=['F2', 'G2', 'dv2']
+                else:
+                    which_list=['FG2', 'd2v', 'd1v', 'd3v', 'd1d', 'F2', 'G2', 'dv2']
+            #elif argv.which in ['F2', 'G2', 'dv2']:
+            #    which_list=['FG2', argv.which]
+            else:
+                which_list=[argv.which]
 
-        print('Computing generalised power spectra for:')
-        print('     which={}'.format(which_list))
-        print('     ell_list={}'.format(ell_list))
-        print('     Newton={}'.format(argv.Newton))
-        print('     radiation={}'.format(argv.rad))
+            print('Computing generalised power spectra for:')
+            print('     which={}'.format(which_list))
+            print('     ell_list={}'.format(ell_list))
+            print('     Newton={}'.format(argv.Newton))
+            print('     radiation={}'.format(argv.rad))
 
-        for p.which in which_list:
-            print(f'Processing which={p.which}')
-            # Compute fctr and cp dicts organized by lterm
-            fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list, W_derivs_list=W_derivs_list)
-            np.save(argv.output_dir+'fctr_of_r_{}'.format(p.which), fctr_dict)
+            for p.which in which_list:
+                print('='*70)
+                print('='*70)
+                print(f'Processing which={p.which}')
+                # Compute fctr and cp dicts organized by lterm
+                fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list, W_derivs_list=W_derivs_list)
+                np.save(argv.output_dir+'fctr_of_r_{}'.format(p.which), fctr_dict)
 
-            cp_dict = fftlog.apply_fftlog_dict(tr['k'], tr['dTdk'] if argv.rad else Pk, p)
-            np.save(f'cp_{p.which}', cp_dict)
+                cp_dict = fftlog.apply_fftlog_dict(tr['k'], tr['dTdk'] if argv.rad else Pk, p)
+                np.save(f'cp_{p.which}', cp_dict)
 
-            general_ps.compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
+                general_ps.compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
 
 
     elif argv.mode in ['primordial']:
@@ -224,140 +235,67 @@ def main(argv):
         else:
             which_list=[argv.which]
 
+
         print('Computing generalised power spectra for:')
         print('     which={}'.format(which_list))
         print('     ell_list={}'.format(ell_list))
 
-        for p.which in which_list:
-            # Compute fctr and cp dicts organized by lterm
-            fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list, W_derivs_list=W_derivs_list)
-            #np.save(argv.output_dir+'fctr_of_r_{}'.format(p.which), fctr_dict)
+        #for p.which in which_list:
+        #    # Compute fctr and cp dicts organized by lterm
+        #    fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list, W_derivs_list=W_derivs_list)
+        #    #np.save(argv.output_dir+'fctr_of_r_{}'.format(p.which), fctr_dict)
 
-            cp_dict = fftlog.apply_fftlog_dict(tr['k'], tr['phi'], p)
-            #np.save(f'cp_{p.which}', cp_dict)
+        #    cp_dict = fftlog.apply_fftlog_dict(tr['k'], tr['phi'], p)
+        #    #np.save(f'cp_{p.which}', cp_dict)
 
-            general_ps.compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
+        #    general_ps.compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
 
-            bispectrum.compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                                                   W_derivs_list=W_derivs_list, tr=tr, Pk=tr['phi'], t_grid=t_grid)
 
-    else:
         if argv.configuration=='esf':
             config_list = ['equi', 'squ', 'folded']
+        elif argv.configuration=='es':
+            config_list = ['equi', 'squ']
         else:
             config_list = [argv.configuration]
 
-        if argv.which=='all':
-            if p.lterm == 'noproj':
-                which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d']
-            else:    
-                which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d', \
-                            'dv2', 'd2vd0d', 'd1vd2v', 'd1vd0d', 'd1vdod', 'davd1v',\
-                            'd0pd3v', 'd0pd1d', 'd1vd2p']
-        elif argv.which=='rad' and p.rad:
-            which_list=['F2', 'G2', 'dv2']
-        else:
-            which_list=[argv.which]
-
         for p.configuration in config_list:
             for p.which in which_list:
+
                 bispectrum.compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                                                   W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+                                                   W_derivs_list=W_derivs_list, tr=tr, Pk=tr['phi'], t_grid=t_grid)
 
-        #cp_tr, b = fftlog.get_cp_of_r(tr['k'], tr['dTdk'], '', 'FG2', 0, 1)
-        ##cp_tr=cp_tr[:,0]
-        #np.savetxt(argv.output_dir+'cpTr.txt', cp_tr.T)
-        #if argv.Newton and argv.rad:
-        #    Newton_rad_list = [[0, 0], [1, 0], [0, 1]]
-        #else:
-        #    Newton_rad_list = [[argv.Newton, argv.rad]]
+    else:
 
-        #for Newton_rad in Newton_rad_list:
-        #    Newton, rad = Newton_rad[0], Newton_rad[1]
+        if argv.configuration=='esf':
+            config_list = ['equi', 'squ', 'folded']
+        elif argv.configuration=='es':
+            config_list = ['equi', 'squ']
+        else:
+            config_list = [argv.configuration]
+            
 
-        #    if argv.mode=='bin' and rad: rad_key='_rad'
-        #    else: rad_key=''
-        #    if argv.which=='all':
-        #        if argv.mode=='bin' or (argv.mode=='bl' and not rad):
+        if p.rad and p.Newton:
+            rad_Newton_list = [[0, 0], [1, 0], [0, 1]]
+        else:
+            rad_Newton_list = [[p.rad, p.Newton]]
 
-        #            #if argv.lterm == 'noproj': which_list=['F2{}'.format(rad_key), 'G2{}'.format(rad_key), \
-        #            #        'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v']
-        #            #else: 
-        #            which_list=['F2{}'.format(rad_key), 'G2{}'.format(rad_key), \
-        #                    'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v',\
-        #                        'dv2{}'.format(rad_key), 'd1vd2v', 'd1vd0d', \
-        #                        'd1vdod', 'd0pd3v', 'd0pd1d', 'd1vd2p', 'davd1v'] #RG2
-        #        else:
-        #            if argv.lterm == 'noproj': which_list=['F2', 'G2']
-        #            else: 
-        #                which_list=['F2', 'G2', 'dv2']
+        for p.rad, p.Newton in rad_Newton_list:
+            if argv.which=='all':
+                if p.rad:
+                    which_list=['F2', 'G2', 'dv2']
+                elif p.lterm == 'noproj':
+                    which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d', 'd2vd0d']
+                else:    
+                    which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d', \
+                                'dv2', 'd2vd0d', 'd1vd2v', 'd1vd0d', 'd1vdod', 'davd1v',\
+                                'd0pd3v', 'd0pd1d', 'd1vd2p']
+            else:
+                which_list=[argv.which]
 
-        #    elif argv.which=='newton': 
-        #        which_list=['F2', 'G2', \
-        #                    'd2vd2v', 'd1vd1d', 'd2vd0d', 'd1vd3v']
-        #    else:
-        #        which_list=[argv.which+rad_key]
-
-        #    for lt in lterm_list:
-        #        if argv.mode == 'bin':
-        #           print('Binning bispectrum...')
-        #           binning.get_binned_B(argv.bins, which_list, lt, Newton, rad)
-
-        #        elif argv.mode == 'bl':
-        #            for wh in which_list:
-        #                print('computing {} for which={} lterm={} ell={} Newton={} rad={}'\
-        #                        .format(argv.mode, wh, lt, argv.configuration, Newton, rad))
-
-
-        #                if argv.configuration=='esf':
-        #                    config_list=['equi', 'squ', 'folded']
-        #                else:
-        #                    config_list=[argv.configuration]
-
-        #                for config in config_list:
-        #                    if config == 'equi':
-        #                        shape_name = '_equi'
-        #                    elif config == 'squ':
-        #                        shape_name = '_squ'
-        #                    elif config == 'folded':
-        #                        shape_name = '_folded'
-        #                    else:
-        #                        shape_name=''
-
-        #                    if rad and wh in ['F2', 'G2', 'dv2']:
-        #                        name=argv.output_dir+"bl/bl_{}_{}_rad{}".format(lt, wh, shape_name)
-        #                    elif Newton:
-        #                        name=argv.output_dir+"bl/bl_{}_{}_newton{}".format(lt, wh, shape_name)
-        #                    else:
-        #                        name=argv.output_dir+"bl/bl_{}_{}{}".format(lt, wh, shape_name)
-        #                    
-        #                    print(' bispectrum file={}'.format(name))
-        #                    if config in ['equi', 'squ', 'folded']:
-        #                        fich = open(name+'.txt', "w")
-        #                        for ell in ell_list:
-        #                            if config == 'squ':
-        #                                bl, wigner=bispectrum.spherical_bispectrum(wh, Newton, rad, \
-        #                                        lt, argv.ell, ell, ell,\
-        #                                        time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
-        #                                        len(tr['k']), kmax, kmin)
-        #                                if bl!=0: fich.write('{} {} {} {:.16e} {:.16e} \n'.format(argv.ell, ell, ell, bl, wigner))
-        #                            elif config == 'folded':
-        #                                bl, wigner=bispectrum.spherical_bispectrum(wh, Newton, rad, \
-        #                                        lt, ell, ell, argv.ellmax,\
-        #                                        time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
-        #                                        len(tr['k']), kmax, kmin)
-        #                                if bl!=0: fich.write('{} {} {} {:.16e} {:.16e} \n'.format(argv.ellmax, ell, ell, bl, wigner))
-        #                            else:
-        #                                bl, wigner=bispectrum.spherical_bispectrum(wh, Newton, rad, \
-        #                                        lt, ell, ell, ell,\
-        #                                        time_dict, r0, ddr, normW, rmax, rmin, chi_list, cp_tr, b, \
-        #                                        len(tr['k']), kmax, kmin)
-        #                                if bl!=0: fich.write('{} {} {} {:.16e} {:.16e} \n'.format(ell, ell, ell, bl, wigner))
-
-        #                    else:     
-        #                        ell1=argv.ell
-        #                        bispectrum.write_all_configuration(ell1, argv.ellmax, wh, lt, name, rad, Newton, time_dict, chi_list,\
-        #                                r0, ddr, normW, rmin, rmax, cp_tr, b, len(tr['k']), kmax, kmin)
+            for p.configuration in config_list:
+                for p.which in which_list:
+                    bispectrum.compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
+                                                       W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
 
 
     return 0
