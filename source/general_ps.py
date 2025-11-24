@@ -766,7 +766,7 @@ def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_li
     C_ell = np.zeros(n_ell)
 
     for i_ell in range(n_ell):
-        integrand = fact_00[i_ell, :] * C_00[i_ell, :] + fact_m20[i_ell, :] * C_m20[i_ell, :]
+        integrand = -(fact_00[i_ell, :] * C_00[i_ell, :] + fact_m20[i_ell, :] * C_m20[i_ell, :]) # minus sign!
 
         # Create spline of integrand for accurate integration
         integrand_spline = UnivariateSpline(r_list, integrand, k=5, s=0, ext=0)
