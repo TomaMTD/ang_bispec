@@ -161,6 +161,7 @@ def get_nm_pairs_for_bispectrum(which, Newton=0):
     """
     nm_mapping = {
         'FG2': [(-2, 0), (0, 0), (2, 0)],
+        'cl': [(-2, 0), (0, 0)],  # For computing C_ℓ from eq. (36): needs C^(-2,0) and C^(0,0)
         'd1v': [(-1, 1)],
         'd2v': [(0, 2)],
         'd3v': [(1, 3)],
@@ -432,8 +433,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 else:
                     Cl_array[valid_mask, :, idx] = Cl_subset
 
-    
-    if p.mode == 'primordial':
+    if p.mode in ['primordial', 'cl']:
         return Cl_array
     else:
         # ========================================================================
@@ -1012,26 +1012,75 @@ def _init_wigner_worker(max_two_j):
         print(f'Warning: pywigxjpf initialization failed: {e}')
 
 
+def _compute_Al123_single(ell1, ell2, ell3, wigner_000):
+    """
+    Compute Al123 for a single (ell1, ell2, ell3) triplet using precomputed wigner_000.
+
+    Al123 = (wigner_3j(l1,l2,l3,0,1,-1) + wigner_3j(l1,l2,l3,0,-1,1)) / wigner_3j(l1,l2,l3,0,0,0)
+    """
+    if ell1 == ell2 == ell3:
+        return -1.0
+
+    try:
+        # Use pywigxjpf (2*j convention, m values are also doubled)
+        w_01m1 = wig3jj(2*ell1, 2*ell2, 2*ell3, 0, 2, -2)
+        w_0m11 = wig3jj(2*ell1, 2*ell2, 2*ell3, 0, -2, 2)
+    except Exception:
+        # Fallback to sympy
+        w_01m1 = float(wigner_3j(ell1, ell2, ell3, 0, 1, -1))
+        w_0m11 = float(wigner_3j(ell1, ell2, ell3, 0, -1, 1))
+
+    return (w_01m1 + w_0m11) / wigner_000
+
+
 def _compute_wigner_wrapper(args):
-    """Helper function for parallel Wigner 3j computation (must be at module level for pickling)"""
+    """Helper function for parallel Wigner 3j and Al123 computation (must be at module level for pickling)"""
     triplet, ell_list = args
     i1, i2, i3 = triplet
+    ell1, ell2, ell3 = int(ell_list[i1]), int(ell_list[i2]), int(ell_list[i3])
 
     # Use fast pywigxjpf if available, otherwise fall back to sympy
     try:
         # wig3jj expects 2*j values (uses half-integer convention)
         # wig3jj(two_j1, two_j2, two_j3, two_m1, two_m2, two_m3)
         # Note: tables are already initialized by _init_wigner_worker
-        wigner_val = wig3jj(2*int(ell_list[i1]), 2*int(ell_list[i2]), 2*int(ell_list[i3]), 0, 0, 0)
+        wigner_val = wig3jj(2*ell1, 2*ell2, 2*ell3, 0, 0, 0)
     except (ImportError, Exception) as e:
         # Fallback to sympy
         print(f'pywigxjpf failed ({e}), try sympy (slower)')
-        wigner_val = float(wigner_3j(int(ell_list[i1]), int(ell_list[i2]), int(ell_list[i3]), 0, 0, 0))
+        wigner_val = float(wigner_3j(ell1, ell2, ell3, 0, 0, 0))
 
-    return (triplet, wigner_val) if wigner_val != 0 else None
+    if wigner_val == 0:
+        return None
+
+    # Compute Al123 for all 3 permutations (reusing wigner_000 as denominator)
+    A1 = _compute_Al123_single(ell1, ell2, ell3, wigner_val) * np.sqrt(ell2*(ell2+1.) * ell3*(ell3+1.))
+    A2 = _compute_Al123_single(ell2, ell1, ell3, wigner_val) * np.sqrt(ell1*(ell1+1.) * ell3*(ell3+1.))
+    A3 = _compute_Al123_single(ell3, ell2, ell1, wigner_val) * np.sqrt(ell2*(ell2+1.) * ell1*(ell1+1.))
+
+    return (triplet, wigner_val, A1, A2, A3)
 
 
 def ell_configurations(p, ell_list):
+    """
+    Generate triplet configurations, compute Wigner 3j symbols, Al123 coefficients, and variance.
+
+    The variance V_ell1ell2ell3 = C_ell1 * C_ell2 * C_ell3 is computed if the
+    power spectrum file exists at {p.output_dir}/Cl_{p.lterm}.h5.
+
+    Parameters:
+    -----------
+    p : parameter object
+    ell_list : array of multipoles
+
+    Returns:
+    --------
+    triplets : array of shape (n_triplets, 3) - indices into ell_list
+    wigner_values : array of shape (n_triplets,)
+    config_name : string
+    variance_values : array of shape (n_triplets,) if C_ell file exists, else None
+    Al1l2l3_values : array of shape (n_triplets, 3) - Al123 coefficients for davd1v term
+    """
     # Create ell to index mapping
     ell_to_idx = {ell: i for i, ell in enumerate(ell_list)}
 
@@ -1076,8 +1125,36 @@ def ell_configurations(p, ell_list):
         data = np.load(cache_file)
         triplets = data['triplets']
         wigner_values = data['wigner_values']
+        # Load variance if available in cache
+        variance_values = data['variance_values'] if 'variance_values' in data else None
+        # Load Al1l2l3 if available in cache
+        Al1l2l3_values = data['Al1l2l3_values'] if 'Al1l2l3_values' in data else None
         print(f"  Loaded {len(triplets)} triplets from cache")
-        return triplets, wigner_values, config_name
+        if variance_values is not None:
+            print(f"  Loaded variance for {len(triplets)} triplets")
+        if Al1l2l3_values is not None:
+            print(f"  Loaded Al1l2l3 coefficients for {len(triplets)} triplets")
+
+        return triplets, wigner_values, config_name, variance_values, Al1l2l3_values
+
+    # ========================================================================
+    # Try to load C_ell from file
+    # ========================================================================
+    C_ell = None
+    cl_file = os.path.join(p.output_dir, f'Cl_{p.lterm}.h5')
+    if os.path.exists(cl_file):
+        print(f"  Loading power spectrum from {cl_file}...")
+        with h5py.File(cl_file, 'r') as f:
+            ell_file = f['ell'][:]
+            C_ell_file = f['C_ell'][:]
+
+        # Interpolate to match ell_list if needed
+        if np.array_equal(ell_file, ell_list):
+            C_ell = C_ell_file
+        else:
+            raise ValueError(f"ell_file must match ell_list")
+
+        print(f"  Loaded C_ell for {len(C_ell)} multipoles")
 
     # ========================================================================
     # 3. Generate triplet list and compute Wigner 3j symbols
@@ -1087,13 +1164,19 @@ def ell_configurations(p, ell_list):
     wigner_values = []
 
     # Configuration-based triplet filtering
+    Al1l2l3_values = []
+
     if config == 'equi':
         # Equilateral: ell1 = ell2 = ell3
         for i, ell in enumerate(ell_list):
-            wigner_test = float(wigner_3j(int(ell), int(ell), int(ell), 0, 0, 0))
+            ell_int = int(ell)
+            wigner_test = float(wigner_3j(ell_int, ell_int, ell_int, 0, 0, 0))
             if wigner_test != 0:
                 triplets.append([i, i, i])
                 wigner_values.append(wigner_test)
+                # For equilateral, Al123 = -1.0 (special case)
+                A_val = -1.0 * np.sqrt(ell_int*(ell_int+1.) * ell_int*(ell_int+1.))
+                Al1l2l3_values.append([A_val, A_val, A_val])
         config_name = 'equilateral'
 
     elif config == 'squ':
@@ -1103,14 +1186,21 @@ def ell_configurations(p, ell_list):
             print(f"Warning: ell1={ell1_fixed} not in ell_list, no triplets generated")
         else:
             i1 = ell_to_idx[ell1_fixed]
+            ell1_int = int(ell1_fixed)
             for i23, ell23 in enumerate(ell_list):
+                ell23_int = int(ell23)
                 # Triangle inequality
                 if ell23 < abs(ell1_fixed - ell23) or ell23 > ell1_fixed + ell23:
                     continue
-                wigner_test = float(wigner_3j(int(ell1_fixed), int(ell23), int(ell23), 0, 0, 0))
+                wigner_test = float(wigner_3j(ell1_int, ell23_int, ell23_int, 0, 0, 0))
                 if wigner_test != 0:
                     triplets.append([i1, i23, i23])
                     wigner_values.append(wigner_test)
+                    # Compute Al123 for all 3 permutations
+                    A1 = _compute_Al123_single(ell1_int, ell23_int, ell23_int, wigner_test) * np.sqrt(ell23_int*(ell23_int+1.) * ell23_int*(ell23_int+1.))
+                    A2 = _compute_Al123_single(ell23_int, ell1_int, ell23_int, wigner_test) * np.sqrt(ell1_int*(ell1_int+1.) * ell23_int*(ell23_int+1.))
+                    A3 = _compute_Al123_single(ell23_int, ell23_int, ell1_int, wigner_test) * np.sqrt(ell23_int*(ell23_int+1.) * ell1_int*(ell1_int+1.))
+                    Al1l2l3_values.append([A1, A2, A3])
         config_name = f'squeezed_ell{ell1_fixed}'
 
     elif config == 'folded':
@@ -1120,14 +1210,21 @@ def ell_configurations(p, ell_list):
             print(f"Warning: ellmax={ell1_fixed} not in ell_list, no triplets generated")
         else:
             i1 = ell_to_idx[ell1_fixed]
+            ell1_int = int(ell1_fixed)
             for i23, ell23 in enumerate(ell_list):
+                ell23_int = int(ell23)
                 # Triangle inequality
                 if ell23 < abs(ell1_fixed - ell23) or ell23 > ell1_fixed + ell23:
                     continue
-                wigner_test = float(wigner_3j(int(ell1_fixed), int(ell23), int(ell23), 0, 0, 0))
+                wigner_test = float(wigner_3j(ell1_int, ell23_int, ell23_int, 0, 0, 0))
                 if wigner_test != 0:
                     triplets.append([i1, i23, i23])
                     wigner_values.append(wigner_test)
+                    # Compute Al123 for all 3 permutations
+                    A1 = _compute_Al123_single(ell1_int, ell23_int, ell23_int, wigner_test) * np.sqrt(ell23_int*(ell23_int+1.) * ell23_int*(ell23_int+1.))
+                    A2 = _compute_Al123_single(ell23_int, ell1_int, ell23_int, wigner_test) * np.sqrt(ell1_int*(ell1_int+1.) * ell23_int*(ell23_int+1.))
+                    A3 = _compute_Al123_single(ell23_int, ell23_int, ell1_int, wigner_test) * np.sqrt(ell23_int*(ell23_int+1.) * ell1_int*(ell1_int+1.))
+                    Al1l2l3_values.append([A1, A2, A3])
         config_name = f'folded_ell{ell1_fixed}'
 
     else:
@@ -1148,13 +1245,13 @@ def ell_configurations(p, ell_list):
 
                     candidates.append((i1, i2, i3))
 
-        print(f'  Generated {len(candidates)} candidate triplets, computing Wigner 3j symbols...')
+        print(f'  Generated {len(candidates)} candidate triplets, computing Wigner 3j and Al123...')
 
-        # Compute Wigner 3j in parallel
+        # Compute Wigner 3j and Al123 in parallel
         from multiprocessing import Pool, cpu_count
-        n_cores = min(cpu_count(), 16)  # Use up to 8 cores
+        n_cores = min(cpu_count(), 16)
 
-        print(f'  Using {n_cores} cores for parallel Wigner 3j computation...')
+        print(f'  Using {n_cores} cores for parallel computation...')
         # Prepare arguments: each candidate needs access to ell_list
         args_list = [(cand, ell_list) for cand in candidates]
 
@@ -1178,9 +1275,10 @@ def ell_configurations(p, ell_list):
                     print(f'    Progress: {processed}/{total} ({100*processed/total:.1f}%)')
 
                 if result is not None:
-                    triplet, wigner_val = result
+                    triplet, wigner_val, A1, A2, A3 = result
                     triplets.append(list(triplet))
                     wigner_values.append(wigner_val)
+                    Al1l2l3_values.append([A1, A2, A3])
 
         print(f'  Kept {len(triplets)} triplets with non-zero Wigner 3j')
 
@@ -1189,13 +1287,28 @@ def ell_configurations(p, ell_list):
     # Convert to arrays
     triplets = np.array(triplets, dtype=np.int64)
     wigner_values = np.array(wigner_values)
+    Al1l2l3_values = np.array(Al1l2l3_values)
 
-    # Save to cache for future use
+    # ========================================================================
+    # Compute variance V_ell1ell2ell3 = C_ell1 * C_ell2 * C_ell3 if C_ell available
+    # ========================================================================
+    variance_values = None
+    if C_ell is not None:
+        print("  Computing variance V_ell1ell2ell3 = C_ell1 * C_ell2 * C_ell3...")
+        variance_values = np.zeros(len(triplets))
+        for i, (i1, i2, i3) in enumerate(triplets):
+            variance_values[i] = C_ell[i1] * C_ell[i2] * C_ell[i3]
+        print(f"  Computed variance for {len(triplets)} triplets")
+
+    # Save to cache for future use (including variance and Al1l2l3 if available)
     print(f"Saving triplets to cache: {cache_file}")
-    np.savez(cache_file, triplets=triplets, wigner_values=wigner_values)
-    print(f"  Saved {len(triplets)} triplets to cache")
+    save_dict = {'triplets': triplets, 'wigner_values': wigner_values, 'Al1l2l3_values': Al1l2l3_values}
+    if variance_values is not None:
+        save_dict['variance_values'] = variance_values
+    np.savez(cache_file, **save_dict)
+    print(f"  Saved {len(triplets)} triplets with Al1l2l3 to cache")
 
-    return triplets, wigner_values, config_name
+    return triplets, wigner_values, config_name, variance_values, Al1l2l3_values
 
 
 
@@ -1232,6 +1345,12 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
     # Store original which
     original_which = p.which
 
+    # Determine config_name and file_path (shared file for all primordial shapes)
+    config_name = 'equilateral' if p.configuration == 'equi' else \
+                 (f'squeezed_ell{p.ell}' if p.configuration == 'squ' else \
+                  f'folded_ell{p.ellmax}' if p.configuration == 'folded' else 'all')
+    file_path = f"{p.output_dir}bl_{p.lterm}.h5"
+
     # Step 1: Compute local bispectrum
     print(f"\n{'='*70}")
     print(f"  Step 1/3: Computing LOCAL bispectrum")
@@ -1239,15 +1358,6 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
     p.which = 'local'
     compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
                                      W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
-
-    # Load local results
-    file_path = f"{p.output_dir}bl/bl_{p.lterm}_local.h5"
-    with h5py.File(file_path, 'r') as f:
-        config_name = 'equilateral' if p.configuration == 'equi' else \
-                     (f'squeezed_ell{p.ell}' if p.configuration == 'squ' else \
-                      f'folded_ell{p.ellmax}' if p.configuration == 'folded' else 'all')
-        grp = f[config_name]
-        B_local = grp['bl'][:]
 
     # Step 2: Compute B_1_13_23 (using which='equi')
     print(f"\n{'='*70}")
@@ -1257,12 +1367,6 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
     compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
                                      W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
 
-    # Load B_1_13_23 results
-    file_path = f"{p.output_dir}bl/bl_{p.lterm}_equi.h5"
-    with h5py.File(file_path, 'r') as f:
-        grp = f[config_name]
-        B_1_13_23 = grp['bl'][:]
-
     # Step 3: Compute B_23_23_23 (using which='ortho')
     print(f"\n{'='*70}")
     print(f"  Step 3/3: Computing B_23_23_23 (intermediate for equilateral & orthogonal)")
@@ -1271,78 +1375,37 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
     compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
                                      W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
 
-    # Load B_23_23_23 results
-    file_path = f"{p.output_dir}bl/bl_{p.lterm}_ortho.h5"
-    with h5py.File(file_path, 'r') as f:
-        grp = f[config_name]
-        B_23_23_23 = grp['bl'][:]
-
-    # Step 4: Combine to get final equilateral and orthogonal
+    # Step 4: Load results and combine to get final equilateral and orthogonal
     print(f"\n{'='*70}")
     print(f"  Combining results to get final shapes...")
     print(f"{'='*70}\n")
 
+    with h5py.File(file_path, 'r') as f:
+        grp = f[config_name]
+        B_local = grp['bl_local'][:]
+        B_1_13_23 = grp['bl_equi'][:]
+        B_23_23_23 = grp['bl_ortho'][:]
+
     B_equilateral = -3.*B_local + 6.*B_1_13_23 - 12.*B_23_23_23
     B_orthogonal = 3.*B_equilateral - 12.*B_23_23_23
 
-    # Step 5: Save all results to a single HDF5 file
-    file_path = f"{p.output_dir}bl/bl_{p.lterm}_all_primordial.h5"
-    lock_path = f"{file_path}.lock"
-    print(f"  Saving all primordial shapes to {file_path}...")
+    # Step 5: Save combined results to the same file
+    print(f"  Saving combined primordial shapes to {file_path}...")
 
-    with FileLock(lock_path):
-        with h5py.File(file_path, "a") as f:
-            # Load structure from local file
-            local_file = f"{p.output_dir}bl/bl_{p.lterm}_local.h5"
-            with h5py.File(local_file, 'r') as f_local:
-                grp_local = f_local[config_name]
+    with h5py.File(file_path, "a") as f:
+        grp = f[config_name]
 
-                # Save local
-                shape_group = f'local/{config_name}' if config_name else 'local/all'
-                if shape_group in f:
-                    del f[shape_group]
-                grp = f.create_group(shape_group)
-                for key in grp_local.keys():
-                    # Handle both scalar and array datasets
-                    dset = grp_local[key]
-                    if dset.shape == ():  # Scalar dataset
-                        grp.create_dataset(key, data=dset[()])
-                    else:  # Array dataset
-                        grp.create_dataset(key, data=dset[:])
+        # Save equilateral (combined)
+        if 'bl_equilateral' in grp:
+            del grp['bl_equilateral']
+        grp.create_dataset('bl_equilateral', data=B_equilateral)
 
-                # Save equilateral
-                shape_group = f'equilateral/{config_name}' if config_name else 'equilateral/all'
-                if shape_group in f:
-                    del f[shape_group]
-                grp = f.create_group(shape_group)
-                for key in grp_local.keys():
-                    if key == 'bl':
-                        grp.create_dataset('bl', data=B_equilateral)
-                    else:
-                        # Handle both scalar and array datasets
-                        dset = grp_local[key]
-                        if dset.shape == ():  # Scalar dataset
-                            grp.create_dataset(key, data=dset[()])
-                        else:  # Array dataset
-                            grp.create_dataset(key, data=dset[:])
+        # Save orthogonal (combined)
+        if 'bl_orthogonal' in grp:
+            del grp['bl_orthogonal']
+        grp.create_dataset('bl_orthogonal', data=B_orthogonal)
 
-                # Save orthogonal
-                shape_group = f'orthogonal/{config_name}' if config_name else 'orthogonal/all'
-                if shape_group in f:
-                    del f[shape_group]
-                grp = f.create_group(shape_group)
-                for key in grp_local.keys():
-                    if key == 'bl':
-                        grp.create_dataset('bl', data=B_orthogonal)
-                    else:
-                        # Handle both scalar and array datasets
-                        dset = grp_local[key]
-                        if dset.shape == ():  # Scalar dataset
-                            grp.create_dataset(key, data=dset[()])
-                        else:  # Array dataset
-                            grp.create_dataset(key, data=dset[:])
-
-            f.flush()
+        f.flush()
 
     # Restore original which
     p.which = original_which
@@ -1350,7 +1413,7 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
     print(f"\n{'='*70}")
     print(f"All primordial shapes computed and saved successfully!")
     print(f"  File: {file_path}")
-    print(f"  Shapes: local, equilateral, orthogonal")
+    print(f"  Datasets: bl_local, bl_equi, bl_ortho, bl_equilateral, bl_orthogonal")
     print(f"{'='*70}\n")
 
 
@@ -1400,8 +1463,8 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
                         W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
     print(f"Data loading completed in {time.time()-start_time:.2f} seconds")
 
-    # get all ell triplets and wigner values
-    triplet_array, wigner_array, config_name = ell_configurations(p, ell_list)
+    # get all ell triplets, wigner values, and Al1l2l3 coefficients
+    triplet_array, wigner_array, config_name, var_array, Al1l2l3_array = ell_configurations(p, ell_list)
 
     n_triplets = len(triplet_array)
     print(f"Valid triplets (non-zero Wigner): {n_triplets}")
@@ -1423,17 +1486,10 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
             chi_list, triplet_array
         )
     elif p.which == 'davd1v':
-        Al1l2l3 = np.zeros((len(triplet_array), 3))
-        for idx in range(len(triplet_array)):
-            ell1, ell2, ell3 = int(ell_list[triplet_array[idx, 0]]), int(ell_list[triplet_array[idx, 1]]), int(ell_list[triplet_array[idx, 2]])
-
-            Al1l2l3[idx,0] = Al123(ell1, ell2, ell3)*np.sqrt(ell2*(ell2+1.)*ell3*(ell3+1.))
-            Al1l2l3[idx,1] = Al123(ell2, ell1, ell3)*np.sqrt(ell1*(ell1+1.)*ell3*(ell3+1.))
-            Al1l2l3[idx,2] = Al123(ell3, ell2, ell1)*np.sqrt(ell2*(ell2+1.)*ell1*(ell1+1.))
-        
+        # Use precomputed Al1l2l3 from ell_configurations (now parallelized and cached)
         bl_results = compute_bispectrum_quadratic_dav(
             Cl_array, coeffs,
-            chi_list, triplet_array, Al1l2l3
+            chi_list, triplet_array, Al1l2l3_array
             )
     else:
         # Quadratic terms: use simpler integration
@@ -1459,7 +1515,7 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
     # ========================================================================
     # 5. Save results to HDF5
     # ========================================================================
-    # Construct output file name
+    # Construct output file name (shared across all 'which' values)
     if p.rad and p.which in ['F2', 'G2', 'dv2']:
         name_suffix = '_rad'
     elif p.Newton:
@@ -1467,56 +1523,92 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
     else:
         name_suffix = ''
 
-    # Use same file regardless of configuration
-    file_path = f"{p.output_dir}bl/bl_{p.lterm}_{p.which}{name_suffix}.h5"
-    lock_path = f"{file_path}.lock"
+    # Single file for all 'which' values
+    file_path = f"{p.output_dir}bl_{p.lterm}{name_suffix}.h5"
 
     print(f"Saving results to {file_path}...")
 
-    with FileLock(lock_path):
-        with h5py.File(file_path, "a") as f:
-            # Determine group name based on configuration
-            group_name = config_name if config_name else 'all'
+    with h5py.File(file_path, "a") as f:
+        # Determine group name based on configuration
+        group_name = config_name if config_name else 'all'
 
-            # Delete existing group if it exists
-            if group_name in f:
-                del f[group_name]
-
-            # Create group
+        # Create group if it doesn't exist
+        if group_name not in f:
             grp = f.create_group(group_name)
+        else:
+            grp = f[group_name]
 
-            # Save based on configuration type
-            if p.configuration == 'equi':
-                # Equilateral: ell1=ell2=ell3, just store the unique ell values
-                ell_array = [ell_list[triplet_array[i][0]] for i in range(len(triplet_array))]
-                grp.create_dataset('ell', data=np.array(ell_array))
-                grp.create_dataset('bl', data=np.array(bl_results))
-                grp.create_dataset('wigner', data=wigner_array)
-                print(f"  Saved {len(triplet_array)} equilateral triplet_array in group '{group_name}'")
+        # Prepare shared data based on configuration type
+        if p.configuration == 'equi':
+            # Equilateral: ell1=ell2=ell3, just store the unique ell values
+            ell_array = np.array([ell_list[triplet_array[i][0]] for i in range(len(triplet_array))])
+            shared_data = {
+                'ell': ell_array,
+                'wigner': wigner_array
+            }
+        elif p.configuration in ['squ', 'folded']:
+            # Squeezed/Folded: ell1 fixed, ell2=ell3 varying
+            ell1_fixed = ell_list[triplet_array[0][0]]
+            ell23_array = np.array([ell_list[triplet_array[i][1]] for i in range(len(triplet_array))])
+            shared_data = {
+                'ell1': ell1_fixed,
+                'ell23': ell23_array,
+                'wigner': wigner_array
+            }
+        else:
+            # All configurations: need full triplet specification
+            ell1_array = np.array([ell_list[triplet_array[i][0]] for i in range(len(triplet_array))])
+            ell2_array = np.array([ell_list[triplet_array[i][1]] for i in range(len(triplet_array))])
+            ell3_array = np.array([ell_list[triplet_array[i][2]] for i in range(len(triplet_array))])
+            shared_data = {
+                'ell1': ell1_array,
+                'ell2': ell2_array,
+                'ell3': ell3_array,
+                'wigner': wigner_array,
+                'variance': var_array
+            }
 
-            elif p.configuration in ['squ', 'folded']:
-                # Squeezed/Folded: ell1 fixed, ell2=ell3 varying
-                ell1_fixed = ell_list[triplet_array[0][0]]
-                ell23_array = [ell_list[triplet_array[i][1]] for i in range(len(triplet_array))]
-                grp.create_dataset('ell1', data=ell1_fixed)
-                grp.create_dataset('ell23', data=np.array(ell23_array))
-                grp.create_dataset('bl', data=np.array(bl_results))
-                grp.create_dataset('wigner', data=wigner_array)
-                print(f"  Saved {len(triplet_array)} {p.configuration} triplet_array with ell1={ell1_fixed} in group '{group_name}'")
+        # Check and save shared data
+        for key, new_data in shared_data.items():
+            if new_data is None:
+                continue
+            if key in grp:
+                # Data exists - check consistency
+                existing_data = grp[key][()]
+                # Handle scalar vs array comparison
+                if np.isscalar(new_data) or np.isscalar(existing_data):
+                    is_consistent = np.isclose(existing_data, new_data)
+                else:
+                    is_consistent = np.array_equal(existing_data, new_data)
 
+                if not is_consistent:
+                    raise ValueError(
+                        f"Inconsistent data for '{key}' in group '{group_name}'!\n"
+                        f"Existing data shape: {np.shape(existing_data)}, new data shape: {np.shape(new_data)}\n"
+                        f"This could indicate a mismatch in ell_list or configuration. "
+                        f"Delete the file {file_path} and rerun if you want to use different parameters."
+                    )
+                # Data exists and is consistent - skip saving
             else:
-                # All configurations: need full triplet specification
-                ell1_array = [ell_list[triplet_array[i][0]] for i in range(len(triplet_array))]
-                ell2_array = [ell_list[triplet_array[i][1]] for i in range(len(triplet_array))]
-                ell3_array = [ell_list[triplet_array[i][2]] for i in range(len(triplet_array))]
-                grp.create_dataset('ell1', data=np.array(ell1_array))
-                grp.create_dataset('ell2', data=np.array(ell2_array))
-                grp.create_dataset('ell3', data=np.array(ell3_array))
-                grp.create_dataset('bl', data=np.array(bl_results))
-                grp.create_dataset('wigner', data=wigner_array)
-                print(f"  Saved {len(triplet_array)} triplet_array in group '{group_name}'")
+                # Data doesn't exist - save it
+                grp.create_dataset(key, data=new_data)
 
-            f.flush()
+        # Save bispectrum with 'which'-specific name
+        bl_dataset_name = f'bl_{p.which}'
+        if bl_dataset_name in grp:
+            del grp[bl_dataset_name]
+        grp.create_dataset(bl_dataset_name, data=np.array(bl_results))
+
+        # Print summary
+        if p.configuration == 'equi':
+            print(f"  Saved {len(triplet_array)} equilateral triplets as '{bl_dataset_name}' in group '{group_name}'")
+        elif p.configuration in ['squ', 'folded']:
+            ell1_fixed = ell_list[triplet_array[0][0]]
+            print(f"  Saved {len(triplet_array)} {p.configuration} triplets with ell1={ell1_fixed} as '{bl_dataset_name}' in group '{group_name}'")
+        else:
+            print(f"  Saved {len(triplet_array)} triplets as '{bl_dataset_name}' in group '{group_name}'")
+
+        f.flush()
 
     print(f"Done! Results saved to {file_path}")
 
