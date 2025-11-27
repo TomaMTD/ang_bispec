@@ -1141,6 +1141,10 @@ def ell_configurations(p, ell_list):
     # Configuration-based triplet filtering
     Al1l2l3_values = []
 
+    # Initialize Wigner symbol library for Al123 computation
+    max_ell = int(np.max(ell_list))
+    _init_wigner_worker(max_ell)
+
     if config == 'equi':
         # Equilateral: ell1 = ell2 = ell3
         for i, ell in enumerate(ell_list):
@@ -1549,7 +1553,7 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
         variance_exists = (p.configuration not in ['equi', 'squ', 'folded']) and ('variance' in grp)
 
         # If variance doesn't exist and we need it, compute it now
-        if not variance_exists and p.configuration not in ['equi', 'squ', 'folded']:
+        if (not variance_exists or p.force) and p.configuration not in ['equi', 'squ', 'folded']:
             if var_array is None:
                 var_array = compute_variance_for_triplets(p, ell_list, triplet_array)
 
