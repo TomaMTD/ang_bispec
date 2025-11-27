@@ -11,6 +11,11 @@ import sympy as sp
 from scipy.integrate import quad
 from scipy.special import erf  # Vectorized erf for lambdify
 
+# TESTING FLAG: Set to False to disable b_s (keeping b1) for comparison
+COMPUTE_BS = True
+COMPUTE_B1 = True
+
+
 
 def compute_spline_derivatives(spline, data_grid, eval_grid, max_deriv=11, smooth_s=0):
     """
@@ -593,9 +598,9 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
         # derive_start is already set: F2=0, dv2=1, G2=2
         max_deriv = 2 + derive_start
 
-        # For F2/G2/dv2: compute b1 derivatives if available
-        if p.which=='F2' and 'data' in time_dict and 'b1' in time_dict['data']:
-            print('         Adding linear bias b1 to F2/G2/dv2 terms')
+        # For F2: compute b1 derivatives if available
+        if COMPUTE_B1 and p.which=='F2' and 'data' in time_dict and 'b1' in time_dict['data']:
+            print('         Adding linear bias b1 to F2 terms')
             b1_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1'], k=5, s=0)
             b1_derivs= compute_spline_derivatives(b1_spline, time_dict['data']['r'], r_list,
                                                         max_deriv=max_deriv+derive_start, smooth_s=1e-6)
@@ -684,7 +689,7 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
             fctr_derivs = compute_spline_derivatives(fctr, time_dict['ra'], r_list, max_deriv=11, smooth_s=0)
 
             # For density term: compute b1 derivatives if available
-            if lterm == 'density' and 'data' in time_dict and 'b1' in time_dict['data']:
+            if COMPUTE_B1 and lterm == 'density' and 'data' in time_dict and 'b1' in time_dict['data']:
                 print('Adding linear bias b1 to linear terms')
                 b1_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1'], k=5, s=0)
                 b1_derivs = compute_spline_derivatives(b1_spline, time_dict['data']['r'], r_list,
@@ -825,13 +830,10 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
         # ====================================================================
         # Precompute b1 and b_s derivatives if available (for F2 only)
         # ====================================================================
-        # TESTING FLAG: Set to False to disable b_s (keeping b1) for comparison
-        COMPUTE_BS = True
-
         use_b1 = False
         bs_terms_all = None  # Will be (n_ell, 3, n_r) if computed
 
-        if p.which == 'F2' and 'data' in time_dict and 'b1' in time_dict['data']:
+        if COMPUTE_B1 and p.which == 'F2' and 'data' in time_dict and 'b1' in time_dict['data']:
             # Compute b1 derivatives (for f-coefficient product rule)
             b1_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1'], k=5, s=0)
             b1_derivs = compute_spline_derivatives(b1_spline, time_dict['data']['r'], r_list,
@@ -893,7 +895,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
                     # Apply D operator again (outer operator)
                     bs_terms_all[ell_idx, 2, :] = -d2y_bs + 2./r_list*dy_bs + alpha_ell/r_list**2*y_bs
         else:
-            print('     Assuming b1=1, b_s=0')
+            if  p.which == 'F2': print('     Assuming b1=1, b_s=0')
             b1_derivs = None
 
         # Determine number of components for each kernel
