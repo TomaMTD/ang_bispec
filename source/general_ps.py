@@ -744,10 +744,6 @@ def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_li
         # Sum contributions from all lterms at level 0 (no D_ell operator applied)
         for lterm in lterm_list:
             if lterm in y_list:
-                # All lterms contribute to the C^(0,0) kernel at level 0
-                # This is the -D_r W̃_r term (times the appropriate fctr for each lterm)
-                fact_00[i_ell, :] += y_list[lterm][0, 0, i_ell, :]
-
                 # For C^(-2,0), we need derivative contributions
                 # From eq. (36): includes RSD, doppler, potentials, etc.
                 # These come from higher derivative levels or specific lterm combinations
@@ -757,6 +753,12 @@ def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_li
                         fact_m20[i_ell, :] += y_list[lterm][0, 0, i_ell, :] / (2./3./omega_m/H0**2)
                     else:
                         fact_m20[i_ell, :] += y_list[lterm][0, 0, i_ell, :]
+                else:
+                    # All lterms contribute to the C^(0,0) kernel at level 0
+                    # This is the -D_r W̃_r term (times the appropriate fctr for each lterm)
+                    fact_00[i_ell, :] += y_list[lterm][0, 0, i_ell, :]
+
+
 
     # ========================================================================
     # 4. Integrate using spline + quad for accuracy
@@ -766,7 +768,7 @@ def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_li
     C_ell = np.zeros(n_ell)
 
     for i_ell in range(n_ell):
-        integrand = -(fact_00[i_ell, :] * C_00[i_ell, :] + fact_m20[i_ell, :] * C_m20[i_ell, :]) # minus sign!
+        integrand = (fact_00[i_ell, :] * C_00[i_ell, :] + fact_m20[i_ell, :] * C_m20[i_ell, :]) # 
 
         # Create spline of integrand for accurate integration
         integrand_spline = UnivariateSpline(r_list, integrand, k=5, s=0, ext=0)
