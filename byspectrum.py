@@ -181,6 +181,8 @@ def main(argv):
         lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_gr']
     elif p.lterm == 'noproj':
         lterm_list = ['density', 'rsd', 'pot_gr']
+    elif '+' in p.lterm:
+        lterm_list = p.lterm.split('+')
     else:
         lterm_list = [p.lterm]
 
