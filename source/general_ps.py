@@ -167,6 +167,7 @@ def r_integration_vectorized_precompute(Nchi, r_list, chi_list, y1, t_grid, nu_p
         integrand1 = y1 * sump_cp_I_matrix[ind, :]
         
         # Integrate using Simpson's rule
+        #np.save(f'integrand{ind}', np.vstack([r_list, integrand1]))
         s_cp_I_list[ind] = simpson_numba(integrand1, r_list)
 
         #spline = UnivariateSpline(r_list, integrand1, k=5, s=0)
@@ -508,7 +509,7 @@ def get_nm_values(which):
         'd2v': [(0, 2)],
         'd3v': [(1, 3)],
         'd1d': [(1, 1)],
-        'all_primordial': [(1, 0), (0, 0), (1./3., 0), (2./3., 0)],
+        'primordial': [(1, 0), (0, 0), (1./3., 0), (2./3., 0)],
         'local': [(1, 0), (0, 0)],
         'equi':  [(1, 0), (1./3., 0), (2./3., 0)],  # Needs all three: λ=1, λ=1/3, λ=2/3
         'ortho': [(2./3., 0)],
@@ -592,7 +593,7 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
         nm_pairs = get_nm_values(p.which)
         
         # Compute factors that depend on lterm and which
-        if p.mode=='primordial':
+        if p.which in ['local', 'equi', 'ortho', 'primordial']:
             stuff2 = (2./3./omega_m/H0**2)
         else: 
             stuff2 = (2./3./omega_m/H0**2)**2
@@ -605,35 +606,32 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
             # for m==0, the n values are taken into account in cp
             n_eff = n if m == 0 else 0
 
-            if n_eff == 2:
-                power_reduction = 1
-            elif n_eff == 4:
-                power_reduction = 2
-            else:
-                power_reduction = 0
-            
             group_path = f'{"primordial_" if p.mode=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}' 
 
-            # Check if computation already exists for all ells
-            if not p.force and check_computation_exists(output_filename, group_path, lterm, ell_list):
-                print(f'    Results for (n,m)=({group_path}), lterm={lterm} already exist for all ells, skipping (use force=True to overwrite)')
-                continue
-
+            ## Check if computation already exists for all ells
+            #if not p.force and check_computation_exists(output_filename, group_path, lterm, ell_list):
+            #    print(f'    Results for (n,m)=({group_path}), lterm={lterm} already exist for all ells, skipping (use force=True to overwrite)')
+            #    continue
 
             # Initialize result for this (which, lterm, n) combination
             result = np.zeros((len(ell_list),len(chi_list)), dtype=np.float64)
             
             # Loop over qterms
             for qt_ind, qt in enumerate(cp['qterm_list']):
-                if len(cp['qterm_list'])>1: print(f'      Computing qterm: {qt}/{len(cp["qterm_list"])}')
-                
-                # Compute nu_p
-                if p.mode == 'primordial':
-                    power_reduction = 2 if n_eff==0 else 1
 
-                    nu_p = 2 + cp[qt]['b'] + 1j*cp['eta_p'] + n_eff*(n_s-4) - 2*power_reduction
+                power_reduction=0
+                if p.which in ['local', 'equi', 'ortho', 'primordial']:
+                    Renu = 2 + cp[qt]['b'] + n_eff*(n_s-4)
                 else:
-                    nu_p = 1 + cp[qt]['b'] + 1j*cp['eta_p'] + n_eff - 2*power_reduction
+                    Renu = 1 + cp[qt]['b'] + n_eff
+
+                while Renu-2*power_reduction>=-1:
+                    power_reduction+=1
+
+                if len(cp['qterm_list'])>1: print(f'      Integrating {group_path} qterm: {qt}/{len(cp["qterm_list"])} with power_reduction {power_reduction} (Re(nu) = {(Renu - 2*power_reduction):.2f})')
+                else: print(f'     Integrating {group_path} with power_reduction {power_reduction} (Re(nu) = {(Renu - 2*power_reduction):.2f})')
+
+                nu_p = Renu - 2*power_reduction + 1j*cp['eta_p']
                 
                 # Precompute hypergeometric function
                 #start_time = time.time()
@@ -648,7 +646,7 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
                 )
                 
                 # Sum the contribution
-                if p.mode == 'primordial':
+                if  p.which in ['local', 'equi', 'ortho', 'primordial']:
                     result += (2*np.pi**2*A_s/(k_pivot/h)**(n_s-1))**n * stuff2 * integral_result
                 else:
                     result += stuff2 * integral_result
