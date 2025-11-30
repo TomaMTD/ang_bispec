@@ -136,11 +136,11 @@ class FFTLogProcessor:
                     'k': self.k,
                     'qterm_list': self.get_qterm_list()}
 
-        if self.which in ['FG2', 'F2', 'G2', 'dv2'] or self.mode=='primordial':
+        if self.which in ['FG2', 'F2', 'G2', 'dv2', 'local', 'ortho', 'equi', 'primordial']:
             # Handle special cases
             if self.rad:
                 fctk_list = [self.fctk]
-            elif self.mode=='primordial':
+            elif self.which in ['local', 'ortho', 'equi', 'primordial']:
                 fctk_list = [-self.fctk * self.k]
             else:
                 fctk_list = [self.fctk * self.k**4]
