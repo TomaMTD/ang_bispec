@@ -606,7 +606,7 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
             # for m==0, the n values are taken into account in cp
             n_eff = n if m == 0 else 0
 
-            group_path = f'{"primordial_" if p.mode=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}' 
+            group_path = f'{"primordial_" if p.which=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}' 
 
             ## Check if computation already exists for all ells
             #if not p.force and check_computation_exists(output_filename, group_path, lterm, ell_list):
