@@ -609,9 +609,9 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
             group_path = f'{"primordial_" if p.which=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}' 
 
             ## Check if computation already exists for all ells
-            #if not p.force and check_computation_exists(output_filename, group_path, lterm, ell_list):
-            #    print(f'    Results for (n,m)=({group_path}), lterm={lterm} already exist for all ells, skipping (use force=True to overwrite)')
-            #    continue
+            if not p.force and check_computation_exists(output_filename, group_path, lterm, ell_list):
+                print(f'    Results for (n,m)=({group_path}), lterm={lterm} already exist for all ells, skipping (use force=True to overwrite)')
+                continue
 
             # Initialize result for this (which, lterm, n) combination
             result = np.zeros((len(ell_list),len(chi_list)), dtype=np.float64)
