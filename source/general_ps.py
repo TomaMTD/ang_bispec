@@ -290,6 +290,7 @@ def save_to_hdf5(filename, group_path, data, metadata=None):
 
     for attempt in range(max_retries):
         try:
+            # Try to open the HDF5 file - may fail if file is corrupted or locked
             with h5py.File(filename, 'a', locking=True) as f:
                 # Create or get the main group
                 if group_path not in f:
@@ -357,9 +358,21 @@ def save_to_hdf5(filename, group_path, data, metadata=None):
                 return True
 
         except (BlockingIOError, OSError) as e:
-            # Both BlockingIOError and OSError with errno 11 are locking errors
-            if hasattr(e, 'errno') and e.errno == 11:
-                # errno 11 = Resource temporarily unavailable (lock conflict)
+            # Handle various HDF5 file access errors
+            error_msg = str(e).lower()
+
+            # Check if it's a locking error (errno 11 or BlockingIOError)
+            is_locking_error = (
+                (hasattr(e, 'errno') and e.errno == 11) or
+                isinstance(e, BlockingIOError)
+            )
+
+            # Check if it's a file corruption error (truncated, corrupted, etc.)
+            is_corruption_error = any(keyword in error_msg for keyword in
+                ['truncated', 'corrupted', 'unable to open', 'unable to synchronously open'])
+
+            if is_locking_error:
+                # Locking error - retry
                 if attempt < max_retries - 1:
                     print(f'    File locked (attempt {attempt+1}/{max_retries}), retrying in {retry_delay}s...')
                     time.sleep(retry_delay)
@@ -369,18 +382,23 @@ def save_to_hdf5(filename, group_path, data, metadata=None):
                     print(f'    FALLBACK: Saving to independent numpy file instead...')
                     _save_to_fallback_npy(filename, group_path, data, metadata)
                     return False
-            elif isinstance(e, BlockingIOError):
+
+            elif is_corruption_error:
+                # File appears corrupted (likely being written by another process)
                 if attempt < max_retries - 1:
-                    print(f'    File locked (attempt {attempt+1}/{max_retries}), retrying in {retry_delay}s...')
+                    print(f'    File appears corrupted/truncated (attempt {attempt+1}/{max_retries}), retrying in {retry_delay}s...')
+                    print(f'    (This usually means another job is currently writing to the file)')
                     time.sleep(retry_delay)
                 else:
                     # Max retries reached - save to fallback file
-                    print(f'    ERROR: Failed to acquire HDF5 lock after {max_retries} attempts')
+                    print(f'    ERROR: File still appears corrupted after {max_retries} attempts')
                     print(f'    FALLBACK: Saving to independent numpy file instead...')
                     _save_to_fallback_npy(filename, group_path, data, metadata)
                     return False
+
             else:
-                # Some other OSError, re-raise immediately
+                # Some other OSError we don't recognize - re-raise
+                print(f'    ERROR: Unexpected OSError: {e}')
                 raise
         except Exception as e:
             print(f'    ERROR in save_to_hdf5: {e}')
