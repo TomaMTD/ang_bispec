@@ -30,7 +30,7 @@ def arguments():
     parser.add_argument('-ellmax',default=ellmax, type=int, help='')
     parser.add_argument('-Nell',default=Nell, type=int, help='')
     parser.add_argument('-o', '--output_dir', default=output_dir+'/', type=str, help='path of output')
-    parser.add_argument('-m', '--mode', default='bl', type=str, help='Computation mode: [cl, Il, bl, bin]')
+    parser.add_argument('-m', '--mode', default='bl', type=str, help='Computation mode: [cl, Il, bl, bin, merge]')
     parser.add_argument('-config', '--configuration', default='all', type=str, help='what triangle configuration to compute')
 
     parser.add_argument('-h100'     , type=float,default=h100) 
@@ -94,16 +94,24 @@ class parameters:
 
 def main(argv):
 
-    import lincosmo 
+    import lincosmo
     import fftlog
     import general_ps
     import bispectrum
     import binning
     import fctr
-    
+
     if argv.force!=0: print('-force is activated, overwritting files')
 
     p=parameters(argv)
+
+    # Handle merge mode early (doesn't need cosmology setup)
+    if argv.mode in ['merge']:
+        print('='*70)
+        print('MERGE MODE: Merging fallback files into HDF5')
+        print('='*70)
+        general_ps.merge_fallback_files(argv.output_dir)
+        return 0
 
     time_dict = lincosmo.growth_fct(input_data=globals().get('input_ska', 0))
     np.save(output_dir+'time_dict', time_dict)

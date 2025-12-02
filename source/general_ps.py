@@ -3,7 +3,6 @@ import os, sys
 import time
 from numba import njit, prange
 import h5py
-import threading
 from scipy.interpolate import UnivariateSpline
 from scipy.integrate import quad
 from scipy.integrate import simpson
@@ -13,10 +12,6 @@ import bispectrum
 from param_used import *
 from mathematica import *
 
-# Global lock for HDF5 file access
-# Note: threading.Lock() only works within a single process
-# For multi-process safety (e.g., job arrays), HDF5's built-in locking is used in save_to_hdf5
-hdf5_lock = threading.Lock()
 
 @njit(parallel=True)
 def compute_hyp21_grid_numba(t_grid, nu_p_grid, ell_grid):
@@ -222,9 +217,54 @@ def compute_integral_Am_numba(chi_list, r_list, fctr_r, ell):
     return result
 
 
+def _save_to_fallback_npy(hdf5_filename, group_path, data, metadata=None):
+    """
+    Fallback function to save data to a numpy file when HDF5 locking fails.
+
+    Saves the entire data dictionary as a single .npy file.
+    Filename format: fallback_{group_path}_{timestamp}_pid{pid}.npy
+
+    Parameters:
+    -----------
+    hdf5_filename : str
+        Original HDF5 filename (used to determine output directory)
+    group_path : str
+        HDF5 group path (e.g., 'n_0_m_0')
+    data : dict
+        Dictionary containing the data arrays
+    metadata : dict, optional
+        Dictionary containing metadata
+    """
+    # Create fallback directory next to the HDF5 file
+    hdf5_dir = os.path.dirname(hdf5_filename)
+    hdf5_basename = os.path.basename(hdf5_filename).replace('.h5', '')
+    fallback_dir = os.path.join(hdf5_dir, f'{hdf5_basename}_fallback')
+    os.makedirs(fallback_dir, exist_ok=True)
+
+    # Clean up group_path for filename
+    safe_group_path = group_path.replace('/', '_').replace(' ', '_')
+
+    # Create unique filename using timestamp and process ID
+    timestamp = time.strftime('%Y%m%d_%H%M%S')
+    pid = os.getpid()
+    filename = f'fallback_{safe_group_path}_{timestamp}_pid{pid}.npy'
+    filepath = os.path.join(fallback_dir, filename)
+
+    # Prepare data to save (combine data and metadata)
+    save_dict = {
+        'group_path': group_path,
+        'data': data,
+        'metadata': metadata
+    }
+
+    # Save as numpy file
+    np.save(filepath, save_dict, allow_pickle=True)
+
+    print(f'    FALLBACK: Saved to {filepath}')
+    print(f'    File contains group_path: {group_path}, data keys: {list(data.keys())}')
 
 
-def save_to_hdf5(p, filename, group_path, data, metadata=None):
+def save_to_hdf5(filename, group_path, data, metadata=None):
     """
     Multi-process safe HDF5 saving function with simple structure.
 
@@ -242,6 +282,8 @@ def save_to_hdf5(p, filename, group_path, data, metadata=None):
         chi_list: (n_chi,)
 
     This eliminates the need for array expansion and complex merging.
+
+    If max_retries is reached due to file locking, saves to a fallback numpy file instead.
     """
     max_retries = 50
     retry_delay = 10  # seconds
@@ -322,21 +364,32 @@ def save_to_hdf5(p, filename, group_path, data, metadata=None):
                     print(f'    File locked (attempt {attempt+1}/{max_retries}), retrying in {retry_delay}s...')
                     time.sleep(retry_delay)
                 else:
-                    print(f'    ERROR: Failed to acquire lock after {max_retries} attempts')
-                    raise
+                    # Max retries reached - save to fallback file
+                    print(f'    ERROR: Failed to acquire HDF5 lock after {max_retries} attempts')
+                    print(f'    FALLBACK: Saving to independent numpy file instead...')
+                    _save_to_fallback_npy(filename, group_path, data, metadata)
+                    return False
             elif isinstance(e, BlockingIOError):
                 if attempt < max_retries - 1:
                     print(f'    File locked (attempt {attempt+1}/{max_retries}), retrying in {retry_delay}s...')
                     time.sleep(retry_delay)
                 else:
-                    print(f'    ERROR: Failed to acquire lock after {max_retries} attempts')
-                    raise
+                    # Max retries reached - save to fallback file
+                    print(f'    ERROR: Failed to acquire HDF5 lock after {max_retries} attempts')
+                    print(f'    FALLBACK: Saving to independent numpy file instead...')
+                    _save_to_fallback_npy(filename, group_path, data, metadata)
+                    return False
             else:
                 # Some other OSError, re-raise immediately
                 raise
         except Exception as e:
             print(f'    ERROR in save_to_hdf5: {e}')
             raise
+
+    # Should never reach here, but just in case
+    print(f'    ERROR: Exhausted all retries without proper error handling')
+    _save_to_fallback_npy(filename, group_path, data, metadata)
+    return False
 
 
 def compute_integral_F2_G2_dv2(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict):
@@ -369,7 +422,7 @@ def compute_integral_F2_G2_dv2(p, ell_list, chi_list, r_list, t_grid, cp_dict, f
             'multipole': multipole_name,
             'rad': is_radiation
         }
-        save_to_hdf5(p, output_filename, p.which, data_to_save, metadata)
+        save_to_hdf5(output_filename, p.which, data_to_save, metadata)
 
     if p.rad:
         # Radiation case: use cp_dict for Il integrals
@@ -663,8 +716,88 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
                 'which': p.which,
                 'lterm': lterm,
             }
-            
-            save_to_hdf5(p, output_filename, group_path, data_to_save, metadata)
+
+            save_to_hdf5(output_filename, group_path, data_to_save, metadata)
+
+
+def merge_fallback_files(output_dir):
+    """
+    Merge fallback .npy files back into the main HDF5 file.
+
+    This function:
+    1. Scans the Cls_fallback directory for fallback .npy files
+    2. Loads each file and extracts the data structure
+    3. Writes the data into the main Cls.h5 file using save_to_hdf5
+    4. Moves successfully merged files to a 'merged' subdirectory
+
+    Parameters:
+    -----------
+    output_dir : str
+        Output directory containing Cls.h5 and Cls_fallback/
+    """
+    import shutil
+
+    hdf5_file = os.path.join(output_dir, 'Cls.h5')
+    fallback_dir = os.path.join(output_dir, 'Cls_fallback')
+    merged_dir = os.path.join(fallback_dir, 'merged')
+
+    if not os.path.exists(fallback_dir):
+        print(f'No fallback directory found at {fallback_dir}')
+        return
+
+    # Find all fallback .npy files
+    fallback_files = [f for f in os.listdir(fallback_dir)
+                     if f.startswith('fallback_') and f.endswith('.npy')]
+
+    if not fallback_files:
+        print(f'No fallback files found in {fallback_dir}')
+        return
+
+    print(f'Found {len(fallback_files)} fallback files to merge')
+    print('='*70)
+
+    # Create merged directory if it doesn't exist
+    os.makedirs(merged_dir, exist_ok=True)
+
+    success_count = 0
+    failed_count = 0
+
+    for fallback_file in fallback_files:
+        filepath = os.path.join(fallback_dir, fallback_file)
+        print(f'\nProcessing: {fallback_file}')
+
+        try:
+            # Load the fallback file
+            save_dict = np.load(filepath, allow_pickle=True).item()
+
+            group_path = save_dict['group_path']
+            data = save_dict['data']
+            metadata = save_dict.get('metadata', None)
+
+            print(f'  Group path: {group_path}')
+            print(f'  Data keys: {list(data.keys())}')
+
+            # Try to save to HDF5
+            success = save_to_hdf5(hdf5_file, group_path, data, metadata)
+
+            if success:
+                # Move the file to merged directory
+                merged_path = os.path.join(merged_dir, fallback_file)
+                shutil.move(filepath, merged_path)
+                print(f'  SUCCESS: Merged and moved to {merged_dir}/')
+                success_count += 1
+            else:
+                print(f'  FAILED: Could not merge (HDF5 locking issue persists)')
+                failed_count += 1
+
+        except Exception as e:
+            print(f'  ERROR: Failed to process {fallback_file}: {e}')
+            failed_count += 1
+
+    print('\n' + '='*70)
+    print(f'Merge complete: {success_count} successful, {failed_count} failed')
+    if failed_count > 0:
+        print(f'Failed files remain in {fallback_dir}')
 
 
 def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_list,
