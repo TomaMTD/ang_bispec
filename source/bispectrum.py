@@ -993,8 +993,8 @@ def compute_bispectrum_parallel_efficient(Cl_array, coeffs, chi_list, triplet_li
         # Integrate using Simpson's rule
         integral = np.sum(integrand * simp_w) * dchi / 3.0
 
-        #spline = UnivariateSpline(chi_list, integrand, k=5, s=1e-1)
-        #integral = quad(spline, chi_list[0], chi_list[-1])[0]
+#        spline = UnivariateSpline(chi_list, integrand, k=5, s=1e-3)
+#        integral = quad(spline, chi_list[0], chi_list[-1])[0]
 
         results[idx] = integral
 
@@ -1453,7 +1453,7 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
                                          W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
 
     print(f"="*70)
-    print(f"Computing bispectrum for ell_list={ell_list}, which={p.which}")
+    print(f"Computing bispectrum for ell_list={ell_list[0]}-{ell_list[-1]}, which={p.which}")
     print(f"="*70)
 
     # ========================================================================
