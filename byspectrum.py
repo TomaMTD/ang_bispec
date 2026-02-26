@@ -90,8 +90,6 @@ class parameters:
         self.configuration = argv.configuration
 
 
-
-
 def main(argv):
 
     import lincosmo
@@ -277,7 +275,6 @@ def main(argv):
         else:
             config_list = [argv.configuration]
             
-
         if p.rad and p.Newton:
             rad_Newton_list = [[0, 0], [1, 0], [0, 1]]
         else:

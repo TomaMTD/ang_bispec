@@ -339,44 +339,123 @@ def load_or_compute_window_derivatives(p, window_args, r_list, output_dir, max_d
 # ============================================================================
 # Coefficient Functions (α, β, γ)
 # ============================================================================
-def get_coefficients(p, time_dict):
+def get_coefficients(p, time_dict, compute_c1_c2=''):
     """
-    Compute α, β, γ coefficients for different orders.
-    Returns: (alpha_vals, beta_vals, gamma_vals) each as dict {order: array}
+    Compute alpha, beta, gamma coefficients for different orders.
+
+    Parameters:
+    -----------
+    p : parameter object
+    time_dict : dict with cosmological functions on 'ra' grid
+    compute_c1_c2 : str (default '')
+        If '': returns base coefficients (alpha, beta, gamma) from eq 39-41
+        If 'c1': returns GR bias correction coefficients proportional to c1 from eq 47-49
+        If 'c2': returns GR bias correction coefficients proportional to c2 from eq 50-52
+
+    Returns:
+    --------
+    (alpha, beta, gamma) : tuple of dicts
+        Each coefficient is a dict {order: array} where order in {0, 1, 2}
+        Content depends on compute_c1_c2:
+        - '': base coefficients from eq 39-41
+        - 'c1': corrections proportional to c1 = 1 - b1 from eq 47-49
+        - 'c2': corrections proportional to c2 = -db1/dr + 3*H*b2 from eq 50-52
     """
-    if p.which == 'F2': 
-        alpha = {
-            0: (7. - 3.*time_dict['va']) / 14.,
-            1: 4.*time_dict['fa'] + 1.5*time_dict['Oma'] - 9./7.*time_dict['wa'] if not p.Newton else np.zeros_like(time_dict['fa']),
-            2: 18.*time_dict['fa']**2 + 9.*time_dict['fa']**2*time_dict['Oma'] - 4.5*time_dict['fa']*time_dict['Oma'] if not p.Newton else np.zeros_like(time_dict['fa'])
-        }
-        beta = {
-            0: np.ones_like(time_dict['fa']),
-            1: -2*time_dict['fa']**2 + 6*time_dict['fa'] - 4.5*time_dict['Oma'] if not p.Newton else np.zeros_like(time_dict['fa']),
-            2: 36.*time_dict['fa']**2 + 18.*time_dict['fa']**2*time_dict['Oma'] if not p.Newton else np.zeros_like(time_dict['fa'])
-        }
-        gamma = {
-            0: np.zeros_like(time_dict['fa']),
-            1: 0.5*(-time_dict['fa']**2 + time_dict['fa'] - 3.*time_dict['Oma']) if not p.Newton else np.zeros_like(time_dict['fa']),
-            2: 0.25*(18*time_dict['fa']**2 + 9.*(time_dict['fa']**2 - time_dict['fa'])*time_dict['Oma']) if not p.Newton else np.zeros_like(time_dict['fa'])
-        }
-    else:  # G2 or dv2
-        alpha = {
-            0: time_dict['fa'] - 3./7.*time_dict['wa'],
-            1: -7.5*time_dict['Oma']*time_dict['fa'] if not p.Newton else np.zeros_like(time_dict['fa']),
-            2: np.zeros_like(time_dict['fa']) if not p.Newton else np.zeros_like(time_dict['fa'])
-        }
-        beta = {
-            0: time_dict['fa'],
-            1: -12.*time_dict['Oma']*time_dict['fa'] if not p.Newton else np.zeros_like(time_dict['fa']),
-            2: np.zeros_like(time_dict['fa']) if not p.Newton else np.zeros_like(time_dict['fa'])
-        }
-        gamma = {
-            0: np.zeros_like(time_dict['fa']),
-            1: -2.25*time_dict['Oma']*time_dict['fa'] if not p.Newton else np.zeros_like(time_dict['fa']),  # Single value for all orders
-            2: np.zeros_like(time_dict['fa']) if not p.Newton else np.zeros_like(time_dict['fa'])
-        }
-    
+
+    # Extract cosmological variables for readability
+    f = time_dict['fa']
+    Om = time_dict['Oma']
+    w = time_dict['wa']
+    H = time_dict['Ha']
+    va = time_dict['va']
+    zeros = np.zeros_like(f)
+
+    if compute_c1_c2=='':
+        # Base coefficients from equations 39-41
+        if p.which == 'F2':
+            alpha = {
+                0: (7. - 3.*va) / 14.,
+                1: 4.*f + 1.5*Om - 9.*w/7. if not p.Newton else zeros,
+                2: 18.*f**2 + 9.*f**2*Om - 4.5*f*Om if not p.Newton else zeros
+            }
+            beta = {
+                0: np.ones_like(f),
+                1: -2.*f**2 + 6.*f - 4.5*Om if not p.Newton else zeros,
+                2: 36.*f**2 + 18.*f**2*Om if not p.Newton else zeros
+            }
+            gamma = {
+                0: zeros,
+                1: 0.5*(-f**2 + f - 3.*Om) if not p.Newton else zeros,
+                2: 0.25*(18.*f**2 + 9.*(f**2 - f)*Om) if not p.Newton else zeros
+            }
+        else:  # G2 or dv2
+            alpha = {
+                0: f - 3.*w/7.,
+                1: -7.5*Om*f if not p.Newton else zeros,
+                2: zeros
+            }
+            beta = {
+                0: f,
+                1: -12.*Om*f if not p.Newton else zeros,
+                2: zeros
+            }
+            gamma = {
+                0: zeros,
+                1: -2.25*Om*f if not p.Newton else zeros,
+                2: zeros
+            }
+
+    elif compute_c1_c2=='c1':
+        # Corrections proportional to c1 from equations 47-49
+        if p.which == 'F2' and not p.Newton:
+            alpha = {
+                0: zeros,
+                1: 1.5*Om + 4.*f - 9.*w/7.,
+                2: Om*f * (-9.*f + 4.5 - 12.*f/Om + 9./H - 6.*f/(H*Om))
+            }
+            beta = {
+                0: zeros,
+                1: -4.5*Om,
+                2: -Om*f * (18.*f - 18. + 24.*f/Om - 18./H + 12.*f/(H*Om))
+            }
+            gamma = {
+                0: zeros,
+                1: -1.5*Om - f,
+                2: -Om*f * (2.25*f + 3.*f/Om - 2.25/H + 1.5*f/(H*Om))
+            }
+        else:
+            # No c1 corrections for G2/dv2 or Newton mode
+            alpha = {0: zeros, 1: zeros, 2: zeros}
+            beta = {0: zeros, 1: zeros, 2: zeros}
+            gamma = {0: zeros, 1: zeros, 2: zeros}
+
+    elif compute_c1_c2=='c2':
+        # Corrections proportional to c2 from equations 50-52
+        if p.which == 'F2' and not p.Newton:
+            alpha = {
+                0: zeros,
+                1: zeros,
+                2: -6.*f/(H*Om)
+            }
+            beta = {
+                0: zeros,
+                1: -2.*f/H,
+                2: -12.*f/(H*Om)
+            }
+            gamma = {
+                0: zeros,
+                1: -f/(2.*H),
+                2: -3.*f/(2.*H*Om)
+            }
+        else:
+            # No c2 corrections for G2/dv2 or Newton mode
+            alpha = {0: zeros, 1: zeros, 2: zeros}
+            beta = {0: zeros, 1: zeros, 2: zeros}
+            gamma = {0: zeros, 1: zeros, 2: zeros}
+
+    else:
+        raise ValueError(f"Invalid compute_c1_c2 value: '{compute_c1_c2}'. Must be '', 'c1', or 'c2'.")
+
     return alpha, beta, gamma
 
 # ============================================================================
@@ -696,7 +775,6 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                                                             max_deriv=11, smooth_s=1e-6)
                 #np.save('b1', b1_derivs)
 
-
                 use_b1 = True
             else:
                 b1_derivs = None
@@ -918,6 +996,11 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
         # A0: f^(0) evaluated at r_list
         f0_values = np.array([f0_spline(r_list) for f0_spline in f0_splines])  # (n_A0_comp, n_r)
 
+        # If b1 present, multiply ONLY Newtonian component (first one, H^0) by b1
+        # Relativistic components (H^2, H^4) are not multiplied by b1
+        if use_b1:
+            f0_values[0] = b1_derivs[0] * f0_values[0]  # Only first component is Newtonian
+
         # A2: f^(2) and its derivatives
         f2_derivs_list = []  # List of (max_deriv_inner+1, n_r) arrays
         for f2_spline in f2_splines:
@@ -931,12 +1014,13 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
 
         # Precompute products of fctr*W for A2
         f2_products_list = []  # List of product derivatives for each f2
-        for fctr_derivs in f2_derivs_list:
+        for idx, fctr_derivs in enumerate(f2_derivs_list):
             if p.which == 'F2':
                 # Compute fctr * W
                 fctr_W = [product_deriv(j, fctr_derivs, W_derivs_list) for j in range(3)]
-                # If b1 present, multiply by b1
-                if use_b1:
+                # If b1 present, multiply ONLY Newtonian component (first one, idx=0, H^0) by b1
+                # Relativistic components (H^2) are not multiplied by b1
+                if use_b1 and idx == 0:
                     f, df, d2f = [product_deriv(j, b1_derivs, fctr_W) for j in range(3)]
                 else:
                     f, df, d2f = fctr_W
@@ -952,6 +1036,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
         # Compute fctr * W
         fctr_W_f4 = [product_deriv(j, f4_derivs, W_derivs_list) for j in range(5)]
         # If b1 present for F2, multiply by b1
+        # f^(4) has only ONE component which is Newtonian (H^0), so multiply entire thing
         if use_b1:
             f, df, d2f, d3f, d4f = [product_deriv(j, b1_derivs, fctr_W_f4) for j in range(5)]
         else:
