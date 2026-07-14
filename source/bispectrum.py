@@ -384,16 +384,29 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     Cl_nm_list.append(Cl_nm_summed)
 
                 # Apply the combination based on which_for_cls
+
+                # fNL scale-dependent bias: the density Cl factor 3 f H^2 picks up -b_phi/(N D),
+                # i.e. C_l^delta = C_l^(0,0) + [3 f H^2 - b_phi/(N D)] C_l^(-2,0). Added to d0d/d1d.
+                # b_phi = 2 fNL g_in delta_c (b1-1);  N = 2/(3 Omega_m H0^2).
+                fnl_corr_on_ra = 0.0
+                if fctr.COMPUTE_FNL and fnl_local != 0 and 'data' in time_dict and 'b1' in time_dict['data']:
+                    deltac = 1.686
+                    g_in = time_dict['Da']/time_dict['a'] * 3./5.*(1. + 2./3.*time_dict['fa']/time_dict['Oma'])
+                    b1L = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1']-1., s=0, k=5)(time_dict['ra'])
+                    b_phi = 2.*fnl_local*g_in*deltac*b1L
+                    ND = (2./3./omega_m/H0**2) * time_dict['Da']   # N * D
+                    fnl_corr_on_ra = -b_phi/ND
+
                 if which_for_cls == 'd1d':
-                    # d1d: Cl = Cl_d1d + 3*H²*f * Cl_d1v
-                    factor_on_ra = 3.0 * time_dict['Ha']**2 * time_dict['fa']
+                    # d1d: Cl = Cl_d1d + [3*H²*f - b_phi/(N D)] * Cl_d1v
+                    factor_on_ra = 3.0 * time_dict['Ha']**2 * time_dict['fa'] + fnl_corr_on_ra
                     factor_spline = UnivariateSpline(time_dict['ra'], factor_on_ra, s=0, k=5)
                     factor = factor_spline(chi_list_file)
                     Cl_combined = Cl_nm_list[0] + factor[None, :] * Cl_nm_list[1]
 
                 elif which_for_cls == 'd0d':
-                    # d0d: Cl = Cl_F2(m=0) + 3*H²*f * Cl_F2(m=-2)
-                    factor_on_ra = 3.0 * time_dict['Ha']**2 * time_dict['fa']
+                    # d0d: Cl = Cl_F2(m=0) + [3*H²*f - b_phi/(N D)] * Cl_F2(m=-2)
+                    factor_on_ra = 3.0 * time_dict['Ha']**2 * time_dict['fa'] + fnl_corr_on_ra
                     factor_spline = UnivariateSpline(time_dict['ra'], factor_on_ra, s=0, k=5)
                     factor = factor_spline(chi_list_file)
                     Cl_combined = Cl_nm_list[0] + factor[None, :] * Cl_nm_list[1]
@@ -1001,13 +1014,25 @@ def compute_bispectrum_parallel_efficient(Cl_array, coeffs, chi_list, triplet_li
     return 2.*results
 
 
-def _init_wigner_worker(max_two_j):
-    """Initialize pywigxjpf tables once per worker process"""
+def _init_wigner_worker(max_ell):
+    """Initialize pywigxjpf tables once per worker process.
+
+    Takes max(ell) and applies the 2*j conversion internally: wig3jj is always called
+    with 2*ell arguments, so the largest two_j is 2*max(ell). BOTH the factorial table
+    and the temp array must be sized for that. Undersizing the temp array does NOT
+    raise -- pywigxjpf prints "More iterations than allocated" and returns a garbage
+    value -- so getting this wrong silently corrupts Al123 (and hence davd1v).
+
+    The temp array must cover the full triangle slack (j1+j2-j3), which reaches
+    ~max(ell) for configurations like 'squ2' where ell1 varies against a fixed large
+    ell2=ell3 (the case that exposed this).
+    """
+    two_j_max = 2 * max_ell
     try:
-        # Initialize factorials table (shared, only needs to be done once per process)
-        wig_table_init(2 * max_two_j, 3)
-        # Initialize temp array for this worker
-        wig_temp_init(max_two_j)
+        # Factorials table (shared, only needs to be done once per process)
+        wig_table_init(two_j_max, 3)
+        # Temp array for this worker (same sizing -- must cover the largest two_j)
+        wig_temp_init(two_j_max)
     except Exception as e:
         print(f'Warning: pywigxjpf initialization failed: {e}')
 
@@ -1110,6 +1135,9 @@ def ell_configurations(p, ell_list):
     elif config == 'squ':
         cache_file = f'{p.output_dir}triplets_cache_squ_ell{p.ell}_{ell_descriptor}.npz'
         config_name = f'squeezed_ell{p.ell}'
+    elif config == 'squ2':
+        cache_file = f'{p.output_dir}triplets_cache_squ2_ell{p.ellmax}_{ell_descriptor}.npz'
+        config_name = f'squeezed2_ell{p.ellmax}'
     elif config == 'folded':
         cache_file = f'{p.output_dir}triplets_cache_folded_ell{p.ellmax}_{ell_descriptor}.npz'
         config_name = f'folded_ell{p.ellmax}'
@@ -1182,6 +1210,32 @@ def ell_configurations(p, ell_list):
                     Al1l2l3_values.append([A1, A2, A3])
         config_name = f'squeezed_ell{ell1_fixed}'
 
+    elif config == 'squ2':
+        # Squeezed-2: ell2 = ell3 = ellmax fixed, ell1 (the long mode) varying.
+        # This is the configuration that actually probes k_L -> 0, i.e. the limit
+        # the squeezed-limit consistency relation is about.
+        ell23_fixed = p.ellmax
+        if ell23_fixed not in ell_list:
+            print(f"Warning: ellmax={ell23_fixed} not in ell_list, no triplets generated")
+        else:
+            i23 = ell_to_idx[ell23_fixed]
+            ell23_int = int(ell23_fixed)
+            for i1, ell1 in enumerate(ell_list):
+                ell1_int = int(ell1)
+                # Triangle inequality: |ell2-ell3| <= ell1 <= ell2+ell3  ->  0 <= ell1 <= 2*ell23
+                if ell1_int > 2*ell23_int:
+                    continue
+                wigner_test = float(wigner_3j(ell1_int, ell23_int, ell23_int, 0, 0, 0))
+                if wigner_test != 0:
+                    triplets.append([i1, i23, i23])
+                    wigner_values.append(wigner_test)
+                    # Same permutation structure as 'squ': triplet is (ell1, ell23, ell23)
+                    A1 = _compute_Al123_single(ell1_int, ell23_int, ell23_int, wigner_test) * np.sqrt(ell23_int*(ell23_int+1.) * ell23_int*(ell23_int+1.))
+                    A2 = _compute_Al123_single(ell23_int, ell1_int, ell23_int, wigner_test) * np.sqrt(ell1_int*(ell1_int+1.) * ell23_int*(ell23_int+1.))
+                    A3 = _compute_Al123_single(ell23_int, ell23_int, ell1_int, wigner_test) * np.sqrt(ell23_int*(ell23_int+1.) * ell1_int*(ell1_int+1.))
+                    Al1l2l3_values.append([A1, A2, A3])
+        config_name = f'squeezed2_ell{ell23_fixed}'
+
     elif config == 'folded':
         # Folded: ell1 = ellmax, ell2 = ell3 varying
         ell1_fixed = p.ellmax
@@ -1234,12 +1288,12 @@ def ell_configurations(p, ell_list):
         # Prepare arguments: each candidate needs access to ell_list
         args_list = [(cand, ell_list) for cand in candidates]
 
-        # max_two_j is 2 * max(ell) (pywigxjpf uses 2*j convention)
-        max_two_j = 2 * int(max(ell_list))
+        # Pass max(ell); _init_wigner_worker applies the 2*j conversion itself
+        max_ell = int(max(ell_list))
 
         # Use initializer to set up pywigxjpf once per worker (huge speedup!)
         from functools import partial
-        initializer = partial(_init_wigner_worker, max_two_j)
+        initializer = partial(_init_wigner_worker, max_ell)
 
         with Pool(n_cores, initializer=initializer) as pool:
             # Use imap to get results as they complete (allows progress tracking)
@@ -1356,6 +1410,7 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
     # Determine config_name and file_path (shared file for all primordial shapes)
     config_name = 'equilateral' if p.configuration == 'equi' else \
                  (f'squeezed_ell{p.ell}' if p.configuration == 'squ' else \
+                  f'squeezed2_ell{p.ellmax}' if p.configuration == 'squ2' else \
                   f'folded_ell{p.ellmax}' if p.configuration == 'folded' else 'all')
     file_path = f"{p.output_dir}bl_{p.lterm}.h5"
 
@@ -1572,6 +1627,15 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
             shared_data = {
                 'ell1': ell1_fixed,
                 'ell23': ell23_array,
+                'wigner': wigner_array
+            }
+        elif p.configuration == 'squ2':
+            # Squeezed-2: ell2=ell3 fixed, ell1 (the long mode) varying -> ell1 is the x-axis
+            ell23_fixed = ell_list[triplet_array[0][1]]
+            ell1_array = np.array([ell_list[triplet_array[i][0]] for i in range(len(triplet_array))])
+            shared_data = {
+                'ell23': ell23_fixed,
+                'ell1': ell1_array,
                 'wigner': wigner_array
             }
         else:

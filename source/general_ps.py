@@ -7,7 +7,7 @@ from scipy.interpolate import UnivariateSpline
 from scipy.integrate import quad
 from scipy.integrate import simpson
 
-import fctr
+import fctr as fctr_module
 import bispectrum
 from param_used import *
 from mathematica import *
@@ -669,7 +669,7 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
         else: 
             stuff2 = (2./3./omega_m/H0**2)**2
 
-        if lterm in ['pot', 'dpot']:
+        if lterm in ['pot', 'dpot', 'pot_fnl']:
             stuff2 /= (2./3./omega_m/H0**2)
 
         print(f'  Computing for lterm = {lterm}')
@@ -698,6 +698,8 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
 
                 while Renu-2*power_reduction>=-1:
                     power_reduction+=1
+
+                if power_reduction > 3: power_reduction=3
 
                 if len(cp['qterm_list'])>1: print(f'      Integrating {group_path} qterm: {qt}/{len(cp["qterm_list"])} with power_reduction {power_reduction} (Re(nu) = {(Renu - 2*power_reduction):.2f})')
                 else: print(f'     Integrating {group_path} with power_reduction {power_reduction} (Re(nu) = {(Renu - 2*power_reduction):.2f})')
@@ -871,7 +873,7 @@ def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_li
     # ========================================================================
     # Get y_list from fct_of_r_analytical
     # This computes all lterm contributions at level 0 (no D_ell operator)
-    y_list = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args,
+    y_list = fctr_module.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args,
                                       lterm_list, W_derivs_list=W_derivs_list)
 
     # ========================================================================

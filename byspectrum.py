@@ -1,5 +1,5 @@
 import numpy as np
-import os, sys, argparse
+import os, sys, argparse, importlib
 from art import text2art
 from scipy import integrate
 import time
@@ -20,10 +20,11 @@ def arguments():
     parser.add_argument('-q', '--qterm', default=qterm, type=int, help='-1, 0, 1, 2, 3, 4 only for which neq F2 G2')
     parser.add_argument('-N', '--Newton', default=Newton, type=int, help='Newtonian gravity: 0=No, 1=Yes')
     parser.add_argument('-r', '--rad',default=rad, type=int, help='Radiation: 0=No, 1=Yes')
-    parser.add_argument('-z0'    , default=z0, type=float, help='center of redshift bin')
-    parser.add_argument('-dz'    , default=dz, type=float, help='half width of redshift bin')
-    parser.add_argument('-sigma_z'    , default=sigma_z, type=float, help='How fast is the window function decaying')
-    parser.add_argument('-window_type'    , default=window_type, type=str, help='Type of window function, eg nbody, ska')
+    parser.add_argument('-z0'     , default=globals().get('z0',     None), type=float, help='center of redshift bin')
+    parser.add_argument('-dz'     , default=globals().get('dz',     None), type=float, help='half width of redshift bin')
+    parser.add_argument('-sigma_z', default=globals().get('sigma_z', None), type=float, help='How fast is the window function decaying')
+    parser.add_argument('-window_type'    , default=window_type, type=str, help='Type of window function, eg nbody, ska, euclid')
+    parser.add_argument('-euclid_bin_idx' , default=euclid_bin_idx, type=int, help='Euclid photometric bin index (0-9)')
     parser.add_argument('-f'     , '--force', default=force, type=int, help='Wether you and to overwrite all output (force computation)')
     parser.add_argument('-Nchi'  , default=Nchi, type=int, help='Number of r/chi value to evaluate cl, Am and Il')
     parser.add_argument('-ell'   , default=ell, type=int, help='')
@@ -31,7 +32,7 @@ def arguments():
     parser.add_argument('-Nell',default=Nell, type=int, help='')
     parser.add_argument('-o', '--output_dir', default=output_dir+'/', type=str, help='path of output')
     parser.add_argument('-m', '--mode', default='bl', type=str, help='Computation mode: [cl, Il, bl, bin, merge]')
-    parser.add_argument('-config', '--configuration', default='all', type=str, help='what triangle configuration to compute')
+    parser.add_argument('-config', '--configuration', default=configuration, type=str, help='what triangle configuration to compute')
 
     parser.add_argument('-h100'     , type=float,default=h100) 
     parser.add_argument('-omega_b'  , type=float,default=omega_b) 
@@ -42,6 +43,7 @@ def arguments():
     parser.add_argument('-omega_l'  , type=float,default=omega_l)
     parser.add_argument('-A_s'      , type=float,default=A_s) 
     parser.add_argument('-n_s'      , type=float,default=n_s)
+    parser.add_argument('-fnl_local'      , type=float,default=fnl_local) 
     parser.add_argument('-k_pivot'  , type=float,default=k_pivot) 
     parser.add_argument('-c'        , type=float,default=c) 
     parser.add_argument('-H0'       , type=float,default=H0) 
@@ -111,41 +113,50 @@ def main(argv):
         general_ps.merge_fallback_files(argv.output_dir)
         return 0
 
-    time_dict = lincosmo.growth_fct(input_data=globals().get('input_ska', 0))
+    _ska_input = globals().get('input_ska', 0) if argv.window_type == 'ska' else 0
+    time_dict = lincosmo.growth_fct(input_data=_ska_input, window_type=argv.window_type)
     np.save(output_dir+'time_dict', time_dict)
 
     if argv.window_type == 'nbody':
         Wrmin, Wrmax = lincosmo.get_distance(argv.z0-argv.dz)[0], \
                        lincosmo.get_distance(argv.z0+argv.dz)[0]
-
         if sigma_input == 'redshift':
             argv.sigma_z = (lincosmo.get_distance(argv.z0+argv.sigma_z/2)[0]
                             - lincosmo.get_distance(argv.z0-argv.sigma_z/2)[0])
         rmin, rmax = Wrmin-30*argv.sigma_z, Wrmax+30*argv.sigma_z
+        H_over_a_data = (time_dict['ra'], time_dict['Ha'] / time_dict['a'])
+        window_args = (Wrmin, Wrmax, H_over_a_data, argv.sigma_z)
+        print('Integration range: rmin={:.0f} Mpc/h, rmax={:.0f} Mpc/h'.format(rmin, rmax))
+        print('Window: Wrmin={:.0f}, Wrmax={:.0f}, sigma_z={:.2f} Mpc/h'.format(Wrmin, Wrmax, argv.sigma_z))
 
-    else:
+    elif argv.window_type == 'euclid':
+        _BIN_EDGES = [0.001, 0.42, 0.56, 0.68, 0.79, 0.90, 1.02, 1.15, 1.32, 1.58, 2.50]
+        _zlo = _BIN_EDGES[argv.euclid_bin_idx]
+        _zhi = _BIN_EDGES[argv.euclid_bin_idx + 1]
+        rmin = lincosmo.get_distance(max(0.001, _zlo - 0.5))[0]
+        rmax = lincosmo.get_distance(min(3.5, _zhi + 0.7))[0]
+        H_over_a_data = (time_dict['ra'], time_dict['Ha'] / time_dict['a'])
+        window_args = (argv.euclid_bin_idx, H_over_a_data)
+        print('Euclid bin {} [z={:.3f}, {:.3f}]: rmin={:.0f}, rmax={:.0f} Mpc/h'.format(
+              argv.euclid_bin_idx, _zlo, _zhi, rmin, rmax))
+
+    else:  # ska
         rmin, rmax = lincosmo.get_distance(argv.z0-argv.dz)[0], \
                      lincosmo.get_distance(argv.z0+argv.dz)[0]
-
         if sigma_input == 'redshift':
             argv.sigma_z = (lincosmo.get_distance(argv.z0+argv.sigma_z/2)[0]
                             - lincosmo.get_distance(argv.z0-argv.sigma_z/2)[0])
         Wrmin, Wrmax = rmin+20*argv.sigma_z, rmax-20*argv.sigma_z
-        # 20 for ska 0.5 \pm 0.2
-
-    # Prepare n_angular data if available (for SKA-type surveys)
-    if 'data' in time_dict.keys() and argv.window_type != 'nbody':
-        n_angular_data = (time_dict['data']['r'], time_dict['data']['n_angular'])
-        print('  Found n(z) angular data for SKA-type window normalization')
-    else:
-        n_angular_data = None
-
-    # Prepare H/a data for window normalization: (ra_grid, H_over_a_values)
-    H_over_a_data = (time_dict['ra'], time_dict['Ha'] / time_dict['a'])
-    window_args = (Wrmin, Wrmax, H_over_a_data, argv.sigma_z, argv.window_type, n_angular_data)
-    print('Integration range: rmin={:.0f} Mpc/h, rmax={:.0f} Mpc/h, Dz={:.2f} Mpc/h'.format(rmin, rmax, (rmax-rmin)/2))
-    print('Window function limits: Wrmin={:.0f} Mpc/h, Wrmax={:.0f} Mpc/h, Dz={:.2f} Mpc/h'.format(Wrmin, Wrmax, (Wrmax-Wrmin)/2))
-    print('Window decay scale sigma_z={:.2f} Mpc/h, {:.2f}\\% of the window function size'.format(argv.sigma_z, 100*argv.sigma_z/(Wrmax-Wrmin)*2))
+        H_over_a_data = (time_dict['ra'], time_dict['Ha'] / time_dict['a'])
+        if 'data' in time_dict:
+            n_angular_data = (time_dict['data']['r'], time_dict['data']['n_angular'])
+            print('  Found n(z) angular data for SKA-type window normalization')
+        else:
+            n_angular_data = None
+        window_args = (Wrmin, Wrmax, H_over_a_data, argv.sigma_z, n_angular_data)
+        print('Integration range: rmin={:.0f} Mpc/h, rmax={:.0f} Mpc/h, Dz={:.2f} Mpc/h'.format(rmin, rmax, (rmax-rmin)/2))
+        print('Window function limits: Wrmin={:.0f} Mpc/h, Wrmax={:.0f} Mpc/h, Dz={:.2f} Mpc/h'.format(Wrmin, Wrmax, (Wrmax-Wrmin)/2))
+        print('Window decay scale sigma_z={:.2f} Mpc/h, {:.2f}\\% of the window function size'.format(argv.sigma_z, 100*argv.sigma_z/(Wrmax-Wrmin)*2))
 
     tr, Pk = lincosmo.get_power(0)
 
@@ -164,29 +175,24 @@ def main(argv):
             ell_list = np.array(range(argv.ell, argv.ellmax, 1), dtype=np.int64)
 
         # For specific configurations, ensure all ells are even
-        if argv.configuration in ['equi', 'squ', 'folded', 'esf']:
+        if argv.configuration in ['equi', 'squ', 'squ2', 'folded', 'esf']:
             # Add 1 to odd ells to make them even
             ell_list = np.array([ell if ell % 2 == 0 else ell + 1 for ell in ell_list])
             # Remove duplicates again in case some became the same
             ell_list = np.unique(ell_list)
-    #ell_list = np.array([4   ,5  , 6  , 7  , 8  , 9  ,10  ,11  ,12  ,13  ,14  ,15  ,16  ,17  ,18,  19,
-    #                      20,  21 , 22 , 23,  25,  26,  27,  28,  29,  31,  32,  34,  36,  37,  39,  41,  43,  45,
-    #                      47,  49 , 51 , 54,  56,  59,  62,  65,  68,  71,  75,  78,  82,  86,  90,  94,  99, 103,
-    #                     108, 113 ,119 ,124, 130, 136, 143, 150, 157, 164, 172, 180, 189, 198, 207, 217, 227, 238,
-    #                     249, 261 ,274 ,287, 300, 314, 329, 345, 361, 378, 396, 415, 435, 456, 477, 500])
 
     # Define lterm_list based on p.lterm
     if p.Newton:
         if p.lterm == 'all':
-            lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot']
+            lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_fnl']
         elif p.lterm == 'noproj':
-            lterm_list = ['density', 'rsd']
+            lterm_list = ['density', 'rsd', 'pot_fnl']
         else:
             lterm_list = [p.lterm]
     elif p.lterm == 'all':
-        lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_gr']
+        lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_gr', 'pot_fnl']
     elif p.lterm == 'noproj':
-        lterm_list = ['density', 'rsd', 'pot_gr']
+        lterm_list = ['density', 'rsd', 'pot_gr', 'pot_fnl']
     elif '+' in p.lterm:
         lterm_list = p.lterm.split('+')
     else:
@@ -255,7 +261,7 @@ def main(argv):
             which_list=[argv.which]
 
         if argv.configuration=='esf':
-            config_list = ['equi', 'squ', 'folded']
+            config_list = ['equi', 'squ', 'folded', 'squ2']
         elif argv.configuration=='es':
             config_list = ['equi', 'squ']
         else:
@@ -269,7 +275,7 @@ def main(argv):
     else:
 
         if argv.configuration=='esf':
-            config_list = ['equi', 'squ', 'folded']
+            config_list = ['equi', 'squ', 'folded', 'squ2']
         elif argv.configuration=='es':
             config_list = ['equi', 'squ']
         else:
@@ -305,4 +311,5 @@ if __name__ == "__main__":
     argv=arguments()
     ensure_directory_exists(argv.output_dir)
     write_args(argv)
+    importlib.invalidate_caches()
     r=main(argv)

@@ -33,6 +33,24 @@ def get_distance(z):
             relerr=1e-10, maxEval=0, abserr=0, vectorized=True)
     return val
 
+############################################################################# Euclid bias fits
+def b1_euclid(z):
+    """Linear bias for the Euclid photometric sample: IST:Fisher fiducial b(z)=sqrt(1+z)
+    (arXiv:1910.09273), valid across the full photometric range 0<z<2.5."""
+    return np.sqrt(1. + z)
+    # Flagship cubic fit (Euclid XIX App. C): more accurate at low z but only valid to z~2:
+    # return 0.5125 + 1.377*z + 0.222*z**2 - 0.249*z**3
+
+def b2_euclid(z):
+    """Second-order bias via the Lazeyras relation (2110.05435) evaluated on b1_euclid(z)."""
+    b1 = b1_euclid(z)
+    return 0.412 - 2.143*b1 + 0.929*b1**2 + 0.008*b1**3
+
+def s_euclid(z):
+    """Magnification-bias slope s(z) for the Euclid photometric sample (Q = 5s/2 convention).
+    Defined for later use; no magnification term is wired into the kernels yet."""
+    return 0.0842 + 0.0532*z + 0.298*z**2 - 0.0113*z**3
+
 def volume_element(z):
     """
     Volume element dV/(dOmega dz) in (Mpc/h)^3/steradian
@@ -110,7 +128,7 @@ def solvr(Y, t):
     return [a*H, Y[2], -H*Y[2]+3./2.* omega_m*H0**2/a*Y[1], Y[4], -H*Y[4]+3./2.*omega_m*H0**2*(Y[3]+Y[1]**2) / a]
 
 
-def growth_fct(input_data=0):
+def growth_fct(input_data=0, window_type=None):
     print('computing growth')
     a0=1e-10
     z0=1./a0-1.
@@ -162,9 +180,15 @@ def growth_fct(input_data=0):
             'dHa': dHa[mask],\
             'mathcalR': (dHa/Ha[::-1]**2+2./Ha[::-1]/ra[::-1])[mask]}
 
-    if input_data==0:
-        return  time_dict    
-    else:
+    if window_type=='euclid':
+        # Analytical biases on the comoving grid (no n_angular: the euclid window
+        # already carries the n_i(z) shape). Enables the existing b1/b2/b_s machinery.
+        z_grid = 1./time_dict['a'] - 1.
+        time_dict['data'] = {'r' : time_dict['ra'],
+                             'b1': b1_euclid(z_grid),
+                             'b2': b2_euclid(z_grid)}
+        return time_dict
+    elif window_type=='ska':
         data = np.loadtxt(input_data)
         z = data[:, 0]
         ng = data[:, 1]
@@ -177,13 +201,15 @@ def growth_fct(input_data=0):
                              'b1'       :b1,
                              'b2'       :b2}
         return time_dict
+    else:
+        return time_dict
 
 
 
 
 ############################################################################# power spectrum
 def trans(z=0):
-    if not os.path.isfile(output_dir+'class_transfer.npy') or force:
+    if not os.path.isfile(output_dir+'class_transfer.npy'):# or force:
         print('computing class')
         clss = Class()
         clss.set({'gauge': 'new', 'h': h,'omega_b': omega_b*h**2, 'omega_cdm': omega_cdm*h**2,
