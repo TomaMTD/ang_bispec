@@ -37,53 +37,8 @@ def compute_hyp21_grid_numba(t_grid, nu_p_grid, ell_grid):
 
 
 @njit
-def cubic_spline_interp(xi, x, y):
-    """Simple cubic spline interpolation for a single point"""
-    n = len(x)
-    if xi <= x[0]:
-        return y[0]
-    if xi >= x[-1]:
-        return y[-1]
-    
-    # Find the interval
-    i = 0
-    while i < n-1 and x[i+1] < xi:
-        i += 1
-    
-    if i == n-1:
-        i = n-2
-    
-    # Cubic interpolation using 4 points when possible
-    if i == 0:
-        # Use points 0,1,2,3
-        x0, x1, x2, x3 = x[0], x[1], x[2], x[3]
-        y0, y1, y2, y3 = y[0], y[1], y[2], y[3]
-    elif i == n-2:
-        # Use points n-4,n-3,n-2,n-1
-        x0, x1, x2, x3 = x[n-4], x[n-3], x[n-2], x[n-1]
-        y0, y1, y2, y3 = y[n-4], y[n-3], y[n-2], y[n-1]
-    else:
-        # Use points i-1,i,i+1,i+2
-        x0, x1, x2, x3 = x[i-1], x[i], x[i+1], x[i+2]
-        y0, y1, y2, y3 = y[i-1], y[i], y[i+1], y[i+2]
-    
-    # Lagrange interpolation
-    L0 = ((xi-x1)*(xi-x2)*(xi-x3))/((x0-x1)*(x0-x2)*(x0-x3))
-    L1 = ((xi-x0)*(xi-x2)*(xi-x3))/((x1-x0)*(x1-x2)*(x1-x3))
-    L2 = ((xi-x0)*(xi-x1)*(xi-x3))/((x2-x0)*(x2-x1)*(x2-x3))
-    L3 = ((xi-x0)*(xi-x1)*(xi-x2))/((x3-x0)*(x3-x1)*(x3-x2))
-    
-    return y0*L0 + y1*L1 + y2*L2 + y3*L3
-    
-@njit
 def cubic_interp_uniform(xi, x, y):
     """
-    Same 4-point Lagrange as cubic_spline_interp, but for a UNIFORMLY spaced x, where the
-    bracketing index is arithmetic instead of a linear scan. Identical results: the scan stops
-    at x[i] < xi <= x[i+1] and floor() picks the same i everywhere except exactly on a node,
-    where the two choose different 4-point stencils -- but both contain that node, and Lagrange
-    evaluated at a node of its own stencil returns that node's value exactly.
-
     Used for the y1 lookup in r_integration, which happens n_t times per chi; the scan (~250
     steps over a 501-point grid) was the dominant cost there once I_ell stopped being interpolated.
     """
@@ -98,7 +53,6 @@ def cubic_interp_uniform(xi, x, y):
     if i > n - 2:
         i = n - 2
 
-    # same stencil choice as cubic_spline_interp
     if i == 0:
         j = 0
     elif i == n - 2:
@@ -118,39 +72,6 @@ def cubic_interp_uniform(xi, x, y):
 
 
 @njit
-def quadratic_interp(xi, x, y):
-    """Quadratic interpolation using 3 nearest points"""
-    n = len(x)
-    if xi <= x[0]:
-        return y[0]
-    if xi >= x[-1]:
-        return y[-1]
-    
-    # Find the interval
-    i = 0
-    while i < n-1 and x[i+1] < xi:
-        i += 1
-    
-    # Choose 3 points for quadratic interpolation
-    if i == 0:
-        idx = [0, 1, 2]
-    elif i == n-1:
-        idx = [n-3, n-2, n-1]
-    else:
-        idx = [i-1, i, i+1]
-    
-    x0, x1, x2 = x[idx[0]], x[idx[1]], x[idx[2]]
-    y0, y1, y2 = y[idx[0]], y[idx[1]], y[idx[2]]
-    
-    # Lagrange interpolation with 3 points
-    L0 = ((xi-x1)*(xi-x2))/((x0-x1)*(x0-x2))
-    L1 = ((xi-x0)*(xi-x2))/((x1-x0)*(x1-x2))
-    L2 = ((xi-x0)*(xi-x1))/((x2-x0)*(x2-x1))
-    
-    return y0*L0 + y1*L1 + y2*L2
-
-
-@njit
 def sump_cp_I_vectorized_precompute(chi_list, t_grid, nu_p_grid, cp_list, F12):
     """
     sum_p cp_p chi^(-nu_p) I_ell(nu_p, t), for every (chi, t) with t on t_grid.
@@ -161,23 +82,25 @@ def sump_cp_I_vectorized_precompute(chi_list, t_grid, nu_p_grid, cp_list, F12):
     """
     N = len(nu_p_grid)
     n_t = len(t_grid)
-    result = np.zeros((len(chi_list), n_t), dtype=np.complex128)
+
+    result = np.zeros((len(chi_list), n_t))
 
     # Bitwise identical, ~1.25x faster.
     F12T = np.ascontiguousarray(F12.T)
 
     for i_chi, chi in enumerate(chi_list):
         # p-loop outside t-loop: chi**(-nu_p) is then computed once per (chi, p), not per node
-        for i in range(N//2):
-            w = 2*cp_list[i] * chi**(-nu_p_grid[i])
+        for i in range(N//2+1):
+            w = cp_list[i] * chi**(-nu_p_grid[i])
+            if i < N//2:
+                w = 2*w
+            w_re = w.real
+            w_im = w.imag
             for i_t in range(n_t):
-                result[i_chi, i_t] += w * F12T[i, i_t]
-        i = N//2
-        w = cp_list[i] * chi**(-nu_p_grid[i])
-        for i_t in range(n_t):
-            result[i_chi, i_t] += w * F12T[i, i_t]
+                F = F12T[i, i_t]
+                result[i_chi, i_t] += w_re*F.real - w_im*F.imag
 
-    return result.real
+    return result
 
 
 @njit
@@ -225,8 +148,11 @@ def r_integration_vectorized_precompute(Nchi, r_list, chi_list, y1, t_grid, nu_p
             # The support of I_ell is WIDER than the physical range, so it restricts nothing
             # and there is nothing to concentrate on.
             for j in range(len(r_list)):
-                integrand_r[j] = y1[j] * cubic_spline_interp(r_list[j]/chi, t_grid,
-                                                             sump_cp_I_matrix[ind, :])
+                # t_grid is a linspace (build_t_grid), so the uniform-grid lookup applies here
+                # too -- and matters: this branch does len(r_list) lookups per chi, and the
+                # scan version walked ~500 steps of the 1001-point t_grid for each one.
+                integrand_r[j] = y1[j] * cubic_interp_uniform(r_list[j]/chi, t_grid,
+                                                              sump_cp_I_matrix[ind, :])
             s_cp_I_list[ind] = simpson_numba(integrand_r, r_list)
 
         else:
@@ -249,7 +175,7 @@ def compute_integral_precompute(ell_list, chi_list, r_list, t_grid, nu_p, cp_lis
 
     s_cp_I_tab = np.zeros((len(ell_list), len(chi_list)))
     for ind_ell in prange(len(ell_list)):
-        print('         Computing ell='+str(ell_list[ind_ell]))
+        # print('         Computing ell='+str(ell_list[ind_ell]))
 
         # t_grid is (n_t, n_ell): hand each ell its own column, matching F12[:,:,ind_ell]
         s_cp_I_tab[ind_ell] = r_integration_vectorized_precompute(Nchi, r_list, chi_list, \
@@ -421,7 +347,7 @@ def save_to_hdf5(filename, group_path, data, metadata=None):
                             del subgroup[ell_key]
 
                         subgroup.create_dataset(ell_key, data=ell_data)
-                        print(f'      Saved {group_path}/{key}/{ell_key} with shape {ell_data.shape}')
+                        # print(f'      Saved {group_path}/{key}/{ell_key} with shape {ell_data.shape}')
 
                 # Save metadata
                 if metadata:
@@ -625,7 +551,7 @@ def compute_integral_F2_G2_dv2(p, ell_list, chi_list, r_list, t_grid, cp_dict, f
 
             # Loop over ell values
             for ind_ell, ell in enumerate(ell_list):
-                print(f'      ell={ell} ({ind_ell+1}/{len(ell_list)})')
+                #print(f'      ell={ell} ({ind_ell+1}/{len(ell_list)})')
 
                 # Compute integrals for specified components
                 for comp_idx, qt in enumerate(qterm_indices):
@@ -639,7 +565,7 @@ def compute_integral_F2_G2_dv2(p, ell_list, chi_list, r_list, t_grid, cp_dict, f
                     )
 
                     result[comp_idx, ind_ell, :] = chi_list**2 * integral_result
-                    print(f'        Computed component {comp_idx} (qterm {qt}) in {time.time()-start_time:.2f} seconds')
+                    # print(f'        Computed component {comp_idx} (qterm {qt}) in {time.time()-start_time:.2f} seconds')
 
             # Save to HDF5
             save_result(multipole_name, result, is_radiation=False)
@@ -721,12 +647,9 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
         compute_integral_F2_G2_dv2(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict)
         return
 
-    # Original behavior for FG2/d1v/etc
-    # lterm is the INNERMOST loop, below the 2F1 build. The table depends on nu_p, and
-    # Re(nu) = 1 + b + n_eff - 2*pr comes from cp[qt]['b'] and n only -- lterm enters solely
-    # through the density/not_density choice of cp. So every lterm in a cp group needs the
-    # same table; with lterm outermost it was rebuilt once per lterm (21-84 calls for 3-11
-    # distinct tables), on what is ~2/3 of the runtime.
+    F12 = None
+    nu_p_last = None
+
     for cp_key in ['density', 'not_density']:
         group_lterms = [lt for lt in lterm_list
                         if (lt == 'density') == (cp_key == 'density')]
@@ -784,10 +707,13 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
 
                 nu_p = Renu - 2*power_reduction + 1j*cp['eta_p']
                 
-                # Precompute hypergeometric function -- once for every lterm in the group
-                #start_time = time.time()
-                F12 = compute_hyp21_grid_numba(t_grid, nu_p[:middle+1], ell_list)
-                #print(f'        2F1 precomputation done in {time.time()-start_time:.2f} seconds')
+                if nu_p_last is not None and np.array_equal(nu_p, nu_p_last):
+                    print(f'        2F1 reused (same Re(nu) = {nu_p[middle].real:.2f})')
+                else:
+                    start_time = time.time()
+                    F12 = compute_hyp21_grid_numba(t_grid, nu_p[:middle+1], ell_list)
+                    print(f'        2F1 precomputation done in {time.time()-start_time:.2f} seconds')
+                    nu_p_last = nu_p.copy()
 
                 for lterm in todo:
                     fctr = fctr_dict[lterm]
