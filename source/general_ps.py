@@ -76,6 +76,48 @@ def cubic_spline_interp(xi, x, y):
     return y0*L0 + y1*L1 + y2*L2 + y3*L3
     
 @njit
+def cubic_interp_uniform(xi, x, y):
+    """
+    Same 4-point Lagrange as cubic_spline_interp, but for a UNIFORMLY spaced x, where the
+    bracketing index is arithmetic instead of a linear scan. Identical results: the scan stops
+    at x[i] < xi <= x[i+1] and floor() picks the same i everywhere except exactly on a node,
+    where the two choose different 4-point stencils -- but both contain that node, and Lagrange
+    evaluated at a node of its own stencil returns that node's value exactly.
+
+    Used for the y1 lookup in r_integration, which happens n_t times per chi; the scan (~250
+    steps over a 501-point grid) was the dominant cost there once I_ell stopped being interpolated.
+    """
+    n = len(x)
+    if xi <= x[0]:
+        return y[0]
+    if xi >= x[-1]:
+        return y[-1]
+
+    dx = (x[-1] - x[0]) / (n - 1)
+    i = int((xi - x[0]) / dx)
+    if i > n - 2:
+        i = n - 2
+
+    # same stencil choice as cubic_spline_interp
+    if i == 0:
+        j = 0
+    elif i == n - 2:
+        j = n - 4
+    else:
+        j = i - 1
+
+    x0, x1, x2, x3 = x[j], x[j+1], x[j+2], x[j+3]
+    y0, y1, y2, y3 = y[j], y[j+1], y[j+2], y[j+3]
+
+    L0 = ((xi-x1)*(xi-x2)*(xi-x3))/((x0-x1)*(x0-x2)*(x0-x3))
+    L1 = ((xi-x0)*(xi-x2)*(xi-x3))/((x1-x0)*(x1-x2)*(x1-x3))
+    L2 = ((xi-x0)*(xi-x1)*(xi-x3))/((x2-x0)*(x2-x1)*(x2-x3))
+    L3 = ((xi-x0)*(xi-x1)*(xi-x2))/((x3-x0)*(x3-x1)*(x3-x2))
+
+    return y0*L0 + y1*L1 + y2*L2 + y3*L3
+
+
+@njit
 def quadratic_interp(xi, x, y):
     """Quadratic interpolation using 3 nearest points"""
     n = len(x)
@@ -109,25 +151,29 @@ def quadratic_interp(xi, x, y):
 
 
 @njit
-def sump_cp_I_vectorized_precompute(r_list, chi_list, t_grid, nu_p_grid, cp_list, F12):
-    """Vectorized version computing for all r,chi pairs at once"""
-    N = len(nu_p_grid)  # Number of nu_p values
+def sump_cp_I_vectorized_precompute(chi_list, t_grid, nu_p_grid, cp_list, F12):
+    """
+    sum_p cp_p chi^(-nu_p) I_ell(nu_p, t), for every (chi, t) with t on t_grid.
 
-    # Pre-allocate result array
-    result = np.zeros((len(chi_list), len(r_list)), dtype=np.complex128)
-    
-    # Compute t_chi ratios for all combinations
+    Evaluated directly ON the nodes where F12 is tabulated, so I_ell is never interpolated:
+    the caller integrates over r = chi*t, which places every sample exactly on a node.
+    That is why r_list is not an argument any more. Shape (n_chi, n_t).
+    """
+    N = len(nu_p_grid)
+    n_t = len(t_grid)
+    result = np.zeros((len(chi_list), n_t), dtype=np.complex128)
+
     for i_chi, chi in enumerate(chi_list):
-        for i_r, r in enumerate(r_list):
-            t_chi = r / chi
-            
-            for i in range(N//2):
-                eval = chi**(-nu_p_grid[i])*cubic_spline_interp(t_chi, t_grid, F12[:, i])
-                result[i_chi, i_r] += 2*cp_list[i] * eval
-            i=N//2
-            eval = chi**(-nu_p_grid[i])*cubic_spline_interp(t_chi, t_grid, F12[:, i])
-            result[i_chi, i_r] += cp_list[i] * eval
-            
+        # p-loop outside t-loop: chi**(-nu_p) is then computed once per (chi, p), not per node
+        for i in range(N//2):
+            w = 2*cp_list[i] * chi**(-nu_p_grid[i])
+            for i_t in range(n_t):
+                result[i_chi, i_t] += w * F12[i_t, i]
+        i = N//2
+        w = cp_list[i] * chi**(-nu_p_grid[i])
+        for i_t in range(n_t):
+            result[i_chi, i_t] += w * F12[i_t, i]
+
     return result.real
 
 
@@ -148,29 +194,49 @@ def simpson_numba(y, x):
 @njit
 def r_integration_vectorized_precompute(Nchi, r_list, chi_list, y1, t_grid, nu_p, cp_list, F12):
     """
-    Vectorized version of r_integration that computes sump_cp_I for all chi values at once
+    Integrate y1(r) * sum_p cp_p I_ell(nu_p, r/chi) over r, for every chi.
+
+    The integration variable is r = chi*t sampled on t_grid, NOT the global r_list:
+      - I_ell is tabulated on t_grid, so every sample lands exactly on a node and I_ell is
+        never interpolated. Only y1 is, and y1 is smooth (window times background functions).
+      - build_t_grid concentrates t_grid on the support of I_ell, so the oscillation stays
+        resolved as ell grows. With the fixed r_list it did not: the peak narrows like 1/ell
+        while the grid stays put, so it slides between samples and aliases into sign-flipping
+        noise (~1e-2 by ell~1000).
     """
-    # Compute sump_cp_I for all (chi, r) pairs for both nu_p sets
-    sump_cp_I_matrix = sump_cp_I_vectorized_precompute(r_list, chi_list, t_grid, nu_p, cp_list, F12)  # shape: (Nchi, Nr)
+    # (Nchi, n_t), on the t_grid nodes
+    sump_cp_I_matrix = sump_cp_I_vectorized_precompute(chi_list, t_grid, nu_p, cp_list, F12)
 
-    # Initialize output arrays
+    n_t = len(t_grid)
+    rmin, rmax = r_list[0], r_list[-1]
     s_cp_I_list = np.zeros(Nchi)
-    
-    # Perform integration for each chi
-    for ind in range(Nchi):
-        # Extract the row for this chi value
-        
-        # Compute integrands
-        integrand1 = y1 * sump_cp_I_matrix[ind, :]
-        
-        # Integrate using Simpson's rule
-        # np.save(f'integrand{ind}', np.vstack([r_list, integrand1]))
-        # print('save')
-        s_cp_I_list[ind] = simpson_numba(integrand1, r_list)
 
-        #spline = UnivariateSpline(r_list, integrand1, k=5, s=0)
-        #s_cp_I_list[ind]= quad(spline, r_list[0], r_list[-1])[0]
-    
+    r_sub = np.empty(n_t)
+    integrand = np.empty(n_t)
+    integrand_r = np.empty(len(r_list))
+
+    for ind in range(Nchi):
+        chi = chi_list[ind]
+
+        if t_grid[0] <= rmin/chi and t_grid[-1] >= rmax/chi:
+            # The support of I_ell is WIDER than the physical range, so it restricts nothing
+            # and there is nothing to concentrate on.
+            for j in range(len(r_list)):
+                integrand_r[j] = y1[j] * cubic_spline_interp(r_list[j]/chi, t_grid,
+                                                             sump_cp_I_matrix[ind, :])
+            s_cp_I_list[ind] = simpson_numba(integrand_r, r_list)
+
+        else:
+            for j in range(n_t):
+                r = chi*t_grid[j]
+                r_sub[j] = r
+                if r < rmin or r > rmax:
+                    integrand[j] = 0.
+                else:
+                    integrand[j] = cubic_interp_uniform(r, r_list, y1) * sump_cp_I_matrix[ind, j]
+
+            s_cp_I_list[ind] = simpson_numba(integrand, r_sub)
+
     return s_cp_I_list
 
 

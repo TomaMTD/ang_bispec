@@ -74,7 +74,7 @@ def tmin_fct(ell, nu_p):
     return tmin
 
 
-def build_t_grid(ell_list, rmin, rmax, k, n_t=1000):
+def build_t_grid(ell_list, rmin, rmax, k, n_t=1001):   # odd: r_integration Simpson-integrates over it
     '''
     Per-ell grid of t=r/chi, concentrated on the support of I_ell.
 

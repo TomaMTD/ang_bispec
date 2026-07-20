@@ -162,6 +162,9 @@ def main(argv):
 
     tr, Pk = lincosmo.get_power(0)
 
+    # Keep r_list EVENLY spaced: general_ps.cubic_interp_uniform looks y1 up on it by index
+    # arithmetic rather than by searching, so a log-spaced grid here would silently give
+    # wrong numbers instead of raising.
     chi_list=np.linspace(rmin, rmax, argv.Nchi)
     r_list  =np.linspace(rmin, rmax, argv.Nchi)
 
