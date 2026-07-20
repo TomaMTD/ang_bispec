@@ -722,10 +722,18 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
         return
 
     # Original behavior for FG2/d1v/etc
-    for lterm in lterm_list:
-        # Extract cp and fctr for current lterm
-        cp = cp_dict[lterm if lterm=='density' else 'not_density']
-        fctr = fctr_dict[lterm]
+    # lterm is the INNERMOST loop, below the 2F1 build. The table depends on nu_p, and
+    # Re(nu) = 1 + b + n_eff - 2*pr comes from cp[qt]['b'] and n only -- lterm enters solely
+    # through the density/not_density choice of cp. So every lterm in a cp group needs the
+    # same table; with lterm outermost it was rebuilt once per lterm (21-84 calls for 3-11
+    # distinct tables), on what is ~2/3 of the runtime.
+    for cp_key in ['density', 'not_density']:
+        group_lterms = [lt for lt in lterm_list
+                        if (lt == 'density') == (cp_key == 'density')]
+        if not group_lterms:
+            continue
+
+        cp = cp_dict[cp_key]
 
         middle = len(cp['eta_p']) // 2
 
@@ -735,31 +743,28 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
 
         # Main computation loop
         nm_pairs = get_nm_values(p.which)
-        
-        # Compute factors that depend on lterm and which
-        if p.which in ['local', 'equi', 'ortho', 'primordial']:
-            stuff2 = (2./3./omega_m/H0**2)
-        else: 
-            stuff2 = (2./3./omega_m/H0**2)**2
 
-        if lterm in ['pot', 'dpot', 'pot_fnl']:
-            stuff2 /= (2./3./omega_m/H0**2)
-
-        print(f'  Computing for lterm = {lterm}')
+        print(f'  Computing for lterm = {group_lterms}')
         for n, m in nm_pairs:
             # for m==0, the n values are taken into account in cp
             n_eff = n if m == 0 else 0
 
-            group_path = f'{"primordial_" if p.which=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}' 
+            group_path = f'{"primordial_" if p.which=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}'
 
             ## Check if computation already exists for all ells
-            if not p.force and check_computation_exists(output_filename, group_path, lterm, ell_list):
-                print(f'    Results for (n,m)=({group_path}), lterm={lterm} already exist for all ells, skipping (use force=True to overwrite)')
+            todo = []
+            for lterm in group_lterms:
+                if not p.force and check_computation_exists(output_filename, group_path, lterm, ell_list):
+                    print(f'    Results for (n,m)=({group_path}), lterm={lterm} already exist for all ells, skipping (use force=True to overwrite)')
+                else:
+                    todo.append(lterm)
+            if not todo:
                 continue
 
             # Initialize result for this (which, lterm, n) combination
-            result = np.zeros((len(ell_list),len(chi_list)), dtype=np.float64)
-            
+            result = {lterm: np.zeros((len(ell_list),len(chi_list)), dtype=np.float64)
+                      for lterm in todo}
+
             # Loop over qterms
             for qt_ind, qt in enumerate(cp['qterm_list']):
 
@@ -779,38 +784,51 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
 
                 nu_p = Renu - 2*power_reduction + 1j*cp['eta_p']
                 
-                # Precompute hypergeometric function
+                # Precompute hypergeometric function -- once for every lterm in the group
                 #start_time = time.time()
                 F12 = compute_hyp21_grid_numba(t_grid, nu_p[:middle+1], ell_list)
                 #print(f'        2F1 precomputation done in {time.time()-start_time:.2f} seconds')
 
-                # Compute integral
-                start_time = time.time()
-                integral_result = compute_integral_precompute(
-                    ell_list, chi_list, r_list, t_grid, 
-                    nu_p, cp[qt]['cp'], F12, fctr[power_reduction, qt_ind]
-                )
-                
-                # Sum the contribution
-                if  p.which in ['local', 'equi', 'ortho', 'primordial']:
-                    result += (2*np.pi**2*A_s/(k_pivot/h)**(n_s-1))**n * stuff2 * integral_result
-                else:
-                    result += stuff2 * integral_result
-                print(f'        Integral computation done in {time.time()-start_time:.2f} seconds')
-            
-            data_to_save = {
-                lterm: 2./np.pi*result,
-                'ell_list': ell_list,  # Add ell_list to each group
-                'chi_list': chi_list   # Add chi_list to each group
-            }
-            metadata = {
-                'n': n,
-                'm': m,
-                'which': p.which,
-                'lterm': lterm,
-            }
+                for lterm in todo:
+                    fctr = fctr_dict[lterm]
 
-            save_to_hdf5(output_filename, group_path, data_to_save, metadata)
+                    # Compute factors that depend on lterm and which
+                    if p.which in ['local', 'equi', 'ortho', 'primordial']:
+                        stuff2 = (2./3./omega_m/H0**2)
+                    else:
+                        stuff2 = (2./3./omega_m/H0**2)**2
+
+                    if lterm in ['pot', 'dpot', 'pot_fnl']:
+                        stuff2 /= (2./3./omega_m/H0**2)
+
+                    # Compute integral
+                    start_time = time.time()
+                    integral_result = compute_integral_precompute(
+                        ell_list, chi_list, r_list, t_grid,
+                        nu_p, cp[qt]['cp'], F12, fctr[power_reduction, qt_ind]
+                    )
+
+                    # Sum the contribution
+                    if  p.which in ['local', 'equi', 'ortho', 'primordial']:
+                        result[lterm] += (2*np.pi**2*A_s/(k_pivot/h)**(n_s-1))**n * stuff2 * integral_result
+                    else:
+                        result[lterm] += stuff2 * integral_result
+                    print(f'        {lterm}: integral computation done in {time.time()-start_time:.2f} seconds')
+
+            for lterm in todo:
+                data_to_save = {
+                    lterm: 2./np.pi*result[lterm],
+                    'ell_list': ell_list,  # Add ell_list to each group
+                    'chi_list': chi_list   # Add chi_list to each group
+                }
+                metadata = {
+                    'n': n,
+                    'm': m,
+                    'which': p.which,
+                    'lterm': lterm,
+                }
+
+                save_to_hdf5(output_filename, group_path, data_to_save, metadata)
 
 
 def merge_fallback_files(output_dir):
