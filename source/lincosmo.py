@@ -214,8 +214,8 @@ def trans(z=0):
         clss = Class()
         clss.set({'gauge': 'new', 'h': h,'omega_b': omega_b*h**2, 'omega_cdm': omega_cdm*h**2,
                   'output':'dTk,vTk','z_pk': 10, 'A_s': A_s , 'n_s': n_s,
-                  'k_per_decade_for_pk' :  100,
-                  'k_per_decade_for_bao' : 100,
+                  'k_per_decade_for_pk' :  50,
+                  'k_per_decade_for_bao' : 50,
                   'compute damping scale' : 'yes',
                   'P_k_max_h/Mpc' : 20,
                     'tol_background_integration': 1e-9,

@@ -11,10 +11,10 @@ qterm=0 # 1, 2, 3, 4 only for which neq F2 G2
 
 ell=4
 ellmax=1024
-Nell=16 #128
+Nell=32 #128
 ell_spacing= 'log' # log
 
-Nchi=301
+Nchi=501
 
 bins = [2, 6, 14, 25, 44, 57, 73, 94, 120, 152, 194, 244, 294, 344, 394, 444, \
         494, 514] 
@@ -22,12 +22,12 @@ bins = [2, 6, 14, 25, 44, 57, 73, 94, 120, 152, 194, 244, 294, 344, 394, 444, \
 configuration='esf' # esf
 
 Newton=False
-rad=True
+rad=False
 
 ####################################################
 ### Window function
 window_type=  'euclid' #'nbody' # ska
-euclid_bin_idx = 9   # 0-9; bin edges [0.001,0.42,0.56,0.68,0.79,0.90,1.02,1.15,1.32,1.58,2.50]
+euclid_bin_idx = 4   # 0-9; bin edges [0.001,0.56,0.79,1.02,1.32,2.50]
 
 #z0, dz= 0.50, 0.20
 #ska bin2 = 0.24, 0.059
@@ -44,7 +44,7 @@ euclid_bin_idx = 9   # 0-9; bin edges [0.001,0.42,0.56,0.68,0.79,0.90,1.02,1.15,
 fnl_local = 0
 
 ### output directory
-output_dir = 'output_euclid_bin{}_fnl{}/'.format(euclid_bin_idx, fnl_local)
+output_dir = 'output_euclid_bin{}/'.format(euclid_bin_idx, fnl_local)
 #'output_ska_z{}_dz{}_png/'.format(z0, dz)
 #'output_ska_z{}_dz{}_review_c1c2/'.format(z0, dz)
 

@@ -19,11 +19,25 @@ class FFTLogProcessor:
         self.fctk = fctk if p.lterm!='density' else fctk*k**2
         self.Nk = len(k)
         self.kmin, self.kmax = np.min(k), np.max(k)
+
+        # FFTLog requires a UNIFORM ln k grid: eta_p = 2*pi*p/ln(kmax/kmin) below is only the
+        # true Fourier frequency if dln(k) is constant. CLASS returns a uniform grid only when
+        # k_per_decade_for_bao == k_per_decade_for_pk; if they differ it refines the sampling
+        # around the BAO, the grid silently stops being uniform, and the cp coefficients come
+        # out wrong with no error raised. Cheap guard against a completely silent failure.
+        _dlnk = np.diff(np.log(k))
+        assert np.allclose(_dlnk, _dlnk[0], rtol=1e-6), (
+            "fftlog needs a uniform ln k grid (got dlnk in "
+            f"[{_dlnk.min():.6g}, {_dlnk.max():.6g}]); "
+            "check k_per_decade_for_bao == k_per_decade_for_pk in lincosmo.trans")
+
         self.which = p.which
         self.lterm = p.lterm
         self.mode = p.mode
         self.qterm = p.qterm
-        self.rad = p.rad
+        # Radiation only applies to the second-order kernels; force it False for every linear
+        # building block so a stray -r 1 can never radiation-process (and corrupt) a linear term.
+        self.rad = p.rad and p.which in ['F2', 'G2', 'dv2']
         
         # Pre-compute common quantities
         self.l = np.arange(self.Nk)
@@ -148,8 +162,9 @@ class FFTLogProcessor:
             b = self.set_bias(fctk_list)
             cp = self.get_cp_eta_p(fctk_list, b)
 
-            # For radiation F2/G2/dv2, return flattened structure (no qterm nesting)
-            if self.rad and self.which in ['F2', 'G2', 'dv2']:
+            # For radiation F2/G2/dv2, return flattened structure (no qterm nesting).
+            # self.rad already implies which in [F2,G2,dv2] (see __init__).
+            if self.rad:
                 out_dict['cp'] = cp[0]
                 out_dict['b'] = b[0]
                 out_dict['fctk'] = fctk_list[0]

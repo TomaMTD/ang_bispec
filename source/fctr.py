@@ -1,5 +1,5 @@
 import numpy as np
-import os
+import os, copy
 from numba import njit
 from math import comb
 import cubature, time, h5py
@@ -95,7 +95,8 @@ class WindowDerivatives:
             # based on eq 112-115 of ref 1910.09273
             self.bin_idx, self.H_over_a_data = window_args
 
-            self.BIN_EDGES = [0.001, 0.42, 0.56, 0.68, 0.79, 0.90, 1.02, 1.15, 1.32, 1.58, 2.50]
+            self.BIN_EDGES = np.array([0.001, 0.56, 0.79, 1.02, 1.32, 2.50])
+            #[0.001, 0.42, 0.56, 0.68, 0.79, 0.90, 1.02, 1.15, 1.32, 1.58, 2.50]
 
             # Photo-z parameters (Table 5 of arXiv:1910.09273)
             self.CB, self.ZB, self.SIGMAB = 1.0, 0.0, 0.05
@@ -103,7 +104,8 @@ class WindowDerivatives:
             self.FOUT = 0.1
 
             # Optimised R0_eff per bin (matched to exact n_i(z) shape via L2 minimisation)
-            self.R0_EFF_LIST = [ 2293.5, 1922.7, 1702.4, 1553.2, 1438.6, 1339.7, 1246.7, 1157.5, 1055.7, 883.3]
+            self.R0_EFF_LIST = np.array([2975.8, 2448.7, 2101.7, 1821.8,1425.7])
+            #[ 2293.5, 1922.7, 1702.4, 1553.2, 1438.6, 1339.7, 1246.7, 1157.5, 1055.7, 883.3]
 
             self.n_angular_data = None
 
@@ -539,7 +541,7 @@ def get_coefficients(p, time_dict, compute_c1_c2=''):
             g      = D/a
             g_in   = g * 3./5.*(1. + 2./3.*f/Om)
             deltac = 1.686
-            fnl    = fnl_local
+            fnl    = p.fnl_local
 
             # Lagrangian biases from the Eulerian b1, b2, splined onto the ra grid so they
             # align with the cosmological arrays (data['r'] == ra for euclid, differs for ska): b^L = b - 1
@@ -578,7 +580,7 @@ def get_coefficients(p, time_dict, compute_c1_c2=''):
             # --- velocity v_{2,fNL}: unbiased, pure cosmology x fNL, only H^2/k^2 (index 1) ---
             g    = D/a
             g_in = g * 3./5.*(1. + 2./3.*f/Om)
-            fnl  = fnl_local
+            fnl  = p.fnl_local
             alpha = {0: zeros, 1: 0.5*(-6.*Om/g)*f*g_in*(2.*fnl), 2: zeros}
             beta  = {0: zeros, 1: 0.5*(-6.*Om/g)*f*g_in*(4.*fnl), 2: zeros}
             gamma = {0: zeros, 1: 0.5*(-3.*Om/g)*f*g_in*(   fnl), 2: zeros}
@@ -779,6 +781,14 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
             # Get coefficients
             alpha_coeff, beta_coeff, gamma_coeff = get_coefficients(p, time_dict)
 
+            if COMPUTE_FNL and p.fnl_local != 0 and not p.Newton and p.which in ['G2', 'dv2']:
+                print(f'         Adding v_{{2,fNL}} to {p.which} f0/fm2 multipoles')
+                a_v, b_v, g_v = get_coefficients(p, time_dict, compute_c1_c2='fnl')
+                for key in (0, 1, 2):
+                    alpha_coeff[key] = alpha_coeff[key] + a_v[key]
+                    beta_coeff[key]  = beta_coeff[key]  + b_v[key]
+                    gamma_coeff[key] = gamma_coeff[key] + g_v[key]
+
             if p.which == 'F2':
                 # For F2: use fm2 and fm4 (only independent components)
                 # fm2: [f_00, f_0m2], fm4: [f_00], concatenated to [fm2_0, fm2_2, fm4_0]
@@ -806,11 +816,11 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
             output_key = p.which
 
         # Initialize y_list
-        y_list[output_key] = np.zeros((2, len(qterm_list), len(ell_list), len(r_list)), dtype=np.float64)
+        y_list[output_key] = np.zeros((3, len(qterm_list), len(ell_list), len(r_list)), dtype=np.float64)
 
         # Compute fctr derivatives and apply operators
         # derive_start is already set: F2=0, dv2=1, G2=2
-        max_deriv = 2 + derive_start
+        max_deriv = 4 + derive_start
 
         # For F2: compute b1 derivatives if available
         use_b1 = False
@@ -822,8 +832,11 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                                                         max_deriv=max_deriv+derive_start, smooth_s=1e-6)
             use_b1 = True
 
-            # Compute c1 GR bias corrections (c2 corrections are all zero for f^(-2) and f^(-4))
-            if COMPUTE_C1_C2 and not p.Newton and 'b2' in time_dict['data']:
+            # Compute c1 GR bias corrections (c2 corrections are all zero for f^(-2) and f^(-4)).
+            # NOT for radiation ('not p.rad'): c1/c2 must vanish for the radiation term -- that
+            # velocity coupling already lives in the non-rad density, so applying it here too
+            # double-counts. Radiation is therefore just b1 * delta^(2)_mP,rad.
+            if COMPUTE_C1_C2 and not p.Newton and not p.rad and 'b2' in time_dict['data']:
                 print('         Adding GR bias corrections (c1 terms) to F2 terms (all c2 coeffs vanishe!)')
 
                 # Get c1 correction coefficients
@@ -835,6 +848,18 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                 fctr_list_c1 = fctr_list_fm2_c1 + fctr_list_fm4_c1
 
                 use_c1_c2 = True
+
+            # --- DISABLED: radiation density velocity term 3(b1-1) H T_2^rad = 3(1-b1) H v_2^rad ---
+            # Wrong approach; kept for reference only. It was built as 3 * H^2 * (G2 radiation
+            # multipoles) and fed through the same b1*base + (1-b1)*fctr_c1 combination below.
+            # if p.rad:
+            #     p_g2 = copy.copy(p); p_g2.which = 'G2'
+            #     rad_v2 = compute_radiation_f_nm(p_g2, time_dict)   # [fm2R, fm4R] velocity splines
+            #     _ra  = time_dict['ra']
+            #     _fac = 3.*time_dict['Ha']**2
+            #     fctr_list_c1 = [UnivariateSpline(_ra, _fac*s(_ra), k=5, s=0) for s in rad_v2]
+            #     print('         Adding radiation density velocity term 3(1-b1) H v_2^rad to F2')
+            #     use_c1_c2 = True
         else:
             b1_derivs = None
 
@@ -855,12 +880,12 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                 W_derivs_list_local = W_derivs_list[:required_derivs]
 
             # Compute fctr * W derivatives
-            fctr_W_derivs = [product_deriv(i+derive_start, fctr_derivs, W_derivs_list_local) for i in range(3)]
+            fctr_W_derivs = [product_deriv(i+derive_start, fctr_derivs, W_derivs_list_local) for i in range(5)]
 
             # If b1 is present, apply second product rule: b1 * (fctr * W)
             if use_b1:
                 # Always compute b1 * base * W
-                f, df, d2f = [product_deriv(i, b1_derivs, fctr_W_derivs) for i in range(3)]
+                f, df, d2f, d3f, d4f = [product_deriv(i, b1_derivs, fctr_W_derivs) for i in range(5)]
 
                 # Add GR corrections: b1*base + c1*f_c1 (c2 is zero for f^(-2) and f^(-4))
                 # Since c1 = 1-b1: b1*base + (1-b1)*f_c1 = b1*base - b1*f_c1 + f_c1
@@ -870,23 +895,30 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                                                                max_deriv=max_deriv, smooth_s=0)
 
                     # Compute fctr_c1 * W
-                    fctr_W_derivs_c1 = [product_deriv(i+derive_start, fctr_derivs_c1, W_derivs_list_local) for i in range(3)]
+                    fctr_W_derivs_c1 = [product_deriv(i+derive_start, fctr_derivs_c1, W_derivs_list_local) for i in range(5)]
 
                     # b1 * f_c1 * W
-                    b1_c1 = [product_deriv(i, b1_derivs, fctr_W_derivs_c1) for i in range(3)]
+                    b1_c1 = [product_deriv(i, b1_derivs, fctr_W_derivs_c1) for i in range(5)]
 
                     # Apply c1 corrections: b1*base - b1*f_c1 + f_c1
                     f = f - b1_c1[0] + fctr_W_derivs_c1[0]
                     df = df - b1_c1[1] + fctr_W_derivs_c1[1]
                     d2f = d2f - b1_c1[2] + fctr_W_derivs_c1[2]
+                    d3f = d3f - b1_c1[3] + fctr_W_derivs_c1[3]
+                    d4f = d4f - b1_c1[4] + fctr_W_derivs_c1[4]
             else:
-                f, df, d2f = fctr_W_derivs
+                f, df, d2f , d3f, d4f = fctr_W_derivs
 
             # Store both levels and apply mathcalD operator
             for ind_ell, ell in enumerate(ell_list):
                 alpha = ell*(ell+1) - 2.
                 y_list[output_key][0, qt_ind, ind_ell] = f
                 y_list[output_key][1, qt_ind, ind_ell] = -d2f + 2./r_list*df + alpha/r_list**2*f
+                y_list[output_key][2, qt_ind, ind_ell] = (d4f - 4./r_list*d3f 
+                                        +(8./r_list**2 - 2.*alpha/r_list**2)*d2f 
+                                        +(-8./r_list**3 + 8.*alpha/r_list**3)*df + 
+                                         (alpha**2/r_list**4 - 10.*alpha/r_list**4)*f)
+ 
 
     else:
         # lterm_list is now passed as argument
@@ -931,7 +963,7 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
             elif lterm == 'pot_fnl': # scale dependent bias
                 gin = time_dict['Da']/time_dict['a'] * 3./5. * (1+2./3.*time_dict['fa']/time_dict['Oma'])
                 fctr = UnivariateSpline(time_dict['ra'], \
-                            -time_dict['Ha']/time_dict['a']*time_dict['Da']*2.*fnl_local*1.686*gin/time_dict['a'], k=5, s=0)
+                            -time_dict['Ha']/time_dict['a']*time_dict['Da']*2.*1.686*gin/time_dict['a'], k=5, s=0)
                 derive_start = 0
             else:
                 print('no code for {}'.format(lterm))
@@ -1068,7 +1100,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
         # Second-order velocity fNL: fold v_{2,fNL} into the G2/dv2 base coefficients.
         # Additive and unbiased; only H^2/k^2, which (given beta1=2*alpha1, gamma1=alpha1/4)
         # lands purely in A2 via f_nm - A0/A4 and the fm2/fm4 path are left unchanged.
-        if COMPUTE_FNL and fnl_local != 0 and not p.Newton and p.which in ['G2', 'dv2']:
+        if COMPUTE_FNL and p.fnl_local != 0 and not p.Newton and p.which in ['G2', 'dv2']:
             print(f'     Adding v_{{2,fNL}} to {p.which} kernel')
             a_v, b_v, g_v = get_coefficients(p, time_dict, compute_c1_c2='fnl')
             for key in (0, 1, 2):
@@ -1159,7 +1191,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             # Second-order scale-dependent bias delta_{2,fNL}: independent of the c1/c2/b2
             # GR corrections (its own flag), needs only b2 (for b2^L) and full GR (non-Newton).
             # Produces f0 (2 components: H^2, H^4) and f2 (1 component: H^2); no f4 (index 0 is zero).
-            if COMPUTE_FNL and fnl_local != 0 and not p.Newton and 'b2' in time_dict['data']:
+            if COMPUTE_FNL and p.fnl_local != 0 and not p.Newton and 'b2' in time_dict['data']:
                 print('     Adding delta_{2,fNL} scale-dependent bias term')
                 alpha_fnl, beta_fnl, gamma_fnl = get_coefficients(p, time_dict, compute_c1_c2='fnl')
                 f0_splines_fnl = compute_f_nm_unified(p, alpha_fnl, beta_fnl, gamma_fnl, time_dict, h_power=0)

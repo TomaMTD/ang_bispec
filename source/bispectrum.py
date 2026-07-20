@@ -322,12 +322,13 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     for lt in lterm_list:
                         if lt in group:
                             lt_group = group[lt]
+                            lt_weight = p.fnl_local if lt == 'pot_fnl' else 1.0
                             # Load each ell from the subgroup
                             for i_ell, ell in enumerate(ell_list_file):
                                 ell_key = f'ell_{ell}'
                                 if ell_key in lt_group:
                                     try:
-                                        Cl_nm_summed[i_ell, :] += lt_group[ell_key][()]
+                                        Cl_nm_summed[i_ell, :] += lt_weight * lt_group[ell_key][()]
                                     except ValueError:
                                         print(ell_key, Cl_nm_summed.shape, (lt_group[ell_key][()]).shape)
                                 else:
@@ -371,11 +372,14 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     for lt in lterm_list:
                         if lt in group:
                             lt_group = group[lt]
+                            # pot_fnl Cls are stored per unit fNL (see fctr.py); apply the
+                            # fNL amplitude here so the Cls never need recomputing when fNL changes
+                            lt_weight = p.fnl_local if lt == 'pot_fnl' else 1.0
                             # Load each ell from the subgroup
                             for i_ell, ell in enumerate(ell_list_file):
                                 ell_key = f'ell_{ell}'
                                 if ell_key in lt_group:
-                                    Cl_nm_summed[i_ell, :] += lt_group[ell_key][()]
+                                    Cl_nm_summed[i_ell, :] += lt_weight * lt_group[ell_key][()]
                                 else:
                                     print(f"  Warning: {ell_key} not found in {group_name}/{lt}")
                         else:
@@ -389,11 +393,11 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 # i.e. C_l^delta = C_l^(0,0) + [3 f H^2 - b_phi/(N D)] C_l^(-2,0). Added to d0d/d1d.
                 # b_phi = 2 fNL g_in delta_c (b1-1);  N = 2/(3 Omega_m H0^2).
                 fnl_corr_on_ra = 0.0
-                if fctr.COMPUTE_FNL and fnl_local != 0 and 'data' in time_dict and 'b1' in time_dict['data']:
+                if fctr.COMPUTE_FNL and p.fnl_local != 0 and 'data' in time_dict and 'b1' in time_dict['data']:
                     deltac = 1.686
                     g_in = time_dict['Da']/time_dict['a'] * 3./5.*(1. + 2./3.*time_dict['fa']/time_dict['Oma'])
                     b1L = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1']-1., s=0, k=5)(time_dict['ra'])
-                    b_phi = 2.*fnl_local*g_in*deltac*b1L
+                    b_phi = 2.*p.fnl_local*g_in*deltac*b1L
                     ND = (2./3./omega_m/H0**2) * time_dict['Da']   # N * D
                     fnl_corr_on_ra = -b_phi/ND
 
@@ -1588,6 +1592,13 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
         name_suffix = '_newton'
     else:
         name_suffix = ''
+
+    # fNL is orthogonal to rad/Newton (pot_fnl is in the Newton lterm list too, and the rad
+    # bl uses the linear factors), so append it rather than replace. fnl=0 keeps the bare
+    # name, matching how rad/Newton treat their default: bl_all.h5, bl_all_fnl1.h5,
+    # bl_all_rad_fnl1.h5, ...
+    if p.fnl_local != 0:
+        name_suffix += f'_fnl{p.fnl_local:g}'
 
     # Single file for all 'which' values
     file_path = f"{p.output_dir}bl_{p.lterm}{name_suffix}.h5"

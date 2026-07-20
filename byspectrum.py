@@ -78,6 +78,7 @@ class parameters:
         self.qterm = argv.qterm
         self.Newton = argv.Newton
         self.rad = argv.rad
+        self.fnl_local = argv.fnl_local
         self.z0 = argv.z0
         self.dz = argv.dz
         self.sigma_z = argv.sigma_z
@@ -130,11 +131,11 @@ def main(argv):
         print('Window: Wrmin={:.0f}, Wrmax={:.0f}, sigma_z={:.2f} Mpc/h'.format(Wrmin, Wrmax, argv.sigma_z))
 
     elif argv.window_type == 'euclid':
-        _BIN_EDGES = [0.001, 0.42, 0.56, 0.68, 0.79, 0.90, 1.02, 1.15, 1.32, 1.58, 2.50]
+        _BIN_EDGES = [0.001, 0.56, 0.79, 1.02, 1.32, 2.50]
         _zlo = _BIN_EDGES[argv.euclid_bin_idx]
         _zhi = _BIN_EDGES[argv.euclid_bin_idx + 1]
         rmin = lincosmo.get_distance(max(0.001, _zlo - 0.5))[0]
-        rmax = lincosmo.get_distance(min(3.5, _zhi + 0.7))[0]
+        rmax = lincosmo.get_distance(min(3.5, _zhi + 1))[0]
         H_over_a_data = (time_dict['ra'], time_dict['Ha'] / time_dict['a'])
         window_args = (argv.euclid_bin_idx, H_over_a_data)
         print('Euclid bin {} [z={:.3f}, {:.3f}]: rmin={:.0f}, rmax={:.0f} Mpc/h'.format(
@@ -212,24 +213,19 @@ def main(argv):
         else:
             if argv.which=='all':
                 if argv.rad:
-                    fctk=tr['dTdk']
                     which_list=['F2', 'G2', 'dv2']
                 else:
-                    fctk=Pk
                     which_list=['FG2', 'd2v', 'd1v', 'd3v', 'd1d', 'F2', 'G2', 'dv2']
 
             elif argv.which in ['F2', 'G2', 'dv2']:
-                fctk=tr['dTdk'] if p.rad else Pk
-                which_list=['FG2', argv.which]
+                which_list=[argv.which]
 
             elif argv.which=='primordial':
-                p.rad = 0                                                   
-                p.Newton = 0                                                
-                fctk=tr['phi']
+                p.rad = 0
+                p.Newton = 0
                 which_list=['primordial']
 
             else:
-                fctk=tr['dTdk'] if p.rad else Pk
                 which_list=[argv.which]
 
             print('Computing generalised power spectra for:')
@@ -245,6 +241,13 @@ def main(argv):
                 # Compute fctr and cp dicts organized by lterm
                 fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list, W_derivs_list=W_derivs_list)
                 np.save(argv.output_dir+'fctr_of_r_{}'.format(p.which), fctr_dict)
+
+                if p.which == 'primordial':
+                    fctk = tr['phi']
+                elif p.rad and p.which in ['F2', 'G2', 'dv2']:
+                    fctk = tr['dTdk']
+                else:
+                    fctk = Pk
 
                 cp_dict = fftlog.apply_fftlog_dict(tr['k'], fctk, p)
                 np.save(f'cp_{p.which}', cp_dict)

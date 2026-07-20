@@ -159,6 +159,10 @@ def Il(nu_p, z, ell):
 def hyp21(nu_p, z, ell):
     '''
     Efficient implementation of I_Assassi_Simonovic_Zaldarriaga, see appendix B. of 1705.05022
+      NB: the appendix formula of 1705.05022v1 differs from their Mathematica notebook by a
+      spurious factor 1/Gamma(nu_p/2 - 1) (verified numerically: exact, for all ell and z).
+      The implementation below follows the NOTEBOOK, which reproduces I_ell to ~1e-15.
+      Do not "correct" it to match the paper.
     '''
 
     if z<0.5:

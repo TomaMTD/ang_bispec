@@ -162,7 +162,8 @@ def r_integration_vectorized_precompute(Nchi, r_list, chi_list, y1, t_grid, nu_p
         integrand1 = y1 * sump_cp_I_matrix[ind, :]
         
         # Integrate using Simpson's rule
-        #np.save(f'integrand{ind}', np.vstack([r_list, integrand1]))
+        # np.save(f'integrand{ind}', np.vstack([r_list, integrand1]))
+        # print('save')
         s_cp_I_list[ind] = simpson_numba(integrand1, r_list)
 
         #spline = UnivariateSpline(r_list, integrand1, k=5, s=0)
@@ -907,7 +908,10 @@ def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_li
                 else:
                     # All lterms contribute to the C^(0,0) kernel at level 0
                     # This is the -D_r W̃_r term (times the appropriate fctr for each lterm)
-                    fact_00[i_ell, :] += y_list[lterm][0, 0, i_ell, :]
+                    # pot_fnl is stored PER UNIT fNL (see fctr.py), so apply the fNL amplitude
+                    # here -- same weighting as the bl-side Cl loading in bispectrum.py.
+                    lt_weight = p.fnl_local if lterm == 'pot_fnl' else 1.0
+                    fact_00[i_ell, :] += lt_weight * y_list[lterm][0, 0, i_ell, :]
 
 
 
