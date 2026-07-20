@@ -17,20 +17,22 @@ from mathematica import *
 def compute_hyp21_grid_numba(t_grid, nu_p_grid, ell_grid):
     """
     Compute hyp21 values on the grid using numba for speed
+
+    t_grid is (n_t, n_ell): each ell has its OWN t grid, concentrated on the support of I_ell
+    (see mathematica.build_t_grid), so column i_ell must be used with ell_grid[i_ell].
     """
-    n_t = len(t_grid)
+    n_t = t_grid.shape[0]
     n_nu_p = len(nu_p_grid)
     n_ell = len(ell_grid)
-    
+
     # Preallocate result array
     result = np.zeros((n_t, n_nu_p, n_ell), dtype=np.complex128)
-    
+
     # Compute in parallel over t values
     for i_t in prange(n_t):
-        t = t_grid[i_t]
         for i_nu_p, nu_p in enumerate(nu_p_grid):
             for i_ell, ell in enumerate(ell_grid):
-                result[i_t, i_nu_p, i_ell] = I_nacked(nu_p, t, ell)
+                result[i_t, i_nu_p, i_ell] = I_nacked(nu_p, t_grid[i_t, i_ell], ell)
     return result
 
 
@@ -180,8 +182,9 @@ def compute_integral_precompute(ell_list, chi_list, r_list, t_grid, nu_p, cp_lis
     for ind_ell in prange(len(ell_list)):
         print('         Computing ell='+str(ell_list[ind_ell]))
 
+        # t_grid is (n_t, n_ell): hand each ell its own column, matching F12[:,:,ind_ell]
         s_cp_I_tab[ind_ell] = r_integration_vectorized_precompute(Nchi, r_list, chi_list, \
-                y1[ind_ell], t_grid, nu_p, cp_list, F12[:,:,ind_ell])
+                y1[ind_ell], t_grid[:, ind_ell], nu_p, cp_list, F12[:,:,ind_ell])
     return s_cp_I_tab/ (4*np.pi) 
 
 

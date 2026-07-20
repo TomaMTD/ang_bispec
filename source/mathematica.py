@@ -74,6 +74,33 @@ def tmin_fct(ell, nu_p):
     return tmin
 
 
+def build_t_grid(ell_list, rmin, rmax, k, n_t=1000):
+    '''
+    Per-ell grid of t=r/chi, concentrated on the support of I_ell.
+
+    I_nacked returns EXACTLY 0 for t < tmin_fct(ell, nu_p) (and, via the t->1/t folding, for
+    t > 1/tmin), so the integrand only lives on [tmin, 1/tmin] -- a window shrinking like ~1/ell.
+    A single grid spanning the full [rmin/rmax, rmax/rmin] therefore spends most of its points on
+    an identically-zero region while under-resolving the peak at t=1 (only ~0.5 points across it
+    at ell=1024), which aliases into sign-flipping noise in chi. Putting the same number of points
+    on the actual support fixes that at no extra cost -- the returned array is (n_t, n_ell).
+
+    tmin_fct depends on ell and |Im(nu_p)| only, and WIDENS with |Im|, so we evaluate it at the
+    largest |eta_p| the fftlog can produce, max|eta_p| = pi*Nk/ln(kmax/kmin), to get the widest
+    (hence safest) window. Edges are nudged slightly into the zero region so that the
+    out-of-range clamping of cubic_spline_interp returns ~0 instead of a spurious edge value.
+    '''
+    t_lo_phys, t_hi_phys = rmin/rmax, rmax/rmin
+    max_eta = np.pi*len(k)/np.log(np.max(k)/np.min(k))
+
+    t_grid = np.empty((n_t, len(ell_list)))
+    for i, ell in enumerate(ell_list):
+        tm = tmin_fct(int(ell), complex(0., max_eta))
+        tm = min(max(tm*0.995, t_lo_phys), 1.0)     # 0.5% margin, clipped to the physical range
+        t_grid[:, i] = np.linspace(max(t_lo_phys, tm), min(t_hi_phys, 1./tm), n_t)
+    return t_grid
+
+
 @njit
 def myhyp21_basic(a1, a2, b1, z):
     '''

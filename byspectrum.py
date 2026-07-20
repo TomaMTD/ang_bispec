@@ -101,6 +101,7 @@ def main(argv):
     import bispectrum
     import binning
     import fctr
+    import mathematica
 
     if argv.force!=0: print('-force is activated, overwritting files')
 
@@ -163,7 +164,6 @@ def main(argv):
 
     chi_list=np.linspace(rmin, rmax, argv.Nchi)
     r_list  =np.linspace(rmin, rmax, argv.Nchi)
-    t_grid = np.linspace(rmin/rmax, rmax/rmin, 1000)
 
     if argv.ellmax<=argv.ell:
         ell_list=np.array([argv.ell])
@@ -181,6 +181,9 @@ def main(argv):
             ell_list = np.array([ell if ell % 2 == 0 else ell + 1 for ell in ell_list])
             # Remove duplicates again in case some became the same
             ell_list = np.unique(ell_list)
+
+    # t grid, per ell, concentrated on the support of I_ell (shape (n_t, n_ell))
+    t_grid = mathematica.build_t_grid(ell_list, rmin, rmax, tr['k'])
 
     # Define lterm_list based on p.lterm
     if p.Newton:
