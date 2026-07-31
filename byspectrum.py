@@ -135,7 +135,7 @@ def main(argv):
         _BIN_EDGES = [0.001, 0.56, 0.79, 1.02, 1.32, 2.50]
         _zlo = _BIN_EDGES[argv.euclid_bin_idx]
         _zhi = _BIN_EDGES[argv.euclid_bin_idx + 1]
-        rmin = lincosmo.get_distance(max(0.001, _zlo - 0.5))[0]
+        rmin = lincosmo.get_distance(max(0.015, _zlo - 0.5))[0]
         rmax = lincosmo.get_distance(min(3.5, _zhi + 1))[0]
         H_over_a_data = (time_dict['ra'], time_dict['Ha'] / time_dict['a'])
         window_args = (argv.euclid_bin_idx, H_over_a_data)
@@ -210,7 +210,7 @@ def main(argv):
     # This is cached to disk and reused by all subsequent computations
     # =========================================================================
     print('Loading/computing window function derivatives...')
-    W_derivs_list = fctr.load_or_compute_window_derivatives(p, window_args, r_list, output_dir, max_deriv=11)
+    W_derivs_list, W_lens_derivs_list = fctr.load_or_compute_window_derivatives(p, window_args, r_list, output_dir, max_deriv=11)
 
     if argv.mode in ['cl', 'cln', 'Cl', 'Cln']:
         if argv.which=='cl':
@@ -260,27 +260,6 @@ def main(argv):
 
                 general_ps.compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
 
-    elif argv.mode in ['primordial']:
-        p.rad = 0
-        p.Newton = 0
-
-        if argv.which=='all':
-            which_list=['local', 'ortho', 'equi']
-        else:
-            which_list=[argv.which]
-
-        if argv.configuration=='esf':
-            config_list = ['equi', 'squ', 'folded', 'squ2']
-        elif argv.configuration=='es':
-            config_list = ['equi', 'squ']
-        else:
-            config_list = [argv.configuration]
-
-        for p.configuration in config_list:
-            for p.which in which_list:
-                bispectrum.compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                                                   W_derivs_list=W_derivs_list, tr=tr, Pk=tr['phi'], t_grid=t_grid)
-
     else:
 
         if argv.configuration=='esf':
@@ -289,7 +268,23 @@ def main(argv):
             config_list = ['equi', 'squ']
         else:
             config_list = [argv.configuration]
-            
+
+        # Primordial shapes, now under -m bl like everything else. local uses potential
+        # transfer (tr['phi']) with no rad/Newton. -w local computes local only; equi/ortho/
+        # primordial all compute the three blocks and save the combined shapes.
+        if argv.which in ('local', 'equi', 'ortho', 'primordial'):
+            p.rad = 0
+            p.Newton = 0
+            for p.configuration in config_list:
+                p.which = argv.which
+                if argv.which == 'local':
+                    bispectrum.compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
+                                                       W_derivs_list=W_derivs_list, tr=tr, Pk=tr['phi'], t_grid=t_grid)
+                else:
+                    bispectrum.get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lterm_list,
+                                                       W_derivs_list=W_derivs_list, tr=tr, Pk=tr['phi'], t_grid=t_grid)
+            return 0
+
         if p.rad and p.Newton:
             rad_Newton_list = [[0, 0], [1, 0], [0, 1]]
         else:

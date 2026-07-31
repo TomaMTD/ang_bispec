@@ -224,7 +224,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
         
         # Single Cl_array for all cases
         Cl_array = np.zeros((n_ell, n_chi, 3))
-    elif p.mode=='primordial':
+    elif p.which in ('local', 'equi', 'ortho'):
         nm_pairs_list = [get_nm_pairs_for_bispectrum(p.which)]
         which_for_cls_list = [p.which]
         
@@ -257,7 +257,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 # They should be in each group, let's get from first group
                 n, m = nm_pairs[0][0], nm_pairs[0][1]
 
-                first_group_name = f'{"primordial_" if p.mode=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}'
+                first_group_name = f'{"primordial_" if p.which in ("local","equi","ortho") else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}'
                 if first_group_name not in f:
                     raise ValueError(f"Group {first_group_name} not found in {cls_file}")
 
@@ -307,7 +307,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
             if which_for_cls not in ['d0d', 'd1d', 'dod'] or (p.Newton and which_for_cls not in ['dod']):
                 # For each (n,m) pair, sum over lterms
                 for cl_idx, (n, m) in enumerate(nm_pairs):
-                    group_name = f'{"primordial_" if p.mode=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}' 
+                    group_name = f'{"primordial_" if p.which in ("local","equi","ortho") else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}' 
 
                     if group_name not in f:
                         print(f"  Warning: Group {group_name} not found, skipping")
@@ -450,7 +450,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 else:
                     Cl_array[valid_mask, :, idx] = Cl_subset
 
-    if p.mode in ['primordial', 'cl']:
+    if p.mode=='cl' or p.which in ('local', 'equi', 'ortho'):
         return Cl_array
     else:
         # ========================================================================
@@ -1181,7 +1181,7 @@ def ell_configurations(p, ell_list):
         # Equilateral: ell1 = ell2 = ell3
         for i, ell in enumerate(ell_list):
             ell_int = int(ell)
-            wigner_test = float(wigner_3j(ell_int, ell_int, ell_int, 0, 0, 0))
+            wigner_test = wig3jj(2*ell_int, 2*ell_int, 2*ell_int, 0, 0, 0)  # fast pywigxjpf (tables set up above)
             if wigner_test != 0:
                 triplets.append([i, i, i])
                 wigner_values.append(wigner_test)
@@ -1203,7 +1203,7 @@ def ell_configurations(p, ell_list):
                 # Triangle inequality
                 if ell23 < abs(ell1_fixed - ell23) or ell23 > ell1_fixed + ell23:
                     continue
-                wigner_test = float(wigner_3j(ell1_int, ell23_int, ell23_int, 0, 0, 0))
+                wigner_test = wig3jj(2*ell1_int, 2*ell23_int, 2*ell23_int, 0, 0, 0)  # fast pywigxjpf
                 if wigner_test != 0:
                     triplets.append([i1, i23, i23])
                     wigner_values.append(wigner_test)
@@ -1229,7 +1229,7 @@ def ell_configurations(p, ell_list):
                 # Triangle inequality: |ell2-ell3| <= ell1 <= ell2+ell3  ->  0 <= ell1 <= 2*ell23
                 if ell1_int > 2*ell23_int:
                     continue
-                wigner_test = float(wigner_3j(ell1_int, ell23_int, ell23_int, 0, 0, 0))
+                wigner_test = wig3jj(2*ell1_int, 2*ell23_int, 2*ell23_int, 0, 0, 0)  # fast pywigxjpf
                 if wigner_test != 0:
                     triplets.append([i1, i23, i23])
                     wigner_values.append(wigner_test)
@@ -1253,7 +1253,7 @@ def ell_configurations(p, ell_list):
                 # Triangle inequality
                 if ell23 < abs(ell1_fixed - ell23) or ell23 > ell1_fixed + ell23:
                     continue
-                wigner_test = float(wigner_3j(ell1_int, ell23_int, ell23_int, 0, 0, 0))
+                wigner_test = wig3jj(2*ell1_int, 2*ell23_int, 2*ell23_int, 0, 0, 0)  # fast pywigxjpf
                 if wigner_test != 0:
                     triplets.append([i1, i23, i23])
                     wigner_values.append(wigner_test)
@@ -1506,11 +1506,6 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
         Precomputed window derivatives. If None, will be computed from window_args.
     """
 
-    # Check if we need to compute all primordial shapes
-    if p.which == 'all_primordial':
-        return get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                                         W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
-
     print(f"="*70)
     print(f"Computing bispectrum for ell_list={ell_list[0]}-{ell_list[-1]}, which={p.which}")
     print(f"="*70)
@@ -1519,7 +1514,7 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
     # 2. Load all data once
     # ========================================================================
     start_time = time.time()
-    if p.mode=='primordial':
+    if p.which in ('local', 'equi', 'ortho'):
         Cl_array = load_and_compute_all_terms(
                         p, ell_list, chi_list, time_dict, window_args, lterm_list,
                         W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)

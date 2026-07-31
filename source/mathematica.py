@@ -97,7 +97,10 @@ def build_t_grid(ell_list, rmin, rmax, k, n_t=1001):   # odd: r_integration Simp
     for i, ell in enumerate(ell_list):
         tm = tmin_fct(int(ell), complex(0., max_eta))
         tm = min(max(tm*0.995, t_lo_phys), 1.0)     # 0.5% margin, clipped to the physical range
-        t_grid[:, i] = np.linspace(max(t_lo_phys, tm), min(t_hi_phys, 1./tm), n_t)
+        # log-spaced: r_integration integrates in u=ln t, so the resolution near t=1 no longer
+        # degrades as rmax/rmin widens (lensing needs rmax/rmin ~ 500 instead of ~5).
+        t_grid[:, i] = np.exp(np.linspace(np.log(max(t_lo_phys, tm)),
+                                          np.log(min(t_hi_phys, 1./tm)), n_t))
     return t_grid
 
 

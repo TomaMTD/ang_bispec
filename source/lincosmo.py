@@ -2,6 +2,7 @@ import numpy as np
 import os
 from classy import Class
 from scipy.integrate import solve_ivp
+from scipy.optimize import brentq
 from numba import njit
 import cubature
 
@@ -146,15 +147,26 @@ def growth_fct(input_data=0, window_type=None):
                 method='DOP853',  # 8th order Runge-Kutta
                 rtol=1e-12, atol=1e-14,
                 dense_output=True)
-    asol = sol.y.T
-    
+
+    # Resample the (exact) dense output on a grid uniform in r: the adaptive stepper leaves only
+    # ~26 nodes, none below r=268, which is too coarse for the k=5 splines and too high for lensing.
+    r_floor, Nr = 60., 300
+    t_map = np.geomspace(t0, tmax, 2000)
+    a_map = sol.sol(t_map)[0]
+    ok    = a_map < 1.
+    r_map = np.array([get_distance(1./A - 1.)[0] for A in a_map[ok]])
+    o     = np.argsort(r_map)
+    # descending in r == ascending in a, the order the code below expects
+    asol  = sol.sol(np.interp(np.linspace(8000., r_floor, Nr), r_map[o], t_map[ok][o])).T
+
     apy = asol[:,0]
     Dpy = asol[:,1]
     fpy = asol[:,2]/(H_(1./apy-1.)*Dpy)
     vpy = 7./3.*asol[:,3]/Dpy**2
     wpy = 7./6.*asol[:,4]/(H_(1./apy-1.)*Dpy**2)
     
-    D0=np.interp(1, asol[:,0], asol[:,1])
+    # exact D(a=1): a linear interp on the node grid made D0 depend on where the stepper stopped
+    D0 = sol.sol(brentq(lambda t: sol.sol(t)[0]-1., sol.t[0], sol.t[-1]))[1]
     Dpy/=D0
 
     ra=np.zeros((len(apy)))
@@ -166,7 +178,7 @@ def growth_fct(input_data=0, window_type=None):
         Ha[ind]=H_(zi)
         Oma[ind]=Om_(zi)
 
-    mask = np.logical_and(ra[::-1]>100, ra[::-1]<8000) # unphysical small distances, avoid spline error
+    mask = np.logical_and(ra[::-1]>0, ra[::-1]<8000) # unphysical small distances, avoid spline error
     dHa = dotH_(1./apy[::-1]-1.)
 
     time_dict = {'a'  : apy[::-1][mask],\

@@ -1,7 +1,7 @@
 import numpy as np
 import os, copy
 from numba import njit
-from math import comb
+from math import comb, factorial
 import cubature, time, h5py
 from scipy.integrate import simpson
 from sympy.physics.wigner import wigner_3j
@@ -169,15 +169,15 @@ class WindowDerivatives:
             ra_grid, H_over_a_values = self.H_over_a_data
 
             # Create H/a spline
-            H_over_a_spline = UnivariateSpline(ra_grid, H_over_a_values, s=0, ext=0)
+            self.H_over_a_spline = UnivariateSpline(ra_grid, H_over_a_values, s=0, ext=0, k=5)
 
             # Create n_angular spline if available and not nbody
             if self.n_angular_data is not None and self.window_type != 'nbody':
                 r_nz_grid, n_angular_values = self.n_angular_data
-                n_angular_spline = UnivariateSpline(r_nz_grid, n_angular_values, s=0, ext=0)
+                self.n_angular_spline = UnivariateSpline(r_nz_grid, n_angular_values, s=0, ext=0, k=5)
                 print(f"    Using n(z) angular normalization (SKA-type window)")
             else:
-                n_angular_spline = None
+                self.n_angular_spline = None
 
             # Lambdify the unnormalized window for numerical integration
             W_unnorm_func = sp.lambdify(sp_x, W_unnorm.subs({sp_xmin: self.xmin,
@@ -186,17 +186,19 @@ class WindowDerivatives:
 
             # Integrand: includes n_angular if available (for SKA-type surveys)
             def integrand(r):
-                H_over_a = H_over_a_spline(r)
+                H_over_a = self.H_over_a_spline(r)
                 W = W_unnorm_func(r)
-                if n_angular_spline is not None:
-                    return n_angular_spline(r) * H_over_a * W
+                if self.n_angular_spline is not None:
+                    return self.n_angular_spline(r) * H_over_a * W
                 else:
                     return H_over_a * W
 
             sp_normW, _ = quad(integrand, max(1.0, self.xmin - 20*self.sigma_z), self.xmax + 20*self.sigma_z, epsrel=1e-4, epsabs=0)
-            integral_type = "n_angular*H/a*W" if n_angular_spline is not None else "H/a*W"
+            integral_type = "n_angular*H/a*W" if self.n_angular_spline is not None else "H/a*W"
             print(f"        Computed normW = ∫({integral_type})dr = {sp_normW:.4e}")
         else:
+            self.H_over_a_spline = None
+            self.n_angular_spline = None
             # Fallback: use analytical formula for ∫ W dr (old behavior)
             sp_normW = 1./4.*self.sigma_z*(1. + 1./np.tanh((self.xmax - self.xmin)/self.sigma_z))*2./self.sigma_z*(self.xmax-self.xmin)
             print(f"  Warning: H/a data not provided, using ∫W dr normalization = {sp_normW:.6e}")
@@ -280,6 +282,49 @@ class WindowDerivatives:
             # No n_angular: return W derivatives as-is
             return W_derivs
 
+    def get_lensing_derivatives(self, x, W_derivs_list, max_deriv=11):
+        """
+        Derivatives of the lensing efficiency window, evaluated on x (ascending):
+
+            W_phi(r') = ∫_{r'}^∞ dr Wh(r) (r-r')/(r r') = g0(r')/r' - g1(r'),
+            Wh = (H/a)*n_angular*W/normW,  g0 = ∫_{r'}^∞ Wh dr,  g1 = ∫_{r'}^∞ Wh/r dr.
+
+        Wh carries the H/a Jacobian that the other lterms keep inside fctr: here the
+        source integral is done up front, so it has to be inside it (∫Wh dr = 1).
+
+        Only g0 and g1 are numerical. Differentiating once, the g1 term cancels,
+        W_phi' = -Wh/r' - g0/r'^2 + Wh/r' = -g0/r'^2, so every order n>=1 is Leibniz on
+        -g0*r'^-2 with g0^(k) = -Wh^(k-1) -- the analytic window derivatives we already have.
+
+        W_derivs_list : derivatives of n_angular*W/normW on x (get_all_derivatives).
+        """
+        # source density Wh (W_derivs_list already holds n_angular*W/normW, so only H/a is missing)
+        n_ang = self.n_angular_spline if self.n_angular_spline is not None else (lambda r: 1.)
+        Wh = lambda r: self.H_over_a_spline(r) * n_ang(r) * self._cached_expressions[(0, 0)](r)
+
+        # computation of g0 and g1 interatively with a backward loop!
+        g0, g1 = np.zeros_like(x), np.zeros_like(x)
+        for i in range(len(x)-2, -1, -1):
+            g0[i] = g0[i+1] + quad(Wh, x[i], x[i+1])[0]
+            g1[i] = g1[i+1] + quad(lambda r: Wh(r)/r, x[i], x[i+1])[0]
+        if abs(g0[0] - 1.) > 1e-3:
+            print(f'  Warning: lensing source integral captures {g0[0]:.4f} of the window '
+                  f'(expected 1): r grid [{x[0]:.0f}, {x[-1]:.0f}] does not bracket its support')
+
+        # derivatives of Wh = (H/a) * W, by the product rule
+        H_derivs = compute_spline_derivatives(self.H_over_a_spline, self.H_over_a_data[0], x,
+                                              max_deriv=max_deriv-2, smooth_s=0)
+        Wh_derivs = [product_deriv(i, H_derivs, W_derivs_list) for i in range(max_deriv-1)]
+
+        # W_phi^(n) = d^(n-1)/dr^(n-1)[-g0/r^2], with d^m/dr^m[r^-2] = (-1)^m (m+1)!/r^(m+2)
+        g0_derivs = [g0] + [-Wh_derivs[k-1] for k in range(1, max_deriv)]
+        derivs = [g0/x - g1]
+        for n in range(1, max_deriv+1):
+            derivs.append(-sum(comb(n-1, k) * g0_derivs[k]
+                               * (-1.)**(n-1-k) * factorial(n-k) / x**(n+1-k)
+                               for k in range(n)))
+        return derivs
+
 
 def load_or_compute_window_derivatives(p, window_args, r_list, output_dir, max_deriv=11):
     """
@@ -304,6 +349,8 @@ def load_or_compute_window_derivatives(p, window_args, r_list, output_dir, max_d
     --------
     W_derivs_list : list of arrays
         List of window derivatives [W, dW, d2W, ..., d^max_deriv W]
+    W_lens_derivs_list : list of arrays
+        Same for the lensing efficiency window (see get_lensing_derivatives)
     """
     window_cache_file = f'{output_dir}window_derivs_cache.npz'
     window_type = p.window_type
@@ -357,9 +404,10 @@ def load_or_compute_window_derivatives(p, window_args, r_list, output_dir, max_d
             cache = np.load(window_cache_file, allow_pickle=True)
             cached_cp = cache['params'].item()
             cp = _build_cache_params(window_type, window_args, r_list, max_deriv)
-            if _params_match(cp, cached_cp):
+            if _params_match(cp, cached_cp) and 'lens_deriv_0' in cache:
                 print('  Cache valid! Loading precomputed window derivatives...')
                 W_derivs_list = [cache[f'deriv_{i}'] for i in range(max_deriv + 1)]
+                W_lens_derivs_list = [cache[f'lens_deriv_{i}'] for i in range(max_deriv + 1)]
                 load_from_cache = True
             else:
                 print('  Cache invalid (parameters changed), will recompute...')
@@ -371,15 +419,21 @@ def load_or_compute_window_derivatives(p, window_args, r_list, output_dir, max_d
         W_derivs = WindowDerivatives(window_type, window_args)
         W_derivs_list = W_derivs.get_all_derivatives(r_list, r_power=0, max_deriv=max_deriv)
 
+        print('  Computing lensing efficiency window derivatives...')
+        W_lens_derivs_list = W_derivs.get_lensing_derivatives(r_list, W_derivs_list,
+                                                             max_deriv=max_deriv)
+
         print('  Saving window derivatives to cache...')
         cp = _build_cache_params(window_type, window_args, r_list, max_deriv)
         save_dict = {'params': cp}
         for i, deriv in enumerate(W_derivs_list):
             save_dict[f'deriv_{i}'] = deriv
+        for i, deriv in enumerate(W_lens_derivs_list):
+            save_dict[f'lens_deriv_{i}'] = deriv
         np.savez(window_cache_file, **save_dict)
         print(f'  Cache saved to {window_cache_file}')
 
-    return W_derivs_list
+    return W_derivs_list, W_lens_derivs_list
 
 
 # ============================================================================

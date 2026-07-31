@@ -137,7 +137,7 @@ def r_integration_vectorized_precompute(Nchi, r_list, chi_list, y1, t_grid, nu_p
     rmin, rmax = r_list[0], r_list[-1]
     s_cp_I_list = np.zeros(Nchi)
 
-    r_sub = np.empty(n_t)
+    log_t = np.log(t_grid)   # uniform (build_t_grid is log-spaced): integrate in u=ln t
     integrand = np.empty(n_t)
     integrand_r = np.empty(len(r_list))
 
@@ -148,23 +148,21 @@ def r_integration_vectorized_precompute(Nchi, r_list, chi_list, y1, t_grid, nu_p
             # The support of I_ell is WIDER than the physical range, so it restricts nothing
             # and there is nothing to concentrate on.
             for j in range(len(r_list)):
-                # t_grid is a linspace (build_t_grid), so the uniform-grid lookup applies here
-                # too -- and matters: this branch does len(r_list) lookups per chi, and the
-                # scan version walked ~500 steps of the 1001-point t_grid for each one.
-                integrand_r[j] = y1[j] * cubic_interp_uniform(r_list[j]/chi, t_grid,
+                # lookup in ln t, where the grid is uniform
+                integrand_r[j] = y1[j] * cubic_interp_uniform(np.log(r_list[j]/chi), log_t,
                                                               sump_cp_I_matrix[ind, :])
             s_cp_I_list[ind] = simpson_numba(integrand_r, r_list)
 
         else:
+            # dr = r du with u = ln t, hence the extra factor r
             for j in range(n_t):
                 r = chi*t_grid[j]
-                r_sub[j] = r
                 if r < rmin or r > rmax:
                     integrand[j] = 0.
                 else:
-                    integrand[j] = cubic_interp_uniform(r, r_list, y1) * sump_cp_I_matrix[ind, j]
+                    integrand[j] = cubic_interp_uniform(r, r_list, y1) * sump_cp_I_matrix[ind, j] * r
 
-            s_cp_I_list[ind] = simpson_numba(integrand, r_sub)
+            s_cp_I_list[ind] = simpson_numba(integrand, log_t)
 
     return s_cp_I_list
 
@@ -212,6 +210,75 @@ def compute_integral_Am_numba(chi_list, r_list, fctr_r, ell):
 
         # Integrate using Simpson's rule
         result[i_chi] = simpson_numba(integrand, r_list) / (2 * np.pi**2)
+
+    return result
+
+
+@njit
+def Il_on_tgrid(t_grid_col, ell):
+    """Tabulate the Am kernel  fact * Il(-1, t_use, ell)  on the t_grid nodes.
+
+    Same reflection as compute_integral_Am_numba (t>1 -> fact=t, argument 1/t). Depends only
+    on (t, ell), not chi -- exactly like F12 in the cp path -- so it is built once per ell and
+    reused for every chi. Real, since only the real part is ever used.
+    """
+    n_t = len(t_grid_col)
+    out = np.empty(n_t)
+    for j in range(n_t):
+        t = t_grid_col[j]
+        if t > 1.:
+            out[j] = t * Il(-1+0.j, (1./t)+0.j, ell).real
+        else:
+            out[j] = Il(-1+0.j, t+0.j, ell).real
+    return out
+
+
+@njit(parallel=True)
+def compute_integral_Am_precompute(chi_list, r_list, fctr_r, t_grid_col, Il_tab, ell):
+    """Adaptive-grid version of compute_integral_Am_numba.
+
+    Integrates fctr(r) * chi * fact * Il(-1, r/chi, ell) over r, but samples r = chi*t on the
+    per-ell t_grid concentrated on the support of Il instead of the fixed r_list. That fixes the
+    same aliasing the cp path had: at large ell the Il peak narrows like 1/ell while r_list stays
+    put, so only a handful of nodes hit it and the result oscillates in chi. Il is tabulated on
+    the t_grid nodes (Il_tab), so every sample lands exactly on a node; only fctr is interpolated
+    (it is smooth, and r_list is uniform -> cubic_interp_uniform).
+
+    Where the support is wider than [rmin,rmax] (low ell) it falls back to the original fixed-
+    r_list quadrature, recomputing Il directly, so low ell is unchanged bit-for-bit.
+    """
+    n_t = len(t_grid_col)
+    rmin, rmax = r_list[0], r_list[-1]
+    Nchi = len(chi_list)
+    result = np.zeros(Nchi)
+
+    for ind in prange(Nchi):
+        chi = chi_list[ind]
+
+        if t_grid_col[0] <= rmin/chi and t_grid_col[-1] >= rmax/chi:
+            # support wider than the physical range: original scheme, Il recomputed directly
+            integrand = np.empty(len(r_list))
+            for j in range(len(r_list)):
+                t = r_list[j] / chi
+                if t > 1.:
+                    k = t * Il(-1+0.j, (1./t)+0.j, ell).real
+                else:
+                    k = Il(-1+0.j, t+0.j, ell).real
+                integrand[j] = fctr_r[j] * k
+            acc = simpson_numba(integrand, r_list)
+        else:
+            # dr = r du with u = ln t, hence the extra factor r
+            log_t = np.log(t_grid_col)
+            integrand = np.empty(n_t)
+            for j in range(n_t):
+                r = chi * t_grid_col[j]
+                if r < rmin or r > rmax:
+                    integrand[j] = 0.
+                else:
+                    integrand[j] = cubic_interp_uniform(r, r_list, fctr_r) * Il_tab[j] * r
+            acc = simpson_numba(integrand, log_t)
+
+        result[ind] = chi * acc / (2. * np.pi**2)
 
     return result
 
@@ -553,15 +620,20 @@ def compute_integral_F2_G2_dv2(p, ell_list, chi_list, r_list, t_grid, cp_dict, f
             for ind_ell, ell in enumerate(ell_list):
                 #print(f'      ell={ell} ({ind_ell+1}/{len(ell_list)})')
 
+                # Tabulate Il(-1, t, ell) on this ell's adaptive t_grid once (chi-independent,
+                # shared by all components) -- the aliasing fix, mirroring the cp path.
+                el = int(ell)
+                t_col = np.ascontiguousarray(t_grid[:, ind_ell])
+                Il_tab = Il_on_tgrid(t_col, el)
+
                 # Compute integrals for specified components
                 for comp_idx, qt in enumerate(qterm_indices):
                     # Get fctr for this component - use specified level
                     fctr_r = fctr[level, qt, ind_ell, :]  # shape: (len(r_list),)
 
-                    # Compute integral over r for all chi values
-                    start_time = time.time()
-                    integral_result = compute_integral_Am_numba(
-                        chi_list, r_list, fctr_r, ell
+                    # Compute integral over r for all chi values (adaptive t_grid sampling)
+                    integral_result = compute_integral_Am_precompute(
+                        chi_list, r_list, fctr_r, t_col, Il_tab, el
                     )
 
                     result[comp_idx, ind_ell, :] = chi_list**2 * integral_result
