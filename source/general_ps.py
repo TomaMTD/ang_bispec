@@ -796,7 +796,7 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
                     else:
                         stuff2 = (2./3./omega_m/H0**2)**2
 
-                    if lterm in ['pot', 'dpot', 'pot_fnl']:
+                    if lterm in ['pot', 'dpot', 'pot_fnl', 'lensing']:   # no k^2: one Poisson factor less
                         stuff2 /= (2./3./omega_m/H0**2)
 
                     # Compute integral
@@ -910,7 +910,7 @@ def merge_fallback_files(output_dir):
 
 
 def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_list,
-                                 W_derivs_list=None):
+                                 W_derivs_list=None, W_lens_derivs_list=None):
     """
     Compute power spectrum using equation (36) from the PDF.
 
@@ -963,7 +963,8 @@ def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_li
     # Get y_list from fct_of_r_analytical
     # This computes all lterm contributions at level 0 (no D_ell operator)
     y_list = fctr_module.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args,
-                                      lterm_list, W_derivs_list=W_derivs_list)
+                                      lterm_list, W_derivs_list=W_derivs_list,
+                                      W_lens_derivs_list=W_lens_derivs_list)
 
     # ========================================================================
     # 3. Build kernels for equation (36)
@@ -987,9 +988,9 @@ def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_li
                 # For C^(-2,0), we need derivative contributions
                 # From eq. (36): includes RSD, doppler, potentials, etc.
                 # These come from higher derivative levels or specific lterm combinations
-                if lterm in ['rsd', 'doppler', 'pot', 'pot_gr', 'dpot']:
+                if lterm in ['rsd', 'doppler', 'pot', 'pot_gr', 'dpot', 'lensing']:
                     # Use level 0 for these correction terms
-                    if lterm in ['pot', 'dpot']:
+                    if lterm in ['pot', 'dpot', 'lensing']:
                         fact_m20[i_ell, :] += y_list[lterm][0, 0, i_ell, :] / (2./3./omega_m/H0**2)
                     else:
                         fact_m20[i_ell, :] += y_list[lterm][0, 0, i_ell, :]

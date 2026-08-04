@@ -180,7 +180,7 @@ def get_nm_pairs_for_bispectrum(which, Newton=0):
 
 
 def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                               W_derivs_list=None, tr=None, Pk=None, t_grid=None):
+                               W_derivs_list=None, W_lens_derivs_list=None, tr=None, Pk=None, t_grid=None):
     """
     Unified loading function: loads Cls, Am, Il AND computes A0, A2, A4 kernels.
     Everything is evaluated/interpolated onto the same chi grid for efficient integration.
@@ -304,6 +304,17 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 # Create mask for valid ells
                 valid_mask = np.array([ell in ell_list_file for ell in ell_list])
             
+            # Linear bias on the density leg of a quadratic vertex: delta_g = b1*delta.
+            b1_cl = b1_dot_cl = None
+            # d0dd0d excluded: it is the b2/2*delta^2 vertex, whose legs are the matter
+            # density (2011.13660 Table 1, the (delta_T)^2 row carries b20 and no b10).
+            if fctr.COMPUTE_B1 and which_for_cls in ['d0d', 'd1d', 'dod'] and p.which != 'd0dd0d' \
+                    and 'data' in time_dict and 'b1' in time_dict['data']:
+                b1_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1'], k=5, s=0)
+                b1_cl = b1_spline(chi_list_file)
+                # prime = d/dtau = -d/dr on the lightcone, as for c2 = -db1/dr + 3*H*b2 in fctr.py
+                b1_dot_cl = -b1_spline.derivative(1)(chi_list_file)
+
             if which_for_cls not in ['d0d', 'd1d', 'dod'] or (p.Newton and which_for_cls not in ['dod']):
                 # For each (n,m) pair, sum over lterms
                 for cl_idx, (n, m) in enumerate(nm_pairs):
@@ -322,19 +333,23 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     for lt in lterm_list:
                         if lt in group:
                             lt_group = group[lt]
-                            lt_weight = p.fnl_local if lt == 'pot_fnl' else 1.0
+                            fnl_weight = p.fnl_local if lt == 'pot_fnl' else 1.0
                             # Load each ell from the subgroup
                             for i_ell, ell in enumerate(ell_list_file):
                                 ell_key = f'ell_{ell}'
                                 if ell_key in lt_group:
                                     try:
-                                        Cl_nm_summed[i_ell, :] += lt_weight * lt_group[ell_key][()]
+                                        Cl_nm_summed[i_ell, :] += fnl_weight * lt_group[ell_key][()]
                                     except ValueError:
                                         print(ell_key, Cl_nm_summed.shape, (lt_group[ell_key][()]).shape)
                                 else:
                                     print(f"  Warning: {ell_key} not found in {group_name}/{lt}")
                         else:
                             print(f"  Warning: Subgroup {lt} not found in {group_name}")
+
+                    # Newton d0d/d1d land here: the single nm pair is the Newtonian density
+                    if b1_cl is not None:
+                        Cl_nm_summed = Cl_nm_summed * b1_cl[None, :]
 
                     # Extract requested ells (they match indices now since we built ell_list_file by scanning)
                     valid_ell_indices = [i for i, ell in enumerate(ell_list_file) if ell in ell_list]
@@ -374,12 +389,12 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                             lt_group = group[lt]
                             # pot_fnl Cls are stored per unit fNL (see fctr.py); apply the
                             # fNL amplitude here so the Cls never need recomputing when fNL changes
-                            lt_weight = p.fnl_local if lt == 'pot_fnl' else 1.0
+                            fnl_weight = p.fnl_local if lt == 'pot_fnl' else 1.0
                             # Load each ell from the subgroup
                             for i_ell, ell in enumerate(ell_list_file):
                                 ell_key = f'ell_{ell}'
                                 if ell_key in lt_group:
-                                    Cl_nm_summed[i_ell, :] += lt_weight * lt_group[ell_key][()]
+                                    Cl_nm_summed[i_ell, :] += fnl_weight * lt_group[ell_key][()]
                                 else:
                                     print(f"  Warning: {ell_key} not found in {group_name}/{lt}")
                         else:
@@ -391,29 +406,31 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
 
                 # fNL scale-dependent bias: the density Cl factor 3 f H^2 picks up -b_phi/(N D),
                 # i.e. C_l^delta = C_l^(0,0) + [3 f H^2 - b_phi/(N D)] C_l^(-2,0). Added to d0d/d1d.
-                # b_phi = 2 fNL g_in delta_c (b1-1);  N = 2/(3 Omega_m H0^2).
+                # b_phi = -2 fNL g_in delta_c (b1-1);  N = 2/(3 Omega_m H0^2). Sign must match
+                # get_coefficients in fctr.py (Phi = -phi convention): Delta_b1 > 0 for fNL>0, b1>1.
                 fnl_corr_on_ra = 0.0
+                fnl_dot_corr_on_ra = 0.0
                 if fctr.COMPUTE_FNL and p.fnl_local != 0 and 'data' in time_dict and 'b1' in time_dict['data']:
                     deltac = 1.686
                     g_in = time_dict['Da']/time_dict['a'] * 3./5.*(1. + 2./3.*time_dict['fa']/time_dict['Oma'])
                     b1L = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1']-1., s=0, k=5)(time_dict['ra'])
-                    b_phi = 2.*p.fnl_local*g_in*deltac*b1L
-                    ND = (2./3./omega_m/H0**2) * time_dict['Da']   # N * D
-                    fnl_corr_on_ra = -b_phi/ND
+                    b_phi = - 2.*p.fnl_local*g_in*deltac*b1L
+                    N = (2./3./omega_m/H0**2) # N * D
+                    fnl_corr_on_ra = -b_phi/ N / time_dict['Da']
+                    # dod carries D in its factors, so the object to differentiate is b_phi/N, not
+                    # b_phi/(ND). prime = d/dtau = -d/dr, the convention checked on the f-dot bracket.
+                    fnl_dot_corr_on_ra = -UnivariateSpline(time_dict['ra'], b_phi, s=0, k=5).derivative(1)(time_dict['ra']) / N
 
-                if which_for_cls == 'd1d':
-                    # d1d: Cl = Cl_d1d + [3*H²*f - b_phi/(N D)] * Cl_d1v
+                # b1 multiplies the Newtonian density Cl_nm_list[0] only (see b1_cl above)
+                b1_0 = 1.0 if b1_cl is None else b1_cl
+
+                if which_for_cls in ['d0d', 'd1d']:
+                    # d0d: Cl = b1*Cl_F2(m=0) + [3*H²*f - b_phi/(N D)] * Cl_F2(m=-2)
+                    # d1d: Cl = b1*Cl_d1d + [3*H²*f - b_phi/(N D)] * Cl_d1v
                     factor_on_ra = 3.0 * time_dict['Ha']**2 * time_dict['fa'] + fnl_corr_on_ra
                     factor_spline = UnivariateSpline(time_dict['ra'], factor_on_ra, s=0, k=5)
                     factor = factor_spline(chi_list_file)
-                    Cl_combined = Cl_nm_list[0] + factor[None, :] * Cl_nm_list[1]
-
-                elif which_for_cls == 'd0d':
-                    # d0d: Cl = Cl_F2(m=0) + [3*H²*f - b_phi/(N D)] * Cl_F2(m=-2)
-                    factor_on_ra = 3.0 * time_dict['Ha']**2 * time_dict['fa'] + fnl_corr_on_ra
-                    factor_spline = UnivariateSpline(time_dict['ra'], factor_on_ra, s=0, k=5)
-                    factor = factor_spline(chi_list_file)
-                    Cl_combined = Cl_nm_list[0] + factor[None, :] * Cl_nm_list[1]
+                    Cl_combined = b1_0 * Cl_nm_list[0] + factor[None, :] * Cl_nm_list[1]
 
                 elif which_for_cls == 'dod':
                     # dod: Cl = H*D * (f * Cl_F2(m=0) + 3*(f*dotH + H²*(3/2*Om - f)) * Cl_F2(m=-2))
@@ -421,11 +438,11 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     # factor1 for Cl_F2(m=0): H*D*f
                     factor1_on_ra = time_dict['Ha'] * time_dict['Da'] * time_dict['fa']
 
-                    # factor2 for Cl_F2(m=-2): H*D * 3*(f*dotH + H²*(3/2*Om - f))
+                    # factor2 for Cl_F2(m=-2): H*D * 3*(f*dotH + H²*(3/2*Om - f)) - d(b_phi/N)/dtau
                     factor2_on_ra = time_dict['Ha'] * time_dict['Da'] * 3.0 * (
                         time_dict['fa'] * time_dict['dHa'] +
                         time_dict['Ha']**2 * (1.5 * time_dict['Oma'] - time_dict['fa'])
-                    )
+                    ) - fnl_dot_corr_on_ra
 
                     # Create splines and evaluate
                     factor1_spline = UnivariateSpline(time_dict['ra'], factor1_on_ra, s=0, k=5)
@@ -433,8 +450,15 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     factor1 = factor1_spline(chi_list_file)
                     factor2 = factor2_spline(chi_list_file)
 
+                    # ddot(delta_g) = b1*ddot(delta_N) + b1dot*delta_N + ddot(delta_GR): the
+                    # product rule adds b1dot*D to factor1 (D because factor1 = H*D*f carries
+                    # one already, and A0 for d1vdod holds only one). factor2 stays unbiased.
+                    if b1_cl is not None:
+                        Da_cl = UnivariateSpline(time_dict['ra'], time_dict['Da'], s=0, k=5)(chi_list_file)
+                        factor1 = b1_cl * factor1 + b1_dot_cl * Da_cl
+
                     if p.Newton:
-                        Cl_combined = factor1[None, :] * Cl_nm_list[0] 
+                        Cl_combined = factor1[None, :] * Cl_nm_list[0]
                     else:
                         Cl_combined = factor1[None, :] * Cl_nm_list[0] + factor2[None, :] * Cl_nm_list[1]
 
@@ -1379,7 +1403,7 @@ def compute_variance_for_triplets(p, ell_list, triplet_array):
 
 
 def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                               W_derivs_list=None, tr=None, Pk=None, t_grid=None):
+                               W_derivs_list=None, W_lens_derivs_list=None, tr=None, Pk=None, t_grid=None):
     """
     Compute and combine all primordial shapes: local, equilateral, orthogonal.
 
@@ -1424,7 +1448,7 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
     print(f"{'='*70}\n")
     p.which = 'local'
     compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                                     W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+                                     W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
 
     # Step 2: Compute B_1_13_23 (using which='equi')
     print(f"\n{'='*70}")
@@ -1432,7 +1456,7 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
     print(f"{'='*70}\n")
     p.which = 'equi'
     compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                                     W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+                                     W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
 
     # Step 3: Compute B_23_23_23 (using which='ortho')
     print(f"\n{'='*70}")
@@ -1440,7 +1464,7 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
     print(f"{'='*70}\n")
     p.which = 'ortho'
     compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                                     W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+                                     W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
 
     # Step 4: Load results and combine to get final equilateral and orthogonal
     print(f"\n{'='*70}")
@@ -1485,7 +1509,7 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
 
 
 def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                                     W_derivs_list=None, tr=None, Pk=None, t_grid=None):
+                                     W_derivs_list=None, W_lens_derivs_list=None, tr=None, Pk=None, t_grid=None):
     """
     Efficient computation of all bispectra for ell_list.
 
@@ -1517,12 +1541,12 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
     if p.which in ('local', 'equi', 'ortho'):
         Cl_array = load_and_compute_all_terms(
                         p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                        W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+                        W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
         coeffs = Cl_array[:, :, -1][:, :, None] * chi_list**2
     else:
         Cl_array, coeffs = load_and_compute_all_terms(
                         p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                        W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+                        W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
     print(f"Data loading completed in {time.time()-start_time:.2f} seconds")
 
     # get all ell triplets, wigner values, and Al1l2l3 coefficients (geometry only, cosmology-independent)

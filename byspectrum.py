@@ -160,6 +160,10 @@ def main(argv):
         print('Window function limits: Wrmin={:.0f} Mpc/h, Wrmax={:.0f} Mpc/h, Dz={:.2f} Mpc/h'.format(Wrmin, Wrmax, (Wrmax-Wrmin)/2))
         print('Window decay scale sigma_z={:.2f} Mpc/h, {:.2f}\\% of the window function size'.format(argv.sigma_z, 100*argv.sigma_z/(Wrmax-Wrmin)*2))
 
+    # after the branch: ska derives its window edges from rmin, so overriding earlier moves the window
+    rmin = rmin_global
+    print('Radial grid: rmin={:.0f} Mpc/h (rmin_global), rmax={:.0f} Mpc/h'.format(rmin, rmax))
+
     tr, Pk = lincosmo.get_power(0)
 
     # Keep r_list EVENLY spaced: general_ps.cubic_interp_uniform looks y1 up on it by index
@@ -189,17 +193,19 @@ def main(argv):
     t_grid = mathematica.build_t_grid(ell_list, rmin, rmax, tr['k'])
 
     # Define lterm_list based on p.lterm
-    if p.Newton:
+    if '+' in p.lterm:          # checked first: the Newton branch below has no '+' handling
+        lterm_list = p.lterm.split('+')
+    elif p.Newton:
         if p.lterm == 'all':
-            lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_fnl']
+            lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_fnl', 'lensing']
         elif p.lterm == 'noproj':
-            lterm_list = ['density', 'rsd', 'pot_fnl']
+            lterm_list = ['density', 'rsd', 'pot_fnl', 'lensing']
         else:
             lterm_list = [p.lterm]
     elif p.lterm == 'all':
-        lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_gr', 'pot_fnl']
+        lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_gr', 'pot_fnl', 'lensing']
     elif p.lterm == 'noproj':
-        lterm_list = ['density', 'rsd', 'pot_gr', 'pot_fnl']
+        lterm_list = ['density', 'rsd', 'pot_gr', 'pot_fnl', 'lensing']
     elif '+' in p.lterm:
         lterm_list = p.lterm.split('+')
     else:
@@ -214,7 +220,8 @@ def main(argv):
 
     if argv.mode in ['cl', 'cln', 'Cl', 'Cln']:
         if argv.which=='cl':
-            Cl = general_ps.compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_list, W_derivs_list)
+            Cl = general_ps.compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_list,
+                                                   W_derivs_list, W_lens_derivs_list)
 
         else:
             if argv.which=='all':
@@ -245,7 +252,8 @@ def main(argv):
                 print('='*70)
                 print(f'Processing which={p.which}')
                 # Compute fctr and cp dicts organized by lterm
-                fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list, W_derivs_list=W_derivs_list)
+                fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
+                                                     W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list)
                 np.save(argv.output_dir+'fctr_of_r_{}'.format(p.which), fctr_dict)
 
                 if p.which == 'primordial':
@@ -279,10 +287,10 @@ def main(argv):
                 p.which = argv.which
                 if argv.which == 'local':
                     bispectrum.compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                                                       W_derivs_list=W_derivs_list, tr=tr, Pk=tr['phi'], t_grid=t_grid)
+                                                       W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=tr['phi'], t_grid=t_grid)
                 else:
                     bispectrum.get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                                                       W_derivs_list=W_derivs_list, tr=tr, Pk=tr['phi'], t_grid=t_grid)
+                                                       W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=tr['phi'], t_grid=t_grid)
             return 0
 
         if p.rad and p.Newton:
@@ -306,7 +314,7 @@ def main(argv):
             for p.configuration in config_list:
                 for p.which in which_list:
                     bispectrum.compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
-                                                       W_derivs_list=W_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+                                                       W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
 
 
     return 0

@@ -43,14 +43,15 @@ def b1_euclid(z):
     # return 0.5125 + 1.377*z + 0.222*z**2 - 0.249*z**3
 
 def b2_euclid(z):
-    """Second-order bias via the Lazeyras relation (2110.05435) evaluated on b1_euclid(z)."""
+    """Second-order bias via the Lazeyras relation (1511.01096) evaluated on b1_euclid(z)."""
     b1 = b1_euclid(z)
     return 0.412 - 2.143*b1 + 0.929*b1**2 + 0.008*b1**3
 
 def s_euclid(z):
-    """Magnification-bias slope s(z) for the Euclid photometric sample (Q = 5s/2 convention).
-    Defined for later use; no magnification term is wired into the kernels yet."""
-    return 0.0842 + 0.0532*z + 0.298*z**2 - 0.0113*z**3
+    """1506.01369 Calibrated only to z~2, so extrapolated over the upper half of bin 4 (1.32<z<2.50)."""
+    return 0.1194 + 0.2122*z - 0.0671*z**2 + 0.1031*z**3
+    # 2110.05435  
+    # return 0.0842 + 0.0532*z + 0.298*z**2 - 0.0113*z**3
 
 def volume_element(z):
     """
@@ -198,7 +199,8 @@ def growth_fct(input_data=0, window_type=None):
         z_grid = 1./time_dict['a'] - 1.
         time_dict['data'] = {'r' : time_dict['ra'],
                              'b1': b1_euclid(z_grid),
-                             'b2': b2_euclid(z_grid)}
+                             'b2': b2_euclid(z_grid),
+                             's' : s_euclid(z_grid)}   # magnification slope, for the lensing lterm
         return time_dict
     elif window_type=='ska':
         data = np.loadtxt(input_data)

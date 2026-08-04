@@ -21,60 +21,41 @@ COMPUTE_C1_C2 = True # Set to False to disable GR bias corrections (c1 and c2)
 COMPUTE_FNL = True # Set to False to disable the delta_{2,fNL} scale-dependent bias term
 
 
-
+MAX_RELIABLE_DERIV = 6
 def compute_spline_derivatives(spline, data_grid, eval_grid, max_deriv=11, smooth_s=0):
     """
-    Compute high-order derivatives of a spline using chain strategy.
+    Derivatives [f, f', ..., f^(max_deriv)] of a spline-interpolated quantity, on eval_grid.
 
-    Parameters:
-    -----------
-    spline : UnivariateSpline
-        The spline to differentiate
-    data_grid : array
-        Full grid where spline is defined (for computing derivatives)
-    eval_grid : array
-        Grid where derivatives should be evaluated
-    max_deriv : int
-        Maximum derivative order (default 11)
-    smooth_s : float
-        Smoothing parameter for intermediate splines (default 0)
+    Orders above MAX_RELIABLE_DERIV are returned as zero: they are spline noise, and once
+    paired with the analytic window derivatives in product_deriv they contribute below their
+    own error (verified bit-identical). Truncating one order lower is NOT safe -- it costs
+    ~1% on G2 and the primordial shapes, whose derive_start=2 pairs f^(6) with the
+    undifferentiated window.
 
-    Returns:
-    --------
-    derivs : list of arrays
-        List of derivatives [f, f', f'', ..., f^(max_deriv)] evaluated on eval_grid
+    Parameters
+    ----------
+    spline : UnivariateSpline   quantity to differentiate (k=5)
+    data_grid : array           grid the spline is defined on
+    eval_grid : array           grid to evaluate on
+    max_deriv : int             length of the returned array; orders >MAX_RELIABLE_DERIV are 0
+    smooth_s : float            smoothing of the intermediate spline used for order 6
     """
+    nmax = min(max_deriv, MAX_RELIABLE_DERIV)
 
-    # Compute derivatives on full data grid
-    derivs_full = [None] * (max_deriv + 1)
+    # orders 0-5 come straight off the spline; order 6 needs one re-spline because a k=5
+    # spline's 5th derivative is piecewise constant
+    derivs_full = [spline(data_grid)]
+    derivs_full += [spline.derivative(i)(data_grid) for i in range(1, min(5, nmax) + 1)]
+    if nmax >= 6:
+        d5 = UnivariateSpline(data_grid, derivs_full[5], k=5, s=smooth_s)
+        derivs_full[5] = d5(data_grid)          # keep order 5 consistent with order 6
+        derivs_full.append(d5.derivative(1)(data_grid))
 
-    # Direct derivatives (0-5)
-    derivs_full[0] = spline(data_grid)
-    for i in range(1, min(6, max_deriv + 1)):
-        derivs_full[i] = spline.derivative(i)(data_grid)
-
-    # Derivatives 6-10 from spline of 5th derivative
-    if max_deriv >= 6:
-        d5_spline = UnivariateSpline(data_grid, derivs_full[5], k=5, s=smooth_s)
-        derivs_full[i] = d5_spline(data_grid)
-        for i in range(6, min(11, max_deriv + 1)):
-            derivs_full[i] = d5_spline.derivative(i - 5)(data_grid)
-
-    # Derivative 11 from spline of 10th derivative
-    if max_deriv >= 11:
-        d10_spline = UnivariateSpline(data_grid, derivs_full[10], k=5, s=smooth_s)
-        derivs_full[11] = d10_spline.derivative(1)(data_grid)
-
-    # Evaluate on target grid
-    derivs = [None] * (max_deriv + 1)
-    for i in range(max_deriv + 1):
-        if np.array_equal(data_grid, eval_grid):
-            derivs[i] = derivs_full[i]
-        else:
-            deriv_spline = UnivariateSpline(data_grid, derivs_full[i], k=5, s=0, ext=0)
-            derivs[i] = deriv_spline(eval_grid)
-
-    return np.array(derivs)
+    out = np.zeros((max_deriv + 1, len(eval_grid)))
+    same = np.array_equal(data_grid, eval_grid)
+    for i, d in enumerate(derivs_full):
+        out[i] = d if same else UnivariateSpline(data_grid, d, k=5, s=0, ext=0)(eval_grid)
+    return out
 
 
 # Optimized version that caches the SymPy derivatives
@@ -600,12 +581,12 @@ def get_coefficients(p, time_dict, compute_c1_c2=''):
             # Lagrangian biases from the Eulerian b1, b2, splined onto the ra grid so they
             # align with the cosmological arrays (data['r'] == ra for euclid, differs for ska): b^L = b - 1
             b1L = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1']-1., k=5, s=0)(ra)
-            b2L = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b2']-1., k=5, s=0)(ra)
+            b2L = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b2'], k=5, s=0)(ra) - b1L*(2./3.-2.*va/7.)
 
-            b_phi    = 2.*fnl*g_in*deltac*b1L
-            b_phidel = 2.*fnl*g_in*(-b1L + deltac*b2L)
-            b_phi2   = 2.*fnl**2*g_in**2*deltac*(-2.*b1L + deltac*b2L)
-            bn_ND    = fnl*g_in*b1L                       # b_n / (N D): the N*D cancels
+            b_phi    = -2.*fnl*g_in*deltac*b1L
+            b_phidel = -2.*fnl*g_in*(-b1L + deltac*b2L)
+            b_phi2   =  2.*fnl**2*g_in**2*deltac*(-2.*b1L + deltac*b2L)   # unchanged, O(fnl^2)
+            bn_ND    =  0.                                                 # b_n^L = 0
 
             # b_phi^L' / H : conformal-time derivative of the Lagrangian b_phi,
             # same convention as c2's -db1/dr (prime = d/dtau = -d/dr on the lightcone)
@@ -635,9 +616,9 @@ def get_coefficients(p, time_dict, compute_c1_c2=''):
             g    = D/a
             g_in = g * 3./5.*(1. + 2./3.*f/Om)
             fnl  = p.fnl_local
-            alpha = {0: zeros, 1: 0.5*(-6.*Om/g)*f*g_in*(2.*fnl), 2: zeros}
-            beta  = {0: zeros, 1: 0.5*(-6.*Om/g)*f*g_in*(4.*fnl), 2: zeros}
-            gamma = {0: zeros, 1: 0.5*(-3.*Om/g)*f*g_in*(   fnl), 2: zeros}
+            alpha = {0: zeros, 1: 0.5*(6.*Om/g)*f*g_in*(2.*fnl), 2: zeros}
+            beta  = {0: zeros, 1: 0.5*(6.*Om/g)*f*g_in*(4.*fnl), 2: zeros}
+            gamma = {0: zeros, 1: 0.5*(3.*Om/g)*f*g_in*(   fnl), 2: zeros}
         else:
             # Newton mode, missing bias data (F2), or any other which -> no fNL correction
             alpha = {0: zeros, 1: zeros, 2: zeros}
@@ -775,7 +756,8 @@ def product_deriv(n, fctr_derivs, W_derivs_list):
     return sum(comb(n, k) * fctr_derivs[k] * W_derivs_list[n - k] for k in range(n + 1))
  
 
-def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list, W_derivs_list=None):
+def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
+                        W_derivs_list=None, W_lens_derivs_list=None):
     """
     Optimized version using cached SymPy derivatives
 
@@ -1014,6 +996,13 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
             elif lterm == 'dpot': # -D*(f-1)/a*H/a
                 fctr = UnivariateSpline(time_dict['ra'], -time_dict['Da']*(time_dict['fa']-1.)*time_dict['Ha']/time_dict['a']**2, k=5, s=0)
                 derive_start = 0
+            elif lterm == 'lensing': # -(2-5s)*kappa_1, i.e. -ell(ell+1)*(2-5s)*D/a: opposite sign to
+                                     # density. No H/a: it sits inside W_phi, which replaces W here.
+                s_r = (UnivariateSpline(time_dict['data']['r'], time_dict['data']['s'], k=5, s=0)(time_dict['ra'])
+                       if 'data' in time_dict and 's' in time_dict['data'] else 0.)
+                fctr = UnivariateSpline(time_dict['ra'],
+                            -time_dict['Da']/time_dict['a']*(2.-5.*s_r), k=5, s=0)
+                derive_start = 0
             elif lterm == 'pot_fnl': # scale dependent bias
                 gin = time_dict['Da']/time_dict['a'] * 3./5. * (1+2./3.*time_dict['fa']/time_dict['Oma'])
                 fctr = UnivariateSpline(time_dict['ra'], \
@@ -1053,13 +1042,18 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                 max_B_deriv = n + 7 if n > 0 else 7  # n+7 because we need indices 0 through n+6
                 max_W_deriv = derive_start + max_B_deriv - 1  # product_deriv needs this many W derivatives
 
-                if W_derivs_list is None:
+                # lensing sees the efficiency window W_phi instead of the raw photo-z window
+                W_this = W_lens_derivs_list if lterm == 'lensing' else W_derivs_list
+
+                if W_this is None:
+                    if lterm == 'lensing':
+                        raise ValueError("lterm 'lensing' needs W_lens_derivs_list")
                     W_derivs_base = W_derivs.get_all_derivatives(r_list, r_power=0, max_deriv=max_W_deriv)
                 else:
                     required_derivs = max_W_deriv + 1
-                    if len(W_derivs_list) < required_derivs:
-                        raise ValueError(f"W_derivs_list has {len(W_derivs_list)} derivatives but need {required_derivs}")
-                    W_derivs_base = W_derivs_list[:required_derivs]
+                    if len(W_this) < required_derivs:
+                        raise ValueError(f"W list has {len(W_this)} derivatives but need {required_derivs}")
+                    W_derivs_base = W_this[:required_derivs]
 
                 # Compute fctr * W derivatives
                 fctr_W_derivs = [product_deriv(derive_start + i, fctr_derivs, W_derivs_base) for i in range(max_B_deriv)]
@@ -1091,7 +1085,9 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                 # Compute y_list by applying D operator
                 for ind_ell, ell in enumerate(ell_list):
                     alpha = ell*(ell+1) - 2.
-                    
+                    # Delta_Omega -> ell(ell+1), multiplying the whole lensing term
+                    lfac = ell*(ell+1) if lterm == 'lensing' else 1.
+
                     y_list[lterm][0, qt_ind, ind_ell] = f
                     y_list[lterm][1, qt_ind, ind_ell] = -d2f + 2./r_list*df + alpha/r_list**2*f
                     y_list[lterm][2, qt_ind, ind_ell] = (d4f - 4./r_list*d3f 
@@ -1100,6 +1096,8 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                                          (alpha**2/r_list**4 - 10.*alpha/r_list**4)*f)
                     
                     y_list[lterm][3, qt_ind, ind_ell] = compute_L3_f_analytical(f, df, d2f, d3f, d4f, d5f, d6f, r_list, alpha)
+
+                    y_list[lterm][:, qt_ind, ind_ell] *= lfac
    
     return y_list
 
@@ -1498,6 +1496,8 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             use_b2 = True
 
         elif p.which in ['d1vdod']:
+            # Single Da on purpose: the dod leg's D sits in factor1 = d/dtau(b1*D) in
+            # load_and_compute_all_terms, not here. Da**2 would double-count it.
             cosmo_factor_ra = time_dict['Da'] * time_dict['fa']
 
         elif p.which in ['d0pd3v', 'd0pd1d', 'd1vd2p']:
