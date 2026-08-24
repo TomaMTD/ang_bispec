@@ -212,7 +212,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
     # ========================================================================
     # 1. Load power spectra from Cls.h5 for all ells
     # ========================================================================
-    print("  Loading power spectra from Cls.h5...")
+    # print("  Loading power spectra from Cls.h5...")
 
     cls_file = f"{output_dir}Cls.h5"
 
@@ -366,7 +366,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
 
             else:
                 # Special combinations for d0d, d1d, dod with non-Newton
-                print(f"    Applying non-Newton combination for {which_for_cls}")
+                # print(f"    Applying non-Newton combination for {which_for_cls}")
 
                 # Load all nm_pairs for this part
                 Cl_nm_list = []
@@ -480,7 +480,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
         # ========================================================================
         # 2. Compute A0, A2, A4 kernels for all ells directly on chi_list
         # ========================================================================
-        print("  Computing A0, A2, A4 kernels for all ells at once...")
+        # print("  Computing A0, A2, A4 kernels for all ells at once...")
         # Compute for all ells at once (no loop needed!)
         kernels = fctr.get_bispectrum_kernels_analytical(p, ell_list, chi_list, time_dict,
                                                           window_args=window_args, W_derivs_list=W_derivs_list)
@@ -496,7 +496,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
             # Check if bs_terms are present
             if 'bs_terms' in kernels:
                 bs_terms = kernels['bs_terms']  # shape (n_ell, 3, n_chi)
-                print("  Adding b_s corrections to A0, A2, A4 kernels...")
+                # print("  Adding b_s corrections to A0, A2, A4 kernels...")
 
                 # A00: base + b_s/6 * f_bs (eq. 20: f^(0)_{0,0} += b_s/6)
                 kernels_array[:, :, 0] = A0[:, 0, :] + 1./6.* bs_terms[:, 0, :]
@@ -552,7 +552,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
             # For G2/dv2: Always need f^(0) (goes to A0 slots 0-2)
             # For F2: Only need f^(-2) and f^(-4) if Newton=0 (goes to Am slots 7-11)
             if p.which in ['G2', 'dv2'] or not p.Newton:
-                print("  Loading f-coefficient terms from HDF5...")
+                # print("  Loading f-coefficient terms from HDF5...")
                 try:
                     with h5py.File(cls_file, 'r') as f:
                         if p.which not in f:
@@ -688,7 +688,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
         # 4b. Load Il terms (radiation) for F2/G2/dv2
         # ========================================================================
         if p.which in ['F2', 'G2', 'dv2'] and not p.Newton and p.rad:
-            print("  Loading Il (radiation) terms from HDF5...")
+            # print("  Loading Il (radiation) terms from HDF5...")
             try:
                 with h5py.File(cls_file, 'r') as f:
                     group = f[p.which]
@@ -748,7 +748,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
         # ========================================================================
         # 5. Precompute combined coefficients for efficient integration
         # ========================================================================
-        print("  Precomputing angular coefficient combinations...")
+        # print("  Precomputing angular coefficient combinations...")
 
         if p.which in ['F2', 'G2', 'dv2']:
             # F2/G2/dv2: 4 angular combinations from the integrand formula
@@ -1175,22 +1175,22 @@ def ell_configurations(p, ell_list):
 
     # Try to load from cache
     if os.path.exists(cache_file):
-        print(f"Loading triplets from cache: {cache_file}")
+        # print(f"Loading triplets from cache: {cache_file}")
         data = np.load(cache_file)
         triplets = data['triplets']
         wigner_values = data['wigner_values']
         # Load Al1l2l3 if available in cache
         Al1l2l3_values = data['Al1l2l3_values'] if 'Al1l2l3_values' in data else None
-        print(f"  Loaded {len(triplets)} triplets from cache")
-        if Al1l2l3_values is not None:
-            print(f"  Loaded Al1l2l3 coefficients for {len(triplets)} triplets")
+        # print(f"  Loaded {len(triplets)} triplets from cache")
+        # if Al1l2l3_values is not None:
+        #     print(f"  Loaded Al1l2l3 coefficients for {len(triplets)} triplets")
 
         return triplets, wigner_values, config_name, Al1l2l3_values
 
     # ========================================================================
     # 3. Generate triplet list and compute Wigner 3j symbols
     # ========================================================================
-    print(f"Generating triplets for {len(ell_list)} ells (configuration: {config})...")
+    # print(f"Generating triplets for {len(ell_list)} ells (configuration: {config})...")
     triplets = []
     wigner_values = []
 
@@ -1306,13 +1306,13 @@ def ell_configurations(p, ell_list):
 
                     candidates.append((i1, i2, i3))
 
-        print(f'  Generated {len(candidates)} candidate triplets, computing Wigner 3j and Al123...')
+        # print(f'  Generated {len(candidates)} candidate triplets, computing Wigner 3j and Al123...')
 
         # Compute Wigner 3j and Al123 in parallel
         from multiprocessing import Pool, cpu_count
         n_cores = min(cpu_count(), 16)
 
-        print(f'  Using {n_cores} cores for parallel computation...')
+        # print(f'  Using {n_cores} cores for parallel computation...')
         # Prepare arguments: each candidate needs access to ell_list
         args_list = [(cand, ell_list) for cand in candidates]
 
@@ -1341,7 +1341,7 @@ def ell_configurations(p, ell_list):
                     wigner_values.append(wigner_val)
                     Al1l2l3_values.append([A1, A2, A3])
 
-        print(f'  Kept {len(triplets)} triplets with non-zero Wigner 3j')
+        # print(f'  Kept {len(triplets)} triplets with non-zero Wigner 3j')
 
         config_name = ''
 
@@ -1351,7 +1351,7 @@ def ell_configurations(p, ell_list):
     Al1l2l3_values = np.array(Al1l2l3_values)
 
     # Save to cache for future use
-    print(f"Saving triplets to cache: {cache_file}")
+    # print(f"Saving triplets to cache: {cache_file}")
     np.savez(cache_file, triplets=triplets, wigner_values=wigner_values, Al1l2l3_values=Al1l2l3_values)
     print(f"  Saved {len(triplets)} triplets with Al1l2l3 to cache")
 
@@ -1376,10 +1376,10 @@ def compute_variance_for_triplets(p, ell_list, triplet_array):
     """
     cl_file = os.path.join(p.output_dir, f'Cl_{p.lterm}.h5')
     if not os.path.exists(cl_file):
-        print(f"  C_ell file not found at {cl_file}, skipping variance computation")
+        print(f"    C_ell file not found at {cl_file}, skipping variance computation")
         return None
 
-    print(f"  Loading power spectrum from {cl_file}...")
+    # print(f"  Loading power spectrum from {cl_file}...")
     with h5py.File(cl_file, 'r') as f:
         ell_file = f['ell'][:]
         C_ell_file = f['C_ell'][:]
@@ -1390,14 +1390,14 @@ def compute_variance_for_triplets(p, ell_list, triplet_array):
     else:
         raise ValueError(f"ell_file must match ell_list")
 
-    print(f"  Loaded C_ell for {len(C_ell)} multipoles")
+    # print(f"  Loaded C_ell for {len(C_ell)} multipoles")
 
     # Compute variance
-    print("  Computing variance V_ell1ell2ell3 = C_ell1 * C_ell2 * C_ell3...")
+    # print("  Computing variance V_ell1ell2ell3 = C_ell1 * C_ell2 * C_ell3...")
     variance_values = np.zeros(len(triplet_array))
     for i, (i1, i2, i3) in enumerate(triplet_array):
         variance_values[i] = C_ell[i1] * C_ell[i2] * C_ell[i3]
-    print(f"  Computed variance for {len(triplet_array)} triplets")
+    # print(f"  Computed variance for {len(triplet_array)} triplets")
 
     return variance_values
 
@@ -1428,9 +1428,9 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
     t_grid : array - t values for FFTLog
     """
 
-    print(f"="*70)
-    print(f"Computing all primordial shapes: local, equilateral, orthogonal")
-    print(f"="*70)
+    # print(f"="*70)
+    # print(f"Computing all primordial shapes: local, equilateral, orthogonal")
+    # print(f"="*70)
 
     # Store original which
     original_which = p.which
@@ -1443,33 +1443,33 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
     file_path = f"{p.output_dir}bl_{p.lterm}.h5"
 
     # Step 1: Compute local bispectrum
-    print(f"\n{'='*70}")
-    print(f"  Step 1/3: Computing LOCAL bispectrum")
-    print(f"{'='*70}\n")
+    # print(f"\n{'='*70}")
+    # print(f"  Step 1/3: Computing LOCAL bispectrum")
+    # print(f"{'='*70}\n")
     p.which = 'local'
     compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
                                      W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
 
     # Step 2: Compute B_1_13_23 (using which='equi')
-    print(f"\n{'='*70}")
-    print(f"  Step 2/3: Computing B_1_13_23 (intermediate for equilateral)")
-    print(f"{'='*70}\n")
+    # print(f"\n{'='*70}")
+    # print(f"  Step 2/3: Computing B_1_13_23 (intermediate for equilateral)")
+    # print(f"{'='*70}\n")
     p.which = 'equi'
     compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
                                      W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
 
     # Step 3: Compute B_23_23_23 (using which='ortho')
-    print(f"\n{'='*70}")
-    print(f"  Step 3/3: Computing B_23_23_23 (intermediate for equilateral & orthogonal)")
-    print(f"{'='*70}\n")
+    # print(f"\n{'='*70}")
+    # print(f"  Step 3/3: Computing B_23_23_23 (intermediate for equilateral & orthogonal)")
+    # print(f"{'='*70}\n")
     p.which = 'ortho'
     compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
                                      W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
 
     # Step 4: Load results and combine to get final equilateral and orthogonal
-    print(f"\n{'='*70}")
-    print(f"  Combining results to get final shapes...")
-    print(f"{'='*70}\n")
+    # print(f"\n{'='*70}")
+    # print(f"  Combining results to get final shapes...")
+    # print(f"{'='*70}\n")
 
     with h5py.File(file_path, 'r') as f:
         grp = f[config_name]
@@ -1481,7 +1481,7 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
     B_orthogonal = 3.*B_equilateral - 12.*B_23_23_23
 
     # Step 5: Save combined results to the same file
-    print(f"  Saving combined primordial shapes to {file_path}...")
+    # print(f"  Saving combined primordial shapes to {file_path}...")
 
     with h5py.File(file_path, "a") as f:
         grp = f[config_name]
@@ -1501,11 +1501,11 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
     # Restore original which
     p.which = original_which
 
-    print(f"\n{'='*70}")
-    print(f"All primordial shapes computed and saved successfully!")
-    print(f"  File: {file_path}")
-    print(f"  Datasets: bl_local, bl_equi, bl_ortho, bl_equilateral, bl_orthogonal")
-    print(f"{'='*70}\n")
+#    print(f"\n{'='*70}")
+#    print(f"All primordial shapes computed and saved successfully!")
+#    print(f"  File: {file_path}")
+#    print(f"  Datasets: bl_local, bl_equi, bl_ortho, bl_equilateral, bl_orthogonal")
+#    print(f"{'='*70}\n")
 
 
 def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
@@ -1530,9 +1530,9 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
         Precomputed window derivatives. If None, will be computed from window_args.
     """
 
-    print(f"="*70)
-    print(f"Computing bispectrum for ell_list={ell_list[0]}-{ell_list[-1]}, which={p.which}")
-    print(f"="*70)
+    # print(f"="*70)
+    # print(f"Computing bispectrum for ell_list={ell_list[0]}-{ell_list[-1]}, which={p.which}")
+    # print(f"="*70)
 
     # ========================================================================
     # 2. Load all data once
@@ -1547,13 +1547,13 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
         Cl_array, coeffs = load_and_compute_all_terms(
                         p, ell_list, chi_list, time_dict, window_args, lterm_list,
                         W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
-    print(f"Data loading completed in {time.time()-start_time:.2f} seconds")
+    # print(f"Data loading completed in {time.time()-start_time:.2f} seconds")
 
     # get all ell triplets, wigner values, and Al1l2l3 coefficients (geometry only, cosmology-independent)
     triplet_array, wigner_array, config_name, Al1l2l3_array = ell_configurations(p, ell_list)
 
     n_triplets = len(triplet_array)
-    print(f"Valid triplets (non-zero Wigner): {n_triplets}")
+    # print(f"Valid triplets (non-zero Wigner): {n_triplets}")
 
     if n_triplets == 0:
         print("No valid triplets, exiting...")
@@ -1565,7 +1565,7 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
     # ========================================================================
     # 4. Compute bispectra in parallel
     # ========================================================================
-    print(f"Computing bispectra in parallel...")
+    # print(f"Computing bispectra in parallel...")
     start_time = time.time()
 
     if p.which in ['F2', 'G2', 'dv2']:
@@ -1599,7 +1599,7 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
         if p.which == 'ortho':
             bl_results = bl_results / 6.0
 
-    print(f"Computation completed in {time.time()-start_time:.2f} seconds")
+    # print(f"Computation completed in {time.time()-start_time:.2f} seconds")
 
     # ========================================================================
     # 5. Save results to HDF5
@@ -1622,7 +1622,7 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
     # Single file for all 'which' values
     file_path = f"{p.output_dir}bl_{p.lterm}{name_suffix}.h5"
 
-    print(f"Saving results to {file_path}...")
+    # print(f"Saving results to {file_path}...")
 
     with h5py.File(file_path, "a") as f:
         # Determine group name based on configuration
@@ -1638,7 +1638,7 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
         variance_exists = (p.configuration not in ['equi', 'squ', 'folded']) and ('variance' in grp)
 
         # If variance doesn't exist and we need it, compute it now
-        if (not variance_exists or p.force) and p.configuration not in ['equi', 'squ', 'folded']:
+        if (not variance_exists or p.force) and p.configuration not in ['equi', 'squ', 'folded', 'squ2']:
             if var_array is None:
                 var_array = compute_variance_for_triplets(p, ell_list, triplet_array)
 
@@ -1712,16 +1712,16 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
             del grp[bl_dataset_name]
         grp.create_dataset(bl_dataset_name, data=np.array(bl_results))
 
-        # Print summary
-        if p.configuration == 'equi':
-            print(f"  Saved {len(triplet_array)} equilateral triplets as '{bl_dataset_name}' in group '{group_name}'")
-        elif p.configuration in ['squ', 'folded']:
-            ell1_fixed = ell_list[triplet_array[0][0]]
-            print(f"  Saved {len(triplet_array)} {p.configuration} triplets with ell1={ell1_fixed} as '{bl_dataset_name}' in group '{group_name}'")
-        else:
-            print(f"  Saved {len(triplet_array)} triplets as '{bl_dataset_name}' in group '{group_name}'")
+        # # Print summary
+        # if p.configuration == 'equi':
+        #     print(f"  Saved {len(triplet_array)} equilateral triplets as '{bl_dataset_name}' in group '{group_name}'")
+        # elif p.configuration in ['squ', 'folded']:
+        #     ell1_fixed = ell_list[triplet_array[0][0]]
+        #     print(f"  Saved {len(triplet_array)} {p.configuration} triplets with ell1={ell1_fixed} as '{bl_dataset_name}' in group '{group_name}'")
+        # else:
+        #     print(f"  Saved {len(triplet_array)} triplets as '{bl_dataset_name}' in group '{group_name}'")
 
         f.flush()
 
-    print(f"Done! Results saved to {file_path}")
+    print(f"    Done! Results {p.which} saved to {file_path}")
 

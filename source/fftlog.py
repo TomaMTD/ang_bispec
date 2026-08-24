@@ -180,7 +180,7 @@ class FFTLogProcessor:
             fctk_list = self.compute_quadratic_terms(self.k, self.fctk)
             
             b = self.set_bias(fctk_list)
-            print(f'    qterm {self.qterm} biases: {b}')
+            # print(f'    qterm {self.qterm} biases: {b}')
             cp = self.get_cp_eta_p(fctk_list, b)
             for fctk_ind, fctk in enumerate(fctk_list):
                 out_dict[fctk_ind+1] = {'cp': cp[fctk_ind], 'b': b[fctk_ind], 'fctk': fctk }

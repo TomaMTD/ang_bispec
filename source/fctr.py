@@ -818,7 +818,7 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
             alpha_coeff, beta_coeff, gamma_coeff = get_coefficients(p, time_dict)
 
             if COMPUTE_FNL and p.fnl_local != 0 and not p.Newton and p.which in ['G2', 'dv2']:
-                print(f'         Adding v_{{2,fNL}} to {p.which} f0/fm2 multipoles')
+                # print(f'         Adding v_{{2,fNL}} to {p.which} f0/fm2 multipoles')
                 a_v, b_v, g_v = get_coefficients(p, time_dict, compute_c1_c2='fnl')
                 for key in (0, 1, 2):
                     alpha_coeff[key] = alpha_coeff[key] + a_v[key]
@@ -862,7 +862,7 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
         use_b1 = False
         use_c1_c2 = False
         if COMPUTE_B1 and p.which=='F2' and 'data' in time_dict and 'b1' in time_dict['data']:
-            print('         Adding linear bias b1 to F2 terms')
+            # print('         Adding linear bias b1 to F2 terms')
             b1_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1'], k=5, s=0)
             b1_derivs= compute_spline_derivatives(b1_spline, time_dict['data']['r'], r_list,
                                                         max_deriv=max_deriv+derive_start, smooth_s=1e-6)
@@ -873,7 +873,7 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
             # velocity coupling already lives in the non-rad density, so applying it here too
             # double-counts. Radiation is therefore just b1 * delta^(2)_mP,rad.
             if COMPUTE_C1_C2 and not p.Newton and not p.rad and 'b2' in time_dict['data']:
-                print('         Adding GR bias corrections (c1 terms) to F2 terms (all c2 coeffs vanishe!)')
+                # print('         Adding GR bias corrections (c1 terms) to F2 terms (all c2 coeffs vanishe!)')
 
                 # Get c1 correction coefficients
                 alpha_c1_simple, beta_c1_simple, gamma_c1_simple = get_coefficients(p, time_dict, compute_c1_c2='c1')
@@ -1018,7 +1018,7 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
 
             # For density term: compute b1 derivatives if available
             if COMPUTE_B1 and lterm in ['density', 'pot_fnl'] and 'data' in time_dict and 'b1' in time_dict['data']:
-                print('Adding linear bias b1 to linear terms')
+                # print('Adding linear bias b1 to linear terms')
                 if lterm == 'density':
                     b1_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1'], k=5, s=0)
                 else:
@@ -1153,7 +1153,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
         # Additive and unbiased; only H^2/k^2, which (given beta1=2*alpha1, gamma1=alpha1/4)
         # lands purely in A2 via f_nm - A0/A4 and the fm2/fm4 path are left unchanged.
         if COMPUTE_FNL and p.fnl_local != 0 and not p.Newton and p.which in ['G2', 'dv2']:
-            print(f'     Adding v_{{2,fNL}} to {p.which} kernel')
+            # print(f'     Adding v_{{2,fNL}} to {p.which} kernel')
             a_v, b_v, g_v = get_coefficients(p, time_dict, compute_c1_c2='fnl')
             for key in (0, 1, 2):
                 alpha_coeff[key] = alpha_coeff[key] + a_v[key]
@@ -1192,7 +1192,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
 
             # Compute c1, c2, and b2 for GR bias corrections (only for non-Newton F2)
             if COMPUTE_C1_C2 and not p.Newton and 'b2' in time_dict['data']:
-                print('     Adding GR bias corrections (c1, c2, and b2 terms)')
+                # print('     Adding GR bias corrections (c1, c2, and b2 terms)')
 
                 # c2 = -db1/dr + 3*H*b2
                 # Compute db1/dr on original grid (already in b1_derivs[1])
@@ -1244,7 +1244,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             # GR corrections (its own flag), needs only b2 (for b2^L) and full GR (non-Newton).
             # Produces f0 (2 components: H^2, H^4) and f2 (1 component: H^2); no f4 (index 0 is zero).
             if COMPUTE_FNL and p.fnl_local != 0 and not p.Newton and 'b2' in time_dict['data']:
-                print('     Adding delta_{2,fNL} scale-dependent bias term')
+                # print('     Adding delta_{2,fNL} scale-dependent bias term')
                 alpha_fnl, beta_fnl, gamma_fnl = get_coefficients(p, time_dict, compute_c1_c2='fnl')
                 f0_splines_fnl = compute_f_nm_unified(p, alpha_fnl, beta_fnl, gamma_fnl, time_dict, h_power=0)
                 f0_values_fnl = np.array([f0_spline(r_list) for f0_spline in f0_splines_fnl])
@@ -1253,13 +1253,13 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
 
             use_b1 = True
             if COMPUTE_BS:
-                print('     Adding linear bias b1 and b_s = -2/7*(b1-1) to F2 kernels')
+                # print('     Adding linear bias b1 and b_s = -2/7*(b1-1) to F2 kernels')
                 # d^n/dr^n[b_s] = -2/7 * d^n/dr^n[b1] for n≥1
                 # For n=0: b_s = -2/7 * (b1 - 1)
                 bs_derivs = -2./7. * b1_derivs.copy()
                 bs_derivs[0] = -2./7. * (b1_derivs[0] - 1.)
             else:
-                print('     Adding linear bias b1 to F2 kernels (b_s disabled for testing)')
+                # print('     Adding linear bias b1 to F2 kernels (b_s disabled for testing)')
                 bs_derivs = None
 
             # Compute b_s terms only if enabled

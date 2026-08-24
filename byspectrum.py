@@ -308,6 +308,7 @@ def main(argv):
             p.Newton = 0
             lterm_list = build_lterm_list(p.lterm, p.Newton)
             for p.configuration in config_list:
+                print(f'Computing bispectrum for config={p.configuration}')
                 p.which = argv.which
                 if argv.which == 'local':
                     bispectrum.compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
@@ -315,6 +316,7 @@ def main(argv):
                 else:
                     bispectrum.get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lterm_list,
                                                        W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=tr['phi'], t_grid=t_grid)
+                print(f' ')
             return 0
 
         for p.rad, p.Newton in rad_Newton_list:
@@ -334,9 +336,11 @@ def main(argv):
                 which_list=[argv.which]
 
             for p.configuration in config_list:
+                print(f'Computing bispectrum for config={p.configuration}')
                 for p.which in which_list:
                     bispectrum.compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
                                                        W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+                print(f' ')
 
 
     return 0
