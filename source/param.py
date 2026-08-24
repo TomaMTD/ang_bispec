@@ -28,6 +28,7 @@ rad=False
 ### Window function
 window_type=  'euclid' #'nbody' # ska
 euclid_bin_idx = 4   # 0-9; bin edges [0.001,0.56,0.79,1.02,1.32,2.50]
+rmin_global = 10
 
 #z0, dz= 0.50, 0.20
 #ska bin2 = 0.24, 0.059
