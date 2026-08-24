@@ -1542,7 +1542,7 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
         Cl_array = load_and_compute_all_terms(
                         p, ell_list, chi_list, time_dict, window_args, lterm_list,
                         W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
-        coeffs = Cl_array[:, :, -1][:, :, None] * chi_list**2
+        coeffs = (Cl_array[:, :, -1] * chi_list**2)[:, :, None]
     else:
         Cl_array, coeffs = load_and_compute_all_terms(
                         p, ell_list, chi_list, time_dict, window_args, lterm_list,
