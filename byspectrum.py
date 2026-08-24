@@ -5,7 +5,7 @@ from scipy import integrate
 import time
 
 import path
-sys.path.insert(1, path.path+'/byspectrum/source')
+sys.path.insert(1, path.path+'/ang_bispec/source')
 from param import *
 sys.path.insert(1, output_dir)
 
@@ -62,6 +62,29 @@ def write_args(argv):
                 else:
                     file.write(f"{key} = {value}\n")
             file.write("h = {}\n".format(h100/100))
+
+def build_lterm_list(lterm, Newton):
+    """Expand the -l argument into the list of linear terms.
+
+    Depends on Newton (GR adds pot_gr), so it must be rebuilt for every
+    (rad, Newton) pass rather than once from the command line.
+    """
+    if '+' in lterm:            # checked first: the Newton branch below has no '+' handling
+        return lterm.split('+')
+    elif Newton:
+        if lterm == 'all':
+            return ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_fnl', 'lensing']
+        elif lterm == 'noproj':
+            return ['density', 'rsd', 'pot_fnl', 'lensing']
+        else:
+            return [lterm]
+    elif lterm == 'all':
+        return ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_gr', 'pot_fnl', 'lensing']
+    elif lterm == 'noproj':
+        return ['density', 'rsd', 'pot_gr', 'pot_fnl', 'lensing']
+    else:
+        return [lterm]
+
 
 def ensure_directory_exists(path):
     """checks wether the output path exists"""
@@ -192,24 +215,18 @@ def main(argv):
     # t grid, per ell, concentrated on the support of I_ell (shape (n_t, n_ell))
     t_grid = mathematica.build_t_grid(ell_list, rmin, rmax, tr['k'])
 
-    # Define lterm_list based on p.lterm
-    if '+' in p.lterm:          # checked first: the Newton branch below has no '+' handling
-        lterm_list = p.lterm.split('+')
-    elif p.Newton:
-        if p.lterm == 'all':
-            lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_fnl', 'lensing']
-        elif p.lterm == 'noproj':
-            lterm_list = ['density', 'rsd', 'pot_fnl', 'lensing']
+    # -r 1 -N 1 has no meaning as a single run: it is the shorthand for "do the three
+    # physical cases", GR (0,0), radiation (1,0) and Newtonian (0,1), in one go.
+    # 'cl' and the primordial shapes ignore rad/Newton, so they stay a single GR pass.
+    if p.rad and p.Newton:
+        if argv.which in ('cl', 'local', 'equi', 'ortho', 'primordial'):
+            rad_Newton_list = [[0, 0]]
         else:
-            lterm_list = [p.lterm]
-    elif p.lterm == 'all':
-        lterm_list = ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_gr', 'pot_fnl', 'lensing']
-    elif p.lterm == 'noproj':
-        lterm_list = ['density', 'rsd', 'pot_gr', 'pot_fnl', 'lensing']
-    elif '+' in p.lterm:
-        lterm_list = p.lterm.split('+')
+            rad_Newton_list = [[0, 0], [1, 0], [0, 1]]
+        print('-rad and -Newton both set: running passes (rad, Newton) = {}'.format(
+              [tuple(rN) for rN in rad_Newton_list]))
     else:
-        lterm_list = [p.lterm]
+        rad_Newton_list = [[p.rad, p.Newton]]
 
     # =========================================================================
     # Precompute window derivatives ONCE (expensive operation ~18 seconds!)
@@ -220,53 +237,59 @@ def main(argv):
 
     if argv.mode in ['cl', 'cln', 'Cl', 'Cln']:
         if argv.which=='cl':
+            p.rad, p.Newton = rad_Newton_list[0]
+            lterm_list = build_lterm_list(p.lterm, p.Newton)
             Cl = general_ps.compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_list,
                                                    W_derivs_list, W_lens_derivs_list)
 
         else:
-            if argv.which=='all':
-                if argv.rad:
-                    which_list=['F2', 'G2', 'dv2']
+            for p.rad, p.Newton in rad_Newton_list:
+                lterm_list = build_lterm_list(p.lterm, p.Newton)
+
+                if argv.which=='all':
+                    if p.rad:
+                        which_list=['F2', 'G2', 'dv2']
+                    else:
+                        which_list=['FG2', 'd2v', 'd1v', 'd3v', 'd1d', 'F2', 'G2', 'dv2']
+
+                elif argv.which in ['F2', 'G2', 'dv2']:
+                    which_list=[argv.which]
+
+                elif argv.which=='primordial':
+                    p.rad = 0
+                    p.Newton = 0
+                    which_list=['primordial']
+
                 else:
-                    which_list=['FG2', 'd2v', 'd1v', 'd3v', 'd1d', 'F2', 'G2', 'dv2']
+                    which_list=[argv.which]
 
-            elif argv.which in ['F2', 'G2', 'dv2']:
-                which_list=[argv.which]
+                print('Computing generalised power spectra for:')
+                print('     which={}'.format(which_list))
+                print('     lterm={}'.format(lterm_list))
+                print('     ell_list={}'.format(ell_list))
+                print('     Newton={}'.format(p.Newton))
+                print('     radiation={}'.format(p.rad))
 
-            elif argv.which=='primordial':
-                p.rad = 0
-                p.Newton = 0
-                which_list=['primordial']
+                for p.which in which_list:
+                    print('='*70)
+                    print('='*70)
+                    print(f'Processing which={p.which} (rad={p.rad}, Newton={p.Newton})')
+                    # Compute fctr and cp dicts organized by lterm
+                    fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
+                                                         W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list)
+                    np.save(argv.output_dir+'fctr_of_r_{}'.format(p.which), fctr_dict)
 
-            else:
-                which_list=[argv.which]
+                    if p.which == 'primordial':
+                        fctk = tr['phi']
+                    elif p.rad and p.which in ['F2', 'G2', 'dv2']:
+                        fctk = tr['dTdk']
+                    else:
+                        fctk = Pk
 
-            print('Computing generalised power spectra for:')
-            print('     which={}'.format(which_list))
-            print('     ell_list={}'.format(ell_list))
-            print('     Newton={}'.format(argv.Newton))
-            print('     radiation={}'.format(argv.rad))
+                    cp_dict = fftlog.apply_fftlog_dict(tr['k'], fctk, p)
+                    np.save(argv.output_dir+f'cp_{p.which}', cp_dict)
 
-            for p.which in which_list:
-                print('='*70)
-                print('='*70)
-                print(f'Processing which={p.which}')
-                # Compute fctr and cp dicts organized by lterm
-                fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
-                                                     W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list)
-                np.save(argv.output_dir+'fctr_of_r_{}'.format(p.which), fctr_dict)
-
-                if p.which == 'primordial':
-                    fctk = tr['phi']
-                elif p.rad and p.which in ['F2', 'G2', 'dv2']:
-                    fctk = tr['dTdk']
-                else:
-                    fctk = Pk
-
-                cp_dict = fftlog.apply_fftlog_dict(tr['k'], fctk, p)
-                np.save(f'cp_{p.which}', cp_dict)
-
-                general_ps.compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
+                    general_ps.compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
 
     else:
 
@@ -283,6 +306,7 @@ def main(argv):
         if argv.which in ('local', 'equi', 'ortho', 'primordial'):
             p.rad = 0
             p.Newton = 0
+            lterm_list = build_lterm_list(p.lterm, p.Newton)
             for p.configuration in config_list:
                 p.which = argv.which
                 if argv.which == 'local':
@@ -293,12 +317,10 @@ def main(argv):
                                                        W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=tr['phi'], t_grid=t_grid)
             return 0
 
-        if p.rad and p.Newton:
-            rad_Newton_list = [[0, 0], [1, 0], [0, 1]]
-        else:
-            rad_Newton_list = [[p.rad, p.Newton]]
-
         for p.rad, p.Newton in rad_Newton_list:
+            # lterm_list depends on Newton (pot_gr is GR only), so rebuild it per pass
+            lterm_list = build_lterm_list(p.lterm, p.Newton)
+
             if argv.which=='all':
                 if p.rad:
                     which_list=['F2', 'G2', 'dv2']
