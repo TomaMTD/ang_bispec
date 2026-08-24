@@ -476,6 +476,48 @@ def save_to_hdf5(filename, group_path, data, metadata=None):
     return False
 
 
+def check_computation_exists(filename, group_path, lterm, ell_list):
+    """Check if a specific computation already exists for all ells in ell_list
+
+    Works for both structures since they share the same layout:
+    group_path/lterm/ell_* (lterm is a multipole name for F2/G2/dv2)
+    """
+    max_retries = 5
+    retry_delay = 1
+
+    for attempt in range(max_retries):
+        try:
+            with h5py.File(filename, 'r') as f:
+                # Check if group and lterm subgroup exist
+                if group_path not in f or lterm not in f[group_path]:
+                    return False
+
+                # Check if all ells exist within the lterm subgroup
+                lterm_group = f[group_path][lterm]
+                for ell in ell_list:
+                    ell_key = f'ell_{ell}'
+                    if ell_key not in lterm_group:
+                        return False  # At least one ell is missing
+
+                return True  # All ells exist
+        except (BlockingIOError, OSError) as e:
+            # Handle locking errors (errno 11)
+            if hasattr(e, 'errno') and e.errno == 11 or isinstance(e, BlockingIOError):
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    # After max retries, assume doesn't exist
+                    return False
+            # Other OSErrors - file doesn't exist
+            return False
+        except (KeyError, IOError, FileNotFoundError):
+            # File or group doesn't exist yet - this is expected on first run
+            return False
+
+    return False
+
+
 def compute_integral_F2_G2_dv2(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict):
     """
     Compute integrals for F2/G2/dv2 cases (bispectrum Am and Il terms)
@@ -534,6 +576,10 @@ def compute_integral_F2_G2_dv2(p, ell_list, chi_list, r_list, t_grid, cp_dict, f
 
         # Compute integral for each multipole type (radiation uses cp expansion)
         for multipole_name, multipole_info in multipoles.items():
+            if not p.force and check_computation_exists(output_filename, p.which, multipole_name, ell_list):
+                print(f'    Results for {p.which}/{multipole_name} already exist for all ells, skipping (use force=True to overwrite)')
+                continue
+
             print(f'    Computing {multipole_name}')
 
             qterm_indices = multipole_info['qterms']
@@ -607,6 +653,10 @@ def compute_integral_F2_G2_dv2(p, ell_list, chi_list, r_list, t_grid, cp_dict, f
 
         # Compute Am integrals (use Il(-1, t, ell) analytically - no cp expansion)
         for multipole_name, multipole_info in multipoles.items():
+            if not p.force and check_computation_exists(output_filename, p.which, multipole_name, ell_list):
+                print(f'    Results for {p.which}/{multipole_name} already exist for all ells, skipping (use force=True to overwrite)')
+                continue
+
             print(f'    Computing {multipole_name} (Am terms)')
 
             qterm_indices = multipole_info['qterms']
@@ -675,43 +725,6 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
 
     print('---------------------------------------------------- Integration processing')
     
-
-    def check_computation_exists(filename, group_path, lterm, ell_list):
-        """Check if a specific computation already exists for all ells in ell_list"""
-        max_retries = 5
-        retry_delay = 1
-
-        for attempt in range(max_retries):
-            try:
-                with h5py.File(filename, 'r') as f:
-                    # Check if group and lterm subgroup exist
-                    if group_path not in f or lterm not in f[group_path]:
-                        return False
-
-                    # Check if all ells exist within the lterm subgroup
-                    lterm_group = f[group_path][lterm]
-                    for ell in ell_list:
-                        ell_key = f'ell_{ell}'
-                        if ell_key not in lterm_group:
-                            return False  # At least one ell is missing
-
-                    return True  # All ells exist
-            except (BlockingIOError, OSError) as e:
-                # Handle locking errors (errno 11)
-                if hasattr(e, 'errno') and e.errno == 11 or isinstance(e, BlockingIOError):
-                    if attempt < max_retries - 1:
-                        time.sleep(retry_delay)
-                        continue
-                    else:
-                        # After max retries, assume doesn't exist
-                        return False
-                # Other OSErrors - file doesn't exist
-                return False
-            except (KeyError, IOError, FileNotFoundError):
-                # File or group doesn't exist yet - this is expected on first run
-                return False
-
-        return False
 
     # Determine if we're processing F2/G2/dv2 or FG2/d1v/etc
     if p.which in ['F2', 'G2', 'dv2']:
