@@ -568,9 +568,9 @@ def get_coefficients(p, time_dict, compute_c1_c2=''):
             gamma = {0: zeros, 1: zeros, 2: zeros}
 
     elif compute_c1_c2=='fnl':
-        # Second-order scale-dependent bias, local fNL (f~NL=0), 1/2 convention throughout
+        # Second-order scale-dependent bias, local fNL (\tilde fNL=0), 1/2 convention throughout
         # (delta = delta_1 + delta_2 here vs delta_1 + delta_2/2 in the derivation). Dispatch
-        # on which: F2 -> density delta_{2,fNL}; G2/dv2 -> velocity v_{2,fNL}.
+        # on which: F2 -> density delta_{2,fNL}
         if p.which == 'F2' and not p.Newton and 'data' in time_dict and 'b2' in time_dict['data']:
             # --- density delta_{2,fNL}: biases baked in (unlike c1/c2/b2 which factor out a data field) ---
             g      = D/a
@@ -598,29 +598,20 @@ def get_coefficients(p, time_dict, compute_c1_c2=''):
             # index 1 -> H^2/k^2 bracket, index 2 -> H^4/k^4 bracket; overall factor 1/2
             alpha = {
                 0: zeros,
-                1: 0.5*(-pref)*(2.*bn_ND - 4.*g_in*fnl + 2.*b_phi),
-                2: 0.5*( pref)*(2.*f*(2.*Dphi - 6.*b_phi) + 6.*(Om/g)*b_phi2 + 12.*f*g_in*fnl)
+                1: 0.5*(-pref)*(2.*bn_ND + 2.*b_phi),
+                2: 0.5*( pref)*(2.*f*(2.*Dphi - 6.*b_phi) + 6.*(Om/g)*b_phi2)
             }
             beta = {
                 0: zeros,
-                1: 0.5*(-pref)*(4.*b_phi + 2.*b_phidel - 8.*g_in*fnl + 2.*bn_ND),
-                2: 0.5*( pref)*(4.*f*(2.*Dphi - 6.*b_phi) + 12.*(Om/g)*b_phi2 + 24.*f*g_in*fnl)
+                1: 0.5*(-pref)*(4.*b_phi + 2.*b_phidel + 2.*bn_ND),
+                2: 0.5*( pref)*(4.*f*(2.*Dphi - 6.*b_phi) + 12.*(Om/g)*b_phi2)
             }
             gamma = {
                 0: zeros,
-                1: 0.5*(-pref/2.)*(b_phi + b_phidel - 2.*g_in*fnl),
-                2: 0.5*( pref/2.)*(f*(2.*Dphi - 6.*b_phi) + 3.*(Om/g)*b_phi2 + 6.*f*g_in*fnl)
+                1: 0.5*(-pref/2.)*(b_phi + b_phidel),
+                2: 0.5*( pref/2.)*(f*(2.*Dphi - 6.*b_phi) + 3.*(Om/g)*b_phi2)
             }
-        elif p.which in ['G2', 'dv2'] and not p.Newton:
-            # --- velocity v_{2,fNL}: unbiased, pure cosmology x fNL, only H^2/k^2 (index 1) ---
-            g    = D/a
-            g_in = g * 3./5.*(1. + 2./3.*f/Om)
-            fnl  = p.fnl_local
-            alpha = {0: zeros, 1: 0.5*(6.*Om/g)*f*g_in*(2.*fnl), 2: zeros}
-            beta  = {0: zeros, 1: 0.5*(6.*Om/g)*f*g_in*(4.*fnl), 2: zeros}
-            gamma = {0: zeros, 1: 0.5*(3.*Om/g)*f*g_in*(   fnl), 2: zeros}
         else:
-            # Newton mode, missing bias data (F2), or any other which -> no fNL correction
             alpha = {0: zeros, 1: zeros, 2: zeros}
             beta = {0: zeros, 1: zeros, 2: zeros}
             gamma = {0: zeros, 1: zeros, 2: zeros}
@@ -816,14 +807,6 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
 
             # Get coefficients
             alpha_coeff, beta_coeff, gamma_coeff = get_coefficients(p, time_dict)
-
-            if COMPUTE_FNL and p.fnl_local != 0 and not p.Newton and p.which in ['G2', 'dv2']:
-                # print(f'         Adding v_{{2,fNL}} to {p.which} f0/fm2 multipoles')
-                a_v, b_v, g_v = get_coefficients(p, time_dict, compute_c1_c2='fnl')
-                for key in (0, 1, 2):
-                    alpha_coeff[key] = alpha_coeff[key] + a_v[key]
-                    beta_coeff[key]  = beta_coeff[key]  + b_v[key]
-                    gamma_coeff[key] = gamma_coeff[key] + g_v[key]
 
             if p.which == 'F2':
                 # For F2: use fm2 and fm4 (only independent components)
@@ -1148,17 +1131,6 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
 
         # Get coefficients (independent of ell)
         alpha_coeff, beta_coeff, gamma_coeff = get_coefficients(p, time_dict)
-
-        # Second-order velocity fNL: fold v_{2,fNL} into the G2/dv2 base coefficients.
-        # Additive and unbiased; only H^2/k^2, which (given beta1=2*alpha1, gamma1=alpha1/4)
-        # lands purely in A2 via f_nm - A0/A4 and the fm2/fm4 path are left unchanged.
-        if COMPUTE_FNL and p.fnl_local != 0 and not p.Newton and p.which in ['G2', 'dv2']:
-            # print(f'     Adding v_{{2,fNL}} to {p.which} kernel')
-            a_v, b_v, g_v = get_coefficients(p, time_dict, compute_c1_c2='fnl')
-            for key in (0, 1, 2):
-                alpha_coeff[key] = alpha_coeff[key] + a_v[key]
-                beta_coeff[key]  = beta_coeff[key]  + b_v[key]
-                gamma_coeff[key] = gamma_coeff[key] + g_v[key]
 
         # Determine derivative orders needed
         max_deriv_inner = 1 if p.which == 'dv2' else 2  # For A2
