@@ -478,6 +478,26 @@ def get_coefficients(p, time_dict, compute_c1_c2=''):
                 1: 0.5*(-f**2 + f - 3.*Om) if not p.Newton else zeros,
                 2: 0.25*(18.*f**2 + 9.*(f**2 - f)*Om) if not p.Newton else zeros
             }
+        elif p.which == 'kappa2':
+            # Nonlinear lensing 1/2*(phi_2+psi_2): same 1/k_1^2 structure as G2, so it reuses that path
+            # pre = 0.5*Om: 0.5 is the delta_1+delta_2/2 convention, Om comes from N^2 D^2 Om H^2
+            pre = 0.5*Om
+            alpha = {
+                0: pre*(-1.5 + 9.*va/14.),
+                1: pre*9.*Om*(-f/(3.*Om) + f**2/(2.*Om) - 0.25) if not p.Newton else zeros,
+                2: zeros
+            }
+            beta = {
+                0: pre*(-3.)*np.ones_like(f),
+                1: pre*18.*Om*(f**2/(3.*Om) - 0.5) if not p.Newton else zeros,
+                2: zeros
+            }
+            gamma = {
+                0: zeros,
+                1: pre*2.25*Om*(-2./3.*f/Om + 2./3.*f**2/Om) if not p.Newton else zeros,
+                2: zeros
+            }
+
         else:  # G2 or dv2
             alpha = {
                 0: f - 3.*w/7.,
@@ -659,6 +679,11 @@ def compute_f_nm_unified(p, alpha, beta, gamma, time_dict, h_power, use_b1=False
         prefactor = time_dict['Da']**2 * time_dict['Ha'] / time_dict['a']
     elif p.which == 'G2':
         prefactor = -time_dict['Da']**2 * time_dict['Ha'] / time_dict['a']
+    elif p.which == 'kappa2':
+        # -(2-5s) from the number count; no H/a (it sits in W_phi), and H^2 survives (no -H^-1 as in G2)
+        s_r = (UnivariateSpline(time_dict['data']['r'], time_dict['data']['s'], k=5, s=0)(time_dict['ra'])
+               if 'data' in time_dict and 's' in time_dict['data'] else 0.)
+        prefactor = -(2. - 5.*s_r) * time_dict['Oma'] * time_dict['Ha']**2 * time_dict['Da']**2
     else: # dv2
         prefactor = time_dict['Da']**2 * time_dict['Ha'] / time_dict['a'] * time_dict['Ha'] * time_dict['mathcalR']
 
@@ -716,22 +741,28 @@ def compute_radiation_f_nm(p, time_dict):
     Only returns independent components: [fm2R_0, fm4R_0]
     Note: fm2R_1 = -fm2R_0/2, fm4R_1 = -fm4R_0/2 (derived in general_ps.py)
     """
-    H2 = time_dict['Ha']**2
-    H4 = time_dict['Ha']**4
     if p.which=='dv2':
-        prefactor = time_dict['Ha']*time_dict['mathcalR']*time_dict['Da'] / time_dict['a'] * time_dict['Ha']/time_dict['a']*time_dict['Da']**2
+        prefactor = time_dict['Ha']*time_dict['mathcalR']*time_dict['Da'] / time_dict['a'] * \
+                    time_dict['Ha']/time_dict['a']*time_dict['Da']**2
+    elif p.which=='kappa2':
+        # phi_2 = -(3/2) H Om v_2, so G2's radiation prefactor x -(3/2)*H*Om x -(2-5s), and one H
+        # survives because kappa2 has no -H^-1 to cancel it (unlike G2's -H^-1 d_r^2 v_2)
+        s_r = (UnivariateSpline(time_dict['data']['r'], time_dict['data']['s'], k=5, s=0)(time_dict['ra'])
+               if 'data' in time_dict and 's' in time_dict['data'] else 0.)
+        prefactor = -(2. - 5.*s_r) * (-1.5*time_dict['Ha'] * time_dict['Oma']) \
+                * time_dict['Ha'] * time_dict['Da'] / time_dict['a'] * time_dict['Da']**2
     else:
         prefactor = time_dict['Da'] / time_dict['a'] * time_dict['Ha']/time_dict['a']*time_dict['Da']**2
 
     # Only compute independent components
     base_fm2 = time_dict['fa'] + 1.5*time_dict['Oma']
-    fm2R_0 = base_fm2 * H2
+    fm2R_0 = base_fm2 * time_dict['Ha']**2
 
     if p.which == 'F2':
         base_fm4 = 3.*time_dict['fa']*(time_dict['fa'] + 1.5*time_dict['Oma'])
     else:
         base_fm4 = 3.*(time_dict['fa'] - 1)*(time_dict['fa'] + 1.5*time_dict['Oma'])
-    fm4R_0 = base_fm4 * H4
+    fm4R_0 = base_fm4 * time_dict['Ha']**4
 
     # Create splines only for independent components
     splines = []
@@ -787,10 +818,11 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
         W_derivs = None  # Won't need to call get_all_derivatives
 
     y_list = {'r_list': r_list, 'ell_list': ell_list}
-    if p.which in ['F2', 'G2', 'dv2']:
+    if p.which in ['F2', 'G2', 'dv2', 'kappa2']:
 
         if p.which == 'F2': derive_start=0
         elif p.which == 'G2': derive_start=2
+        elif p.which == 'kappa2': derive_start=0  # Delta_Omega is angular (-l(l+1)), no radial gradient
         else: derive_start=1  # dv2: fctr already includes mathcalR*Ha, take gradient with derive_start=1
 
         # Setup fctr_list and qterm_list based on radiation vs non-radiation
@@ -822,9 +854,9 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                 fctr_list_f0 = compute_f_nm_unified(p, alpha_coeff, beta_coeff, gamma_coeff, time_dict, h_power=0)
 
                 if p.Newton:
-                    # Newton case for G2: only f0 components
-                    fctr_list = fctr_list_f0  # [f0_0, f0_2]
-                    qterm_list = list(range(len(fctr_list)))  # [0, 1]
+                    # Newton case for G2: only f0, and index 1 is zeroed -> 1 component
+                    fctr_list = fctr_list_f0  # [f0_0]
+                    qterm_list = list(range(len(fctr_list)))  # [0]
                 else:
                     # Full GR case: include both f0 and fm2
                     # fm2: [f_00, f_0m2], take first 1: [fm2_0]
@@ -833,6 +865,11 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                     qterm_list = list(range(len(fctr_list)))  # [0, 1, 2]
 
             output_key = p.which
+
+            # general_ps hardcodes qterms [0,1] and [2]; compute_f_nm_unified drops null components
+            n_expected = 1 if (p.Newton and p.which != 'F2') else 3
+            if len(fctr_list) != n_expected:
+                raise ValueError(f"{p.which}: expected {n_expected} fctr components, got {len(fctr_list)}")
 
         # Initialize y_list
         y_list[output_key] = np.zeros((3, len(qterm_list), len(ell_list), len(r_list)), dtype=np.float64)
@@ -892,11 +929,14 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
             if W_derivs_list is None:
                 W_derivs_list_local = W_derivs.get_all_derivatives(r_list, r_power=0, max_deriv=max_deriv+derive_start)
             else:
-                # Use precomputed derivatives (check if we have enough)
+                # kappa2 is integrated: it sees the lensing efficiency window, not the photo-z one
+                W_this = W_lens_derivs_list if p.which == 'kappa2' else W_derivs_list
+                if W_this is None:
+                    raise ValueError("which 'kappa2' needs W_lens_derivs_list")
                 required_derivs = max_deriv + derive_start + 1
-                if len(W_derivs_list) < required_derivs:
-                    raise ValueError(f"W_derivs_list has {len(W_derivs_list)} derivatives but need {required_derivs}")
-                W_derivs_list_local = W_derivs_list[:required_derivs]
+                if len(W_this) < required_derivs:
+                    raise ValueError(f"W list has {len(W_this)} derivatives but need {required_derivs}")
+                W_derivs_list_local = W_this[:required_derivs]
 
             # Compute fctr * W derivatives
             fctr_W_derivs = [product_deriv(i+derive_start, fctr_derivs, W_derivs_list_local) for i in range(5)]
@@ -1085,7 +1125,8 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
     return y_list
 
 
-def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_args=None, W_derivs_list=None):
+def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_args=None, W_derivs_list=None,
+                                      W_lens_derivs_list=None):
     """
     Compute A0, A2, A4 kernel factors for bispectrum using analytical derivatives.
 
@@ -1126,7 +1167,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
     n_ell = len(ell_list)
     n_r = len(r_list)
 
-    if p.which in ['F2', 'G2', 'dv2']:
+    if p.which in ['F2', 'G2', 'dv2', 'kappa2']:
         # F2/G2/dv2 cases: compute A0, A2, A4 using f-coefficients
 
         # Get coefficients (independent of ell)
@@ -1146,6 +1187,12 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             # Verify we have enough derivatives
             if len(W_derivs_list) < max_deriv_total + 1:
                 raise ValueError(f"W_derivs_list must contain at least {max_deriv_total+1} derivatives (0 to {max_deriv_total})")
+
+        # kappa2 is integrated: rebind so every product_deriv below picks up W_phi
+        if p.which == 'kappa2':
+            if W_lens_derivs_list is None or len(W_lens_derivs_list) < max_deriv_total + 1:
+                raise ValueError("which 'kappa2' needs W_lens_derivs_list with enough derivatives")
+            W_derivs_list = W_lens_derivs_list
 
 
         # ====================================================================
@@ -1384,6 +1431,9 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             elif p.which == 'G2':
                 d2f = product_deriv(2, fctr_derivs, W_derivs_list)
                 f2_products_list.append((None, None, d2f))
+            elif p.which == 'kappa2':
+                f = product_deriv(0, fctr_derivs, W_derivs_list)   # derive_start=0: identity inner operator
+                f2_products_list.append((f, None, None))
             else:  # dv2
                 df = product_deriv(1, fctr_derivs, W_derivs_list)
                 f2_products_list.append((None, df, None))
@@ -1416,6 +1466,9 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
                 elif p.which == 'G2':
                     _, _, d2f = products
                     A2_all[ell_idx, i, :] = d2f
+                elif p.which == 'kappa2':
+                    f, _, _ = products
+                    A2_all[ell_idx, i, :] = f
                 else:  # dv2
                     _, df, _ = products
                     A2_all[ell_idx, i, :] = df
@@ -1430,6 +1483,8 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
                 d2y = -d4f + 2./r_list*d3f + (alpha-4.)/r_list**2*d2f - 4.*(alpha-1.)/r_list**3*df + 6.*alpha/r_list**4*f
             elif p.which == 'G2':
                 y, dy, d2y = d2f, d3f, d4f
+            elif p.which == 'kappa2':
+                y, dy, d2y = f, df, d2f      # identity inner operator
             else:  # dv2
                 y, dy, d2y = df, d2f, d3f
 

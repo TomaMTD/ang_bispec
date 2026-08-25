@@ -634,7 +634,7 @@ def compute_integral_F2_G2_dv2(p, ell_list, chi_list, r_list, t_grid, cp_dict, f
         # Note: component[1] = -component[0]/2 for all multipoles (derived later)
 
         # First multipole name and structure
-        if p.which in ['G2', 'dv2']:
+        if p.which in ['G2', 'dv2', 'kappa2']:
             if p.Newton:
                 first_name = 'f0_newton'
             else:
@@ -727,7 +727,7 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
     
 
     # Determine if we're processing F2/G2/dv2 or FG2/d1v/etc
-    if p.which in ['F2', 'G2', 'dv2']:
+    if p.which in ['F2', 'G2', 'dv2', 'kappa2']:
         # F2/G2/dv2: different structure
         compute_integral_F2_G2_dv2(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict)
         return

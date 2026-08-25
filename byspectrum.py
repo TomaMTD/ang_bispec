@@ -76,12 +76,16 @@ def build_lterm_list(lterm, Newton):
             return ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_fnl', 'lensing']
         elif lterm == 'noproj':
             return ['density', 'rsd', 'pot_fnl', 'lensing']
+        elif lterm == 'nolens':
+            return ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_fnl']
         else:
             return [lterm]
     elif lterm == 'all':
         return ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_gr', 'pot_fnl', 'lensing']
     elif lterm == 'noproj':
         return ['density', 'rsd', 'pot_gr', 'pot_fnl', 'lensing']
+    elif lterm == 'nolens':
+        return ['density', 'rsd', 'doppler', 'pot', 'dpot', 'pot_gr', 'pot_fnl']
     else:
         return [lterm]
 
@@ -248,11 +252,11 @@ def main(argv):
 
                 if argv.which=='all':
                     if p.rad:
-                        which_list=['F2', 'G2', 'dv2']
+                        which_list=['F2', 'G2', 'dv2', 'kappa2']
                     else:
-                        which_list=['FG2', 'd2v', 'd1v', 'd3v', 'd1d', 'F2', 'G2', 'dv2']
+                        which_list=['FG2', 'd2v', 'd1v', 'd3v', 'd1d', 'F2', 'G2', 'dv2', 'kappa2']
 
-                elif argv.which in ['F2', 'G2', 'dv2']:
+                elif argv.which in ['F2', 'G2', 'dv2', 'kappa2']:
                     which_list=[argv.which]
 
                 elif argv.which=='primordial':
@@ -281,7 +285,7 @@ def main(argv):
 
                     if p.which == 'primordial':
                         fctk = tr['phi']
-                    elif p.rad and p.which in ['F2', 'G2', 'dv2']:
+                    elif p.rad and p.which in ['F2', 'G2', 'dv2', 'kappa2']:
                         fctk = tr['dTdk']
                     else:
                         fctk = Pk
@@ -325,13 +329,17 @@ def main(argv):
 
             if argv.which=='all':
                 if p.rad:
-                    which_list=['F2', 'G2', 'dv2']
+                    which_list=['F2', 'G2', 'dv2', 'kappa2']
                 elif p.lterm == 'noproj':
-                    which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d', 'd2vd0d']
-                else:    
+                    which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d', 'd2vd0d', 'kappa2']
+                elif p.lterm == 'nolens':
                     which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d', \
                                 'dv2', 'd2vd0d', 'd1vd2v', 'd1vd0d', 'd1vdod', 'davd1v',\
                                 'd0pd3v', 'd0pd1d', 'd1vd2p']
+                else:    
+                    which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d', \
+                                'dv2', 'd2vd0d', 'd1vd2v', 'd1vd0d', 'd1vdod', 'davd1v',\
+                                'd0pd3v', 'd0pd1d', 'd1vd2p', 'kappa2']
             else:
                 which_list=[argv.which]
 

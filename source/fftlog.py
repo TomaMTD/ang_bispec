@@ -37,7 +37,7 @@ class FFTLogProcessor:
         self.qterm = p.qterm
         # Radiation only applies to the second-order kernels; force it False for every linear
         # building block so a stray -r 1 can never radiation-process (and corrupt) a linear term.
-        self.rad = p.rad and p.which in ['F2', 'G2', 'dv2']
+        self.rad = p.rad and p.which in ['F2', 'G2', 'dv2', 'kappa2']
         
         # Pre-compute common quantities
         self.l = np.arange(self.Nk)
@@ -150,7 +150,7 @@ class FFTLogProcessor:
                     'k': self.k,
                     'qterm_list': self.get_qterm_list()}
 
-        if self.which in ['FG2', 'F2', 'G2', 'dv2', 'local', 'ortho', 'equi', 'primordial']:
+        if self.which in ['FG2', 'F2', 'G2', 'dv2', 'kappa2', 'local', 'ortho', 'equi', 'primordial']:
             # Handle special cases
             if self.rad:
                 fctk_list = [self.fctk]
@@ -224,7 +224,7 @@ def apply_fftlog_dict(k, fctk, p):
     cp_dict = {}
 
     # Special handling for radiation F2/G2/dv2 cases
-    if p.rad and p.which in ['F2', 'G2', 'dv2']:
+    if p.rad and p.which in ['F2', 'G2', 'dv2', 'kappa2']:
         # For radiation, only compute cp coefficients once (same for F2, G2, dv2)
         processor = FFTLogProcessor(k, fctk, p)
         cp_dict['rad'] = processor.process_all_qterms()

@@ -219,7 +219,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
 
     # For F2, G2, dv2: use 'FG2' to get nm_pairs
     # For other quadratic terms: concatenate nm_pairs from both parts
-    if p.which in ['F2', 'G2', 'dv2']:
+    if p.which in ['F2', 'G2', 'dv2', 'kappa2']:
         nm_pairs_list = [get_nm_pairs_for_bispectrum('FG2', p.Newton, p.fnl_local)]
         which_for_cls_list = ['FG2']
         
@@ -489,7 +489,8 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
         # print("  Computing A0, A2, A4 kernels for all ells at once...")
         # Compute for all ells at once (no loop needed!)
         kernels = fctr.get_bispectrum_kernels_analytical(p, ell_list, chi_list, time_dict,
-                                                          window_args=window_args, W_derivs_list=W_derivs_list)
+                                                          window_args=window_args, W_derivs_list=W_derivs_list,
+                                                          W_lens_derivs_list=W_lens_derivs_list)
 
         # A0: shape (n_ell, n_components, n_chi)
         # For F2: use analytical A0
@@ -524,7 +525,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     kernels_array[:, :, comp] = A0[:, comp, :]
 
         # A2 and A4 (only for F2/G2/dv2)
-        if p.which in ['F2', 'G2', 'dv2'] and kernels['A2'] is not None and kernels['A4'] is not None:
+        if p.which in ['F2', 'G2', 'dv2', 'kappa2'] and kernels['A2'] is not None and kernels['A4'] is not None:
             A2 = kernels['A2']  # shape (n_ell, 2, n_chi)
             A4 = kernels['A4']  # shape (n_ell, 1, n_chi)
 
@@ -552,12 +553,12 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
         # ========================================================================
         # 4. Load f-coefficient terms from HDF5 (F2/G2/dv2 only)
         # ========================================================================
-        if p.which in ['F2', 'G2', 'dv2']:
+        if p.which in ['F2', 'G2', 'dv2', 'kappa2']:
             cls_file = f"{output_dir}Cls.h5"
 
             # For G2/dv2: Always need f^(0) (goes to A0 slots 0-2)
             # For F2: Only need f^(-2) and f^(-4) if Newton=0 (goes to Am slots 7-11)
-            if p.which in ['G2', 'dv2'] or not p.Newton:
+            if p.which in ['G2', 'dv2', 'kappa2'] or not p.Newton:
                 # print("  Loading f-coefficient terms from HDF5...")
                 try:
                     with h5py.File(cls_file, 'r') as f:
@@ -574,7 +575,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                         for i, ell in enumerate(ell_list):
                             ell_key = f'ell_{ell}'
 
-                            if p.which in ['G2', 'dv2']:
+                            if p.which in ['G2', 'dv2', 'kappa2']:
                                 # Load f^(0) directly into A0 slots (0-2)
                                 multipole_name = 'f0_newton' if p.Newton else 'f0'
 
@@ -693,7 +694,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
         # ========================================================================
         # 4b. Load Il terms (radiation) for F2/G2/dv2
         # ========================================================================
-        if p.which in ['F2', 'G2', 'dv2'] and not p.Newton and p.rad:
+        if p.which in ['F2', 'G2', 'dv2', 'kappa2'] and not p.Newton and p.rad:
             # print("  Loading Il (radiation) terms from HDF5...")
             try:
                 with h5py.File(cls_file, 'r') as f:
@@ -756,8 +757,8 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
         # ========================================================================
         # print("  Precomputing angular coefficient combinations...")
 
-        if p.which in ['F2', 'G2', 'dv2']:
-            # F2/G2/dv2: 4 angular combinations from the integrand formula
+        if p.which in ['F2', 'G2', 'dv2', 'kappa2']:
+            # F2/G2/dv2/kappa2: 4 angular combinations from the integrand formula
             # coeff_00: for Cl2(0,0)*Cl3(0,0)
             # coeff_m2m2: for Cl2(-2,0)*Cl3(-2,0)
             # coeff_p2m2: for (Cl2(2,0)*Cl3(-2,0) + Cl2(-2,0)*Cl3(2,0))
@@ -1553,6 +1554,12 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
         Cl_array, coeffs = load_and_compute_all_terms(
                         p, ell_list, chi_list, time_dict, window_args, lterm_list,
                         W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
+    # kappa2: Delta_Omega -> -l(l+1). It rides with the second-order vertex, which the integrator
+    # rotates over all three ells via coeffs[i1/i2/i3], so scale coeffs -- never Cl_array.
+    if p.which == 'kappa2':
+        _l = np.asarray(ell_list, dtype=np.float64)
+        coeffs = coeffs * (-_l*(_l + 1.))[:, None, None]
+
     # print(f"Data loading completed in {time.time()-start_time:.2f} seconds")
 
     # get all ell triplets, wigner values, and Al1l2l3 coefficients (geometry only, cosmology-independent)
@@ -1574,7 +1581,7 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
     # print(f"Computing bispectra in parallel...")
     start_time = time.time()
 
-    if p.which in ['F2', 'G2', 'dv2']:
+    if p.which in ['F2', 'G2', 'dv2', 'kappa2']:
         # F2/G2/dv2: use full integration with 4 angular coefficients
         bl_results = compute_bispectrum_parallel_efficient(
             Cl_array, coeffs,
@@ -1611,7 +1618,7 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
     # 5. Save results to HDF5
     # ========================================================================
     # Construct output file name (shared across all 'which' values)
-    if p.rad and p.which in ['F2', 'G2', 'dv2']:
+    if p.rad and p.which in ['F2', 'G2', 'dv2', 'kappa2']:
         name_suffix = '_rad'
     elif p.Newton:
         name_suffix = '_newton'
