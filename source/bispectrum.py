@@ -406,11 +406,14 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
 
                 # fNL scale-dependent bias: the density Cl factor 3 f H^2 picks up -b_phi/(N D),
                 # i.e. C_l^delta = C_l^(0,0) + [3 f H^2 - b_phi/(N D)] C_l^(-2,0). Added to d0d/d1d.
-                # b_phi = -2 fNL g_in delta_c (b1-1);  N = 2/(3 Omega_m H0^2). Sign must match
+                # b_phi = -2 fNL g_in delta_c (b1-1). Sign must match
                 # get_coefficients in fctr.py (Phi = -phi convention): Delta_b1 > 0 for fNL>0, b1>1.
+                # d0dd0d excluded for the same reason as b1 above: the b2/2*delta^2 vertex has
+                # matter legs, and b_phi is a bias response.
                 fnl_corr_on_ra = 0.0
                 fnl_dot_corr_on_ra = 0.0
-                if fctr.COMPUTE_FNL and p.fnl_local != 0 and 'data' in time_dict and 'b1' in time_dict['data']:
+                if fctr.COMPUTE_FNL and p.fnl_local != 0 and p.which != 'd0dd0d' \
+                        and 'data' in time_dict and 'b1' in time_dict['data']:
                     deltac = 1.686
                     g_in = time_dict['Da']/time_dict['a'] * 3./5.*(1. + 2./3.*time_dict['fa']/time_dict['Oma'])
                     b1L = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1']-1., s=0, k=5)(time_dict['ra'])
