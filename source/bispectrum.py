@@ -155,10 +155,11 @@ def check_and_compute(cls_file, p, ell_list, chi_list, nm_pairs, which_for_cls,
         print(f"\n  All required data computed and saved to {cls_file}\n")
 
 
-def get_nm_pairs_for_bispectrum(which, Newton=0):
+def get_nm_pairs_for_bispectrum(which, Newton=0, fnl=0):
     """
     Get nm_pairs needed for loading Cls in bispectrum (may include extra components for non-Newton)
     """
+    # fnl keeps the second pair alive in Newton mode: b_phi rides on it (Poisson, not GR)
     nm_mapping = {
         'FG2': [(-2, 0), (0, 0), (2, 0)],
         'cl': [(-2, 0), (0, 0)],  # For computing C_ℓ from eq. (36): needs C^(-2,0) and C^(0,0)
@@ -168,9 +169,9 @@ def get_nm_pairs_for_bispectrum(which, Newton=0):
         'd0p': [(-2, 0)],
         'd2p': [(0, 2)],
         'dav': [(-2, 0)],
-        'd1d': [(1, 1), (-1, 1)] if not Newton else [(1, 1)],  # base + d1v for non-Newton
-        'd0d': [(0, 0), (-2, 0)] if not Newton else [(0, 0)],
-        'dod': [(0, 0), (-2, 0)] if not Newton else [(0, 0)],
+        'd1d': [(1, 1), (-1, 1)] if (not Newton or fnl) else [(1, 1)],  # base + d1v for non-Newton
+        'd0d': [(0, 0), (-2, 0)] if (not Newton or fnl) else [(0, 0)],
+        'dod': [(0, 0), (-2, 0)] if (not Newton or fnl) else [(0, 0)],
         'local': [(1, 0), (0, 0)],
         'equi':  [(1, 0), (1./3., 0), (2./3., 0)],  # Needs all three: λ=1, λ=1/3, λ=2/3
         'ortho': [(2./3., 0)]
@@ -219,7 +220,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
     # For F2, G2, dv2: use 'FG2' to get nm_pairs
     # For other quadratic terms: concatenate nm_pairs from both parts
     if p.which in ['F2', 'G2', 'dv2']:
-        nm_pairs_list = [get_nm_pairs_for_bispectrum('FG2', p.Newton)]
+        nm_pairs_list = [get_nm_pairs_for_bispectrum('FG2', p.Newton, p.fnl_local)]
         which_for_cls_list = ['FG2']
         
         # Single Cl_array for all cases
@@ -232,7 +233,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
         Cl_array = np.zeros((n_ell, n_chi, len(nm_pairs_list[0])))
     else:
         # Quadratic term: concatenate nm_pairs from which[:3] and which[3:]
-        nm_pairs_list = [get_nm_pairs_for_bispectrum(p.which[:3], p.Newton), get_nm_pairs_for_bispectrum(p.which[3:], p.Newton)]
+        nm_pairs_list = [get_nm_pairs_for_bispectrum(p.which[:3], p.Newton, p.fnl_local), get_nm_pairs_for_bispectrum(p.which[3:], p.Newton, p.fnl_local)]
         which_for_cls_list = [p.which[:3], p.which[3:]]
 
         # Single Cl_array for all cases
@@ -315,7 +316,9 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 # prime = d/dtau = -d/dr on the lightcone, as for c2 = -db1/dr + 3*H*b2 in fctr.py
                 b1_dot_cl = -b1_spline.derivative(1)(chi_list_file)
 
-            if which_for_cls not in ['d0d', 'd1d', 'dod'] or (p.Newton and which_for_cls not in ['dod']):
+            # Newton still needs the combination when fNL is on: it carries b_phi
+            if which_for_cls not in ['d0d', 'd1d', 'dod'] \
+                    or (p.Newton and not p.fnl_local and which_for_cls not in ['dod']):
                 # For each (n,m) pair, sum over lterms
                 for cl_idx, (n, m) in enumerate(nm_pairs):
                     group_name = f'{"primordial_" if p.which in ("local","equi","ortho") else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}' 
@@ -404,14 +407,11 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
 
                 # Apply the combination based on which_for_cls
 
-                # fNL scale-dependent bias: the density Cl factor 3 f H^2 picks up -b_phi/(N D),
-                # i.e. C_l^delta = C_l^(0,0) + [3 f H^2 - b_phi/(N D)] C_l^(-2,0). Added to d0d/d1d.
-                # b_phi = -2 fNL g_in delta_c (b1-1). Sign must match
-                # get_coefficients in fctr.py (Phi = -phi convention): Delta_b1 > 0 for fNL>0, b1>1.
-                # d0dd0d excluded for the same reason as b1 above: the b2/2*delta^2 vertex has
-                # matter legs, and b_phi is a bias response.
-                fnl_corr_on_ra = 0.0
-                fnl_dot_corr_on_ra = 0.0
+                # C_l^delta = C_l^(0,0) + [3 f H^2 - b_phi/(N D)] C_l^(-2,0), b_phi = -2 fNL g_in delta_c (b1-1)
+                # Sign matches get_coefficients (Phi = -phi): Delta_b1 > 0 for fNL>0, b1>1
+                # d0dd0d excluded as for b1: the b2/2*delta^2 vertex has matter legs
+                fnl_corr_on_ra = np.zeros_like(time_dict['ra'])      # arrays: Newton splines them alone
+                fnl_dot_corr_on_ra = np.zeros_like(time_dict['ra'])
                 if fctr.COMPUTE_FNL and p.fnl_local != 0 and p.which != 'd0dd0d' \
                         and 'data' in time_dict and 'b1' in time_dict['data']:
                     deltac = 1.686
@@ -430,7 +430,8 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 if which_for_cls in ['d0d', 'd1d']:
                     # d0d: Cl = b1*Cl_F2(m=0) + [3*H²*f - b_phi/(N D)] * Cl_F2(m=-2)
                     # d1d: Cl = b1*Cl_d1d + [3*H²*f - b_phi/(N D)] * Cl_d1v
-                    factor_on_ra = 3.0 * time_dict['Ha']**2 * time_dict['fa'] + fnl_corr_on_ra
+                    # 3*H^2*f is the GR piece, dropped in Newton; b_phi is not
+                    factor_on_ra = (0. if p.Newton else 3.0 * time_dict['Ha']**2 * time_dict['fa']) + fnl_corr_on_ra
                     factor_spline = UnivariateSpline(time_dict['ra'], factor_on_ra, s=0, k=5)
                     factor = factor_spline(chi_list_file)
                     Cl_combined = b1_0 * Cl_nm_list[0] + factor[None, :] * Cl_nm_list[1]
@@ -442,10 +443,12 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     factor1_on_ra = time_dict['Ha'] * time_dict['Da'] * time_dict['fa']
 
                     # factor2 for Cl_F2(m=-2): H*D * 3*(f*dotH + H²*(3/2*Om - f)) - d(b_phi/N)/dtau
-                    factor2_on_ra = time_dict['Ha'] * time_dict['Da'] * 3.0 * (
+                    # the GR bracket drops in Newton, the b_phi one does not
+                    factor2_on_ra = -fnl_dot_corr_on_ra if p.Newton else (
+                        time_dict['Ha'] * time_dict['Da'] * 3.0 * (
                         time_dict['fa'] * time_dict['dHa'] +
                         time_dict['Ha']**2 * (1.5 * time_dict['Oma'] - time_dict['fa'])
-                    ) - fnl_dot_corr_on_ra
+                    ) - fnl_dot_corr_on_ra)
 
                     # Create splines and evaluate
                     factor1_spline = UnivariateSpline(time_dict['ra'], factor1_on_ra, s=0, k=5)
@@ -460,7 +463,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                         Da_cl = UnivariateSpline(time_dict['ra'], time_dict['Da'], s=0, k=5)(chi_list_file)
                         factor1 = b1_cl * factor1 + b1_dot_cl * Da_cl
 
-                    if p.Newton:
+                    if p.Newton and not p.fnl_local:
                         Cl_combined = factor1[None, :] * Cl_nm_list[0]
                     else:
                         Cl_combined = factor1[None, :] * Cl_nm_list[0] + factor2[None, :] * Cl_nm_list[1]

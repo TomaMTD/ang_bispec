@@ -571,7 +571,7 @@ def get_coefficients(p, time_dict, compute_c1_c2=''):
         # Second-order scale-dependent bias, local fNL (\tilde fNL=0), 1/2 convention throughout
         # (delta = delta_1 + delta_2 here vs delta_1 + delta_2/2 in the derivation). Dispatch
         # on which: F2 -> density delta_{2,fNL}
-        if p.which == 'F2' and not p.Newton and 'data' in time_dict and 'b2' in time_dict['data']:
+        if p.which == 'F2' and 'data' in time_dict and 'b2' in time_dict['data']:
             # --- density delta_{2,fNL}: biases baked in (unlike c1/c2/b2 which factor out a data field) ---
             g      = D/a
             g_in   = g * 3./5.*(1. + 2./3.*f/Om)
@@ -1212,10 +1212,9 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
                 if not p.Newton:
                     print('     Warning: b1 found but b2 not found, skipping GR bias corrections')
 
-            # Second-order scale-dependent bias delta_{2,fNL}: independent of the c1/c2/b2
-            # GR corrections (its own flag), needs only b2 (for b2^L) and full GR (non-Newton).
+            # delta_{2,fNL}: own flag, needs b2 (for b2^L), computed in Newton mode too.
             # Produces f0 (2 components: H^2, H^4) and f2 (1 component: H^2); no f4 (index 0 is zero).
-            if COMPUTE_FNL and p.fnl_local != 0 and not p.Newton and 'b2' in time_dict['data']:
+            if COMPUTE_FNL and p.fnl_local != 0 and 'b2' in time_dict['data']:
                 # print('     Adding delta_{2,fNL} scale-dependent bias term')
                 alpha_fnl, beta_fnl, gamma_fnl = get_coefficients(p, time_dict, compute_c1_c2='fnl')
                 f0_splines_fnl = compute_f_nm_unified(p, alpha_fnl, beta_fnl, gamma_fnl, time_dict, h_power=0)
