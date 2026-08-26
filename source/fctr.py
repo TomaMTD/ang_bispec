@@ -480,21 +480,19 @@ def get_coefficients(p, time_dict, compute_c1_c2=''):
             }
         elif p.which == 'kappa2':
             # Nonlinear lensing 1/2*(phi_2+psi_2): same 1/k_1^2 structure as G2, so it reuses that path
-            # pre = 0.5*Om: 0.5 is the delta_1+delta_2/2 convention, Om comes from N^2 D^2 Om H^2
-            pre = 0.5*Om
             alpha = {
-                0: pre*(-1.5 + 9.*va/14.),
-                1: pre*9.*Om*(-f/(3.*Om) + f**2/(2.*Om) - 0.25) if not p.Newton else zeros,
+                0: 0.5*(-1.5 + 9.*va/14.),
+                1: 0.5*9.*Om*(-f/(3.*Om) + f**2/(2.*Om) - 0.25) if not p.Newton else zeros,
                 2: zeros
             }
             beta = {
-                0: pre*(-3.)*np.ones_like(f),
-                1: pre*18.*Om*(f**2/(3.*Om) - 0.5) if not p.Newton else zeros,
+                0: 0.5*(-3.)*np.ones_like(f),
+                1: 0.5*18.*Om*(f**2/(3.*Om) - 0.5) if not p.Newton else zeros,
                 2: zeros
             }
             gamma = {
                 0: zeros,
-                1: pre*2.25*Om*(-2./3.*f/Om + 2./3.*f**2/Om) if not p.Newton else zeros,
+                1: 0.5*2.25*Om*(-2./3.*f/Om + 2./3.*f**2/Om) if not p.Newton else zeros,
                 2: zeros
             }
 
