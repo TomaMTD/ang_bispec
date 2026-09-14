@@ -1620,12 +1620,13 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
         if p.which == 'ortho':
             bl_results = bl_results / 6.0
 
-        # The templates are the Komatsu-Spergel ones in Phi (B_Phi = 2 fNL [...]) evaluated with
-        # P_zeta legs; in zeta = zeta_G - 3/5 fNL (zeta_G^2 - <zeta_G^2>), i.e. zeta = -(5/3) Phi,
-        # every term is quadratic in P so B_zeta = (-5/3)^3 (9/25)^2 B_Phi = -(3/5) B_Phi, for all
-        # three shapes (local: -(6/5) fNL [P P + perms]). Per unit fNL.
+        # The integrator returns the Komatsu-Spergel templates in Phi (B_Phi = 2 fNL [...]) built
+        # with P_zeta legs. Two signs: (i) zeta = zeta_G - 3/5 fNL (zeta_G^2 - <zeta_G^2>) gives
+        # B_zeta = -(3/5) B_Phi for every shape (each term is quadratic in P); (ii) the zeta legs
+        # are -<Delta zeta> (the -T in fftlog with a positive observed-side L: delta = +N D k^2 T zeta),
+        # three of them per shape -> another -1. Net +3/5, per unit fNL. Local: -(6/5) fNL [PP+perms].
         if p.which in ('local', 'equi', 'ortho'):
-            bl_results = -3./5. * bl_results
+            bl_results = 3./5. * bl_results
 
     # print(f"Computation completed in {time.time()-start_time:.2f} seconds")
 
