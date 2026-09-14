@@ -260,6 +260,11 @@ def main(argv):
                 elif argv.which in ['F2', 'G2', 'dv2', 'kappa2']:
                     which_list=[argv.which]
 
+                elif argv.which in ('local', 'equi', 'ortho', 'primordial'):   # shapes: their legs are d0z, all lambdas
+                      p.rad = 0
+                      p.Newton = 0
+                      which_list = ['d0z']
+
                 else:
                     which_list=[argv.which]
 

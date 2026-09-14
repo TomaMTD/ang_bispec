@@ -261,7 +261,8 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 # They should be in each group, let's get from first group
                 n, m = nm_pairs[0][0], nm_pairs[0][1]
 
-                first_group_name = f'n_{n}_m_{m}' + ('_lambda_1' if which_for_cls[-1] == 'z' else '')
+                first_group_name = (f'n_-2_m_0_lambda_{n if isinstance(n, int) else f"{n:.2f}"}' if p.which in ('local', 'equi', 'ortho')
+                                    else f'n_{n}_m_{m}' + ('_lambda_1' if which_for_cls[-1] == 'z' else ''))
                 if first_group_name not in f:
                     raise ValueError(f"Group {first_group_name} not found in {cls_file}")
 
@@ -324,7 +325,10 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     or (p.Newton and not p.fnl_local and which_for_cls not in ['dod']):
                 # For each (n,m) pair, sum over lterms
                 for cl_idx, (n, m) in enumerate(nm_pairs):
-                    group_name = f'n_{n}_m_{m}' + ('_lambda_1' if which_for_cls[-1] == 'z' else '')   # zeta legs are <Delta zeta_G>: lambda = 1
+                    if p.which in ('local', 'equi', 'ortho'):   # shapes: pairs are (lambda, 0), every leg is d0z
+                        group_name = f'n_-2_m_0_lambda_{n if isinstance(n, int) else f"{n:.2f}"}'
+                    else:                                        # dXz legs are <Delta zeta_G>: lambda = 1
+                        group_name = f'n_{n}_m_{m}' + ('_lambda_1' if which_for_cls[-1] == 'z' else '')
 
                     if group_name not in f:
                         print(f"  Warning: Group {group_name} not found, skipping")
@@ -1450,7 +1454,8 @@ def get_all_primordial_shapes(p, ell_list, chi_list, time_dict, window_args, lte
                  (f'squeezed_ell{p.ell}' if p.configuration == 'squ' else \
                   f'squeezed2_ell{p.ellmax}' if p.configuration == 'squ2' else \
                   f'folded_ell{p.ellmax}' if p.configuration == 'folded' else 'all')
-    file_path = f"{p.output_dir}bl_{p.lterm}.h5"
+    # same name as the save side of compute_all_bispectra_efficient (shapes force rad = 0)
+    file_path = f"{p.output_dir}bl_{p.lterm}{'_newton' if p.Newton else ''}{f'_fnl{p.fnl_local:g}' if p.fnl_local else ''}.h5"
 
     # Step 1: Compute local bispectrum
     # print(f"\n{'='*70}")
@@ -1614,6 +1619,13 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
         # For ortho: divide by 6 (3 cyclic permutations * 2 from return statement)
         if p.which == 'ortho':
             bl_results = bl_results / 6.0
+
+        # The templates are the Komatsu-Spergel ones in Phi (B_Phi = 2 fNL [...]) evaluated with
+        # P_zeta legs; in zeta = zeta_G - 3/5 fNL (zeta_G^2 - <zeta_G^2>), i.e. zeta = -(5/3) Phi,
+        # every term is quadratic in P so B_zeta = (-5/3)^3 (9/25)^2 B_Phi = -(3/5) B_Phi, for all
+        # three shapes (local: -(6/5) fNL [P P + perms]). Per unit fNL.
+        if p.which in ('local', 'equi', 'ortho'):
+            bl_results = -3./5. * bl_results
 
     # print(f"Computation completed in {time.time()-start_time:.2f} seconds")
 
