@@ -16,15 +16,18 @@ class FFTLogProcessor:
     
     def __init__(self, k, fctk, p):
         self.k = k
+
+        # zeta legs (d0z, d1z): <phi_0 zeta> = -T_phi P_zeta^lam (phi_0 = -T zeta, T from CLASS);
+        if p.which[-1] == 'z':
+            fctk = -fctk * primordial(k)**p.lam
+
         self.fctk = fctk if p.lterm!='density' else fctk*k**2
         self.Nk = len(k)
         self.kmin, self.kmax = np.min(k), np.max(k)
 
         # FFTLog requires a UNIFORM ln k grid: eta_p = 2*pi*p/ln(kmax/kmin) below is only the
         # true Fourier frequency if dln(k) is constant. CLASS returns a uniform grid only when
-        # k_per_decade_for_bao == k_per_decade_for_pk; if they differ it refines the sampling
-        # around the BAO, the grid silently stops being uniform, and the cp coefficients come
-        # out wrong with no error raised. Cheap guard against a completely silent failure.
+        # k_per_decade_for_bao == k_per_decade_for_pk. Cheap guard against a completely silent failure.
         _dlnk = np.diff(np.log(k))
         assert np.allclose(_dlnk, _dlnk[0], rtol=1e-6), (
             "fftlog needs a uniform ln k grid (got dlnk in "
@@ -45,16 +48,11 @@ class FFTLogProcessor:
         self.eta_p_list = 2.*np.pi*self.p_list/np.log(self.kmax/self.kmin)
 
     def get_qterm_list(self):
-        """Get the list of qterm values based on 'which' parameter"""
-        qterm_map = {
-            'd2v': [1, 2, 3],
-            'd1v': [1, 2],
-            'd1d': [1, 2], 
-            'd0d': [1],
-            'd3v': [1, 2, 3, 4]
-        }
-        return qterm_map.get(self.which, [0])
-    
+        """d-family (dNv, dNd, dNz): N+1 qterms; everything else a single one"""
+        if self.which[0] == 'd' and self.which[1].isdigit():
+            return list(range(1, int(self.which[1]) + 2))
+        return [0]
+
     def compute_quadratic_terms(self, k, fctk):
         """
         Calculate quadratic terms
@@ -83,7 +81,7 @@ class FFTLogProcessor:
                     -2./k * spline.derivative(1)(k),\
                     fctr_scaled/k**2]
     
-        elif self.which in ['d1v', 'd1d']:
+        elif self.which in ['d1v', 'd1d', 'd1z']:
             fctr_scaled /= k
             
             if self.which == 'd1d':
@@ -101,8 +99,8 @@ class FFTLogProcessor:
                     3./k**2 * spline.derivative(1)(k),
                     -fctr_scaled / k**3]
     
-        elif self.which == 'd0d':
-            return [fctr_scaled * k**2]
+        elif self.which == 'd0z':
+            return [fctr_scaled]
         
         else:
             raise ValueError(f"Invalid 'which' parameter: {self.which}")
@@ -150,12 +148,10 @@ class FFTLogProcessor:
                     'k': self.k,
                     'qterm_list': self.get_qterm_list()}
 
-        if self.which in ['FG2', 'F2', 'G2', 'dv2', 'kappa2', 'local', 'ortho', 'equi', 'primordial']:
+        if self.which in ['FG2', 'F2', 'G2', 'dv2', 'kappa2']:
             # Handle special cases
             if self.rad:
                 fctk_list = [self.fctk]
-            elif self.which in ['local', 'ortho', 'equi', 'primordial']:
-                fctk_list = [-self.fctk * self.k]
             else:
                 fctk_list = [self.fctk * self.k**4]
 

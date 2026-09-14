@@ -978,22 +978,13 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
  
 
     else:
-        # lterm_list is now passed as argument
-
-        if p.which=='d2v':
-            qterm_list=[1,2,3]
-        elif p.which in ['d1v', 'd1d']:
-            qterm_list=[1,2]
-        elif p.which in ['d0d']:
-            qterm_list=[1]
-        elif p.which=='d3v':
-            qterm_list=[1,2,3,4]
-        else:
-            qterm_list=[0]
+        # only the derivative order matters here (d2v, d2p, d2z share one fctr);
+        # qterm i carries d^i/dr^i [r^i B]
+        nq = int(p.which[1]) + 1 if p.which[0] == 'd' else 1
 
         for lterm in lterm_list:
             print('     lterm={}'.format(lterm))
-            y_list[lterm] = np.zeros((4, len(qterm_list), len(ell_list), len(r_list)), dtype=np.float64)
+            y_list[lterm] = np.zeros((4, nq, len(ell_list), len(r_list)), dtype=np.float64)
 
             # Create spline for fctr(r)
             if lterm == 'density':
@@ -1052,8 +1043,8 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                 b1_derivs = None
                 use_b1 = False
 
-            for qt_ind, qt in enumerate(qterm_list):
-                r_power_and_derivative = qt-1  if qt in [4, 3, 2] else 0
+            for qt_ind in range(nq):
+                r_power_and_derivative = qt_ind
 
                 # FIXED: Apply derive_start to fctr*W first, then qterm operations
                 # Step 1: Compute B and its derivatives analytically
@@ -1529,6 +1520,34 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             if 'v' in p.which:
                 cosmo_factor_ra *= time_dict['fa']
 
+        elif p.which in ['d0zd0z', 'd0zd0d', 'd0zd0p', 'd1zd1p']:
+            # scale-dependent bias vertices with zeta_G legs; b_zeta = b_phi(g_in -> 3/5), Lagrangian b1, b2
+            if 'data' not in time_dict or 'b2' not in time_dict['data']:
+                raise ValueError(f"{p.which} requires b2 in time_dict['data']")
+            deltac, fnl = 1.686, p.fnl_local
+            b1L = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1']-1., k=5, s=0)(ra)
+
+            # Note on the Eulerian b2
+            # b2 is the Eulerian Lazeyras b2(b1) (1511.01096), the comoving-frame b2 that
+            # 1901.07460 eq.(53) takes as input. 
+            # So b2 = b2L + (2/3 - 2v/7) b1L (= 8/21 at v=1) is the right conversion.
+            # The relation b2 = 2b1L + b2L + 4/3 + 2v/7 is b1*<delta_2,N/delta^2> + b2^E, i.e. the F2
+            # vertex folded in -- using it here double counts F2.
+            b2L = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b2'], k=5, s=0)(ra) - b1L*(2./3.-2.*time_dict['va']/7.)
+            b_z  = -6./5.*fnl*deltac*b1L
+            b_zd =  6./5.*fnl*(b1L - deltac*b2L)
+            b_z2 = 18./25.*fnl**2*deltac*(-2.*b1L + deltac*b2L)
+            N, D, H, f = 2./3./omega_m/H0**2, time_dict['Da'], time_dict['Ha'], time_dict['fa']
+            if p.which == 'd0zd0z':                       # b_zeta2 zeta^2
+                cosmo_factor_ra = b_z2
+            elif p.which == 'd0zd0d':                     # (b_zeta + b_zetadelta) zeta delta_mP: Poisson-gauge leg (the bl d0d,
+                cosmo_factor_ra = D*(b_z + b_zd)          # b1 and b_phi off); N sits in the (0,0)/(-2,0) groups, D does not
+            elif p.which == 'd0zd0p':                     # N H D f (b_zeta' + 3 H b_zetadelta) phi_0 zeta: the -3H b_zeta of the
+                b_z_prime = -UnivariateSpline(ra, b_z, k=5, s=0).derivative(1)(ra)   # delta_mC form is absorbed by
+                cosmo_factor_ra = N*H*D*f*(b_z_prime + 3.*H*b_zd)                    # delta_mC = delta_mP + 3NDfH^2 phi_0; ' = -d/dr
+            else:                                         # d1zd1p: N D b_zeta d_r phi_0 d_r zeta
+                cosmo_factor_ra = N*D*b_z
+
         else:
             # Default case: d2vd2v, d1vd2v, davd1v, etc.
             cosmo_factor_ra = time_dict['Da']**2 * time_dict['fa']**2
@@ -1571,7 +1590,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             # Multiply by window
             A0_tab = cosmo_factor * Wr
 
-        if p.which in ['d2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v']:
+        if p.which in ['d2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v', 'd0zd0d']:
             A0_tab*=-1
 
         # Apply r-power division (on r_list, not ra)

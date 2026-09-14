@@ -167,7 +167,10 @@ def get_nm_pairs_for_bispectrum(which, Newton=0, fnl=0):
         'd2v': [(0, 2)],
         'd3v': [(1, 3)],
         'd0p': [(-2, 0)],
+        'd1p': [(-1, 1)],
         'd2p': [(0, 2)],
+        'd0z': [(-2, 0)],
+        'd1z': [(-1, 1)],
         'dav': [(-2, 0)],
         'd1d': [(1, 1), (-1, 1)] if (not Newton or fnl) else [(1, 1)],  # base + d1v for non-Newton
         'd0d': [(0, 0), (-2, 0)] if (not Newton or fnl) else [(0, 0)],
@@ -242,7 +245,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
 
     kernels_array = np.zeros((n_ell, n_chi, 16))
     for idx, (nm_pairs, which_for_cls) in enumerate(zip(nm_pairs_list, which_for_cls_list)):
-        if which_for_cls in ['d2p', 'd0p']:
+        if which_for_cls in ['d2p', 'd1p', 'd0p']:
             stuff = 2.0 / (3.0 * omega_m * H0**2)
         else:
             stuff=1
@@ -258,7 +261,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 # They should be in each group, let's get from first group
                 n, m = nm_pairs[0][0], nm_pairs[0][1]
 
-                first_group_name = f'{"primordial_" if p.which in ("local","equi","ortho") else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}'
+                first_group_name = f'n_{n}_m_{m}' + ('_lambda_1' if which_for_cls[-1] == 'z' else '')
                 if first_group_name not in f:
                     raise ValueError(f"Group {first_group_name} not found in {cls_file}")
 
@@ -309,7 +312,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
             b1_cl = b1_dot_cl = None
             # d0dd0d excluded: it is the b2/2*delta^2 vertex, whose legs are the matter
             # density (2011.13660 Table 1, the (delta_T)^2 row carries b20 and no b10).
-            if fctr.COMPUTE_B1 and which_for_cls in ['d0d', 'd1d', 'dod'] and p.which != 'd0dd0d' \
+            if fctr.COMPUTE_B1 and which_for_cls in ['d0d', 'd1d', 'dod'] and p.which not in ['d0dd0d', 'd0zd0d'] \
                     and 'data' in time_dict and 'b1' in time_dict['data']:
                 b1_spline = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1'], k=5, s=0)
                 b1_cl = b1_spline(chi_list_file)
@@ -321,7 +324,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     or (p.Newton and not p.fnl_local and which_for_cls not in ['dod']):
                 # For each (n,m) pair, sum over lterms
                 for cl_idx, (n, m) in enumerate(nm_pairs):
-                    group_name = f'{"primordial_" if p.which in ("local","equi","ortho") else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}' 
+                    group_name = f'n_{n}_m_{m}' + ('_lambda_1' if which_for_cls[-1] == 'z' else '')   # zeta legs are <Delta zeta_G>: lambda = 1
 
                     if group_name not in f:
                         print(f"  Warning: Group {group_name} not found, skipping")
@@ -412,7 +415,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 # d0dd0d excluded as for b1: the b2/2*delta^2 vertex has matter legs
                 fnl_corr_on_ra = np.zeros_like(time_dict['ra'])      # arrays: Newton splines them alone
                 fnl_dot_corr_on_ra = np.zeros_like(time_dict['ra'])
-                if fctr.COMPUTE_FNL and p.fnl_local != 0 and p.which != 'd0dd0d' \
+                if fctr.COMPUTE_FNL and p.fnl_local != 0 and p.which not in  ['d0dd0d', 'd0zd0d'] \
                         and 'data' in time_dict and 'b1' in time_dict['data']:
                     deltac = 1.686
                     g_in = time_dict['Da']/time_dict['a'] * 3./5.*(1. + 2./3.*time_dict['fa']/time_dict['Oma'])

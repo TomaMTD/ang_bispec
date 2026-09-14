@@ -701,10 +701,8 @@ def get_nm_values(which):
         'd2v': [(0, 2)],
         'd3v': [(1, 3)],
         'd1d': [(1, 1)],
-        'primordial': [(1, 0), (0, 0), (1./3., 0), (2./3., 0)],
-        'local': [(1, 0), (0, 0)],
-        'equi':  [(1, 0), (1./3., 0), (2./3., 0)],  # Needs all three: λ=1, λ=1/3, λ=2/3
-        'ortho': [(2./3., 0)],
+        'd0z': [(-2, 0)],
+        'd1z': [(-1, 1)],
     }
     return nm_mapping.get(which, [(0, 0)]) 
 
@@ -757,7 +755,7 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
             # for m==0, the n values are taken into account in cp
             n_eff = n if m == 0 else 0
 
-            group_path = f'{"primordial_" if p.which=="primordial" else ""}n_{n if isinstance(n, int) else f"{n:.2f}"}_m_{m}'
+            group_path = f'n_{n}_m_{m}' + (f'_lambda_{p.lam if isinstance(p.lam, int) else f"{p.lam:.2f}"}' if p.which[-1] == 'z' else '')
 
             ## Check if computation already exists for all ells
             todo = []
@@ -777,18 +775,17 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
             for qt_ind, qt in enumerate(cp['qterm_list']):
 
                 power_reduction=0
-                if p.which in ['local', 'equi', 'ortho', 'primordial']:
-                    Renu = 2 + cp[qt]['b'] + n_eff*(n_s-4)
-                else:
-                    Renu = 1 + cp[qt]['b'] + n_eff
+                Renu = 1 + cp[qt]['b'] + n_eff
 
                 while Renu-2*power_reduction>=-1:
                     power_reduction+=1
 
                 if power_reduction > 3: power_reduction=3
 
-                if len(cp['qterm_list'])>1: print(f'      Integrating {group_path} qterm: {qt}/{len(cp["qterm_list"])} with power_reduction {power_reduction} (Re(nu) = {(Renu - 2*power_reduction):.2f})')
-                else: print(f'     Integrating {group_path} with power_reduction {power_reduction} (Re(nu) = {(Renu - 2*power_reduction):.2f})')
+                if len(cp['qterm_list'])>1: 
+                    print(f'      Integrating {group_path} qterm: {qt}/{len(cp["qterm_list"])} with power_reduction {power_reduction} (Re(nu) = {(Renu - 2*power_reduction):.2f})')
+                else: 
+                    print(f'     Integrating {group_path} with power_reduction {power_reduction} (Re(nu) = {(Renu - 2*power_reduction):.2f})')
 
                 nu_p = Renu - 2*power_reduction + 1j*cp['eta_p']
                 
@@ -804,7 +801,7 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
                     fctr = fctr_dict[lterm]
 
                     # Compute factors that depend on lterm and which
-                    if p.which in ['local', 'equi', 'ortho', 'primordial']:
+                    if 'z' in p.which:
                         stuff2 = (2./3./omega_m/H0**2)
                     else:
                         stuff2 = (2./3./omega_m/H0**2)**2
@@ -819,11 +816,7 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
                         nu_p, cp[qt]['cp'], F12, fctr[power_reduction, qt_ind]
                     )
 
-                    # Sum the contribution
-                    if  p.which in ['local', 'equi', 'ortho', 'primordial']:
-                        result[lterm] += (2*np.pi**2*A_s/(k_pivot/h)**(n_s-1))**n * stuff2 * integral_result
-                    else:
-                        result[lterm] += stuff2 * integral_result
+                    result[lterm] += stuff2 * integral_result
                     print(f'        {lterm}: integral computation done in {time.time()-start_time:.2f} seconds')
 
             for lterm in todo:
@@ -838,6 +831,7 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
                     'which': p.which,
                     'lterm': lterm,
                 }
+                if p.which[-1] == 'z': metadata['lam'] = p.lam
 
                 save_to_hdf5(output_filename, group_path, data_to_save, metadata)
 

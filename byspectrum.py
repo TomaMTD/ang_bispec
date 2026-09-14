@@ -254,15 +254,11 @@ def main(argv):
                     if p.rad:
                         which_list=['F2', 'G2', 'dv2', 'kappa2']
                     else:
-                        which_list=['FG2', 'd2v', 'd1v', 'd3v', 'd1d', 'F2', 'G2', 'dv2', 'kappa2']
+                        which_list=['FG2', 'd1v', 'd2v', 'd3v', 'd1d', 'd0z', 'd1z'
+                                    ,'F2', 'G2', 'dv2', 'kappa2']
 
                 elif argv.which in ['F2', 'G2', 'dv2', 'kappa2']:
                     which_list=[argv.which]
-
-                elif argv.which=='primordial':
-                    p.rad = 0
-                    p.Newton = 0
-                    which_list=['primordial']
 
                 else:
                     which_list=[argv.which]
@@ -281,19 +277,22 @@ def main(argv):
                     # Compute fctr and cp dicts organized by lterm
                     fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                                                          W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list)
-                    np.save(argv.output_dir+'fctr_of_r_{}'.format(p.which), fctr_dict)
+                    # np.save(argv.output_dir+'fctr_of_r_{}'.format(p.which), fctr_dict)
 
-                    if p.which == 'primordial':
+                    lambda_list = [1]   # zeta legs: P_zeta^lambda, d0z serves all shapes, d1z only local
+                    if 'z' in p.which:
                         fctk = tr['phi']
+                        if p.which == 'd0z': lambda_list = [1, 0, 1./3., 2./3.]
                     elif p.rad and p.which in ['F2', 'G2', 'dv2', 'kappa2']:
                         fctk = tr['dTdk']
                     else:
                         fctk = Pk
 
-                    cp_dict = fftlog.apply_fftlog_dict(tr['k'], fctk, p)
-                    np.save(argv.output_dir+f'cp_{p.which}', cp_dict)
+                    for p.lam in lambda_list:   # only read for the zeta legs (fftlog, general_ps)
+                        cp_dict = fftlog.apply_fftlog_dict(tr['k'], fctk, p)
+                        np.save(argv.output_dir+f'cp_{p.which}', cp_dict)
 
-                    general_ps.compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
+                        general_ps.compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
 
     else:
 
@@ -339,7 +338,8 @@ def main(argv):
                 else:    
                     which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d', \
                                 'dv2', 'd2vd0d', 'd1vd2v', 'd1vd0d', 'd1vdod', 'davd1v',\
-                                'd0pd3v', 'd0pd1d', 'd1vd2p', 'kappa2']
+                                'd0pd3v', 'd0pd1d', 'd1vd2p', 'kappa2',\
+                                'd0zd0z', 'd0zd0d', 'd0zd0p', 'd1zd1p']
             else:
                 which_list=[argv.which]
 
