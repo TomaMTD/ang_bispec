@@ -17,9 +17,13 @@ class FFTLogProcessor:
     def __init__(self, k, fctk, p):
         self.k = k
 
-        # zeta legs (d0z, d1z): <phi_0 zeta> = -T_phi P_zeta^lam (phi_0 = -T zeta, T from CLASS);
         if p.which[-1] == 'z':
-            fctk = -fctk * primordial(k)**p.lam
+            fctk = -(1. if p.lterm == 'pot_fnl' else fctk) * primordial(k)**p.lam
+        elif p.lterm == 'pot_fnl':
+            fctk = np.sqrt(fctk*primordial(k))   # = T_phi P_zeta, one transfer less than Pk
+
+        # zeta x zeta: -P_zeta^lam is a pure power law, so a single fftlog mode (see get_cp_eta_p)
+        self.single_mode = p.which[-1] == 'z' and p.lterm == 'pot_fnl'
 
         self.fctk = fctk if p.lterm!='density' else fctk*k**2
         self.Nk = len(k)
@@ -46,6 +50,7 @@ class FFTLogProcessor:
         self.l = np.arange(self.Nk)
         self.p_list = np.arange(-(self.Nk//2), self.Nk//2) # TAKE CARE -(self.Nk//2) != -self.Nk//2
         self.eta_p_list = 2.*np.pi*self.p_list/np.log(self.kmax/self.kmin)
+        if self.single_mode: self.eta_p_list = np.zeros(1)   # only p=0 survives
 
     def get_qterm_list(self):
         """d-family (dNv, dNd, dNz): N+1 qterms; everything else a single one"""
@@ -122,10 +127,13 @@ class FFTLogProcessor:
     
     def get_cp_eta_p(self, fctk_list, b_list):
         """Compute cp for given functions and biases"""
-        res = np.zeros((len(fctk_list), self.Nk), dtype=np.complex128)
-        
+        res = np.zeros((len(fctk_list), len(self.eta_p_list)), dtype=np.complex128)
+
         for ind_fct, fct_k in enumerate(fctk_list):
             b = b_list[ind_fct]
+            if self.single_mode:
+                res[ind_fct, 0] = np.mean(fct_k * self.k**(-b))
+                continue
             for p in range(-self.Nk//2, self.Nk//2):
                 res[ind_fct, p+self.Nk//2] = np.sum(
                     fct_k * self.k**(-b) * self.kmin**(-1j*self.eta_p_list[p+self.Nk//2]) * 
@@ -180,19 +188,8 @@ class FFTLogProcessor:
             cp = self.get_cp_eta_p(fctk_list, b)
             for fctk_ind, fctk in enumerate(fctk_list):
                 out_dict[fctk_ind+1] = {'cp': cp[fctk_ind], 'b': b[fctk_ind], 'fctk': fctk }
-                
-                np.save(f'{output_dir}/fct_k_{self.which}_{self.lterm}', out_dict)
-            
+
             return out_dict
-
-def apply_fftlog(k, fctk, p):
-    """
-    Generalized FFTLog application that handles multiple qterm values
-    """
-    processor = FFTLogProcessor(k, fctk, p)
-    results = processor.process_all_qterms()
-
-    return results
 
 def apply_fftlog_dict(k, fctk, p):
     """
@@ -206,8 +203,6 @@ def apply_fftlog_dict(k, fctk, p):
         Function of k array
     p : parameters object
         Contains which, lterm, qterm, rad, etc.
-    lterm_list : list of str
-        List of lterm values to compute (e.g., ['density', 'rsd'])
 
     Returns:
     --------
@@ -227,9 +222,8 @@ def apply_fftlog_dict(k, fctk, p):
         return cp_dict
 
     # Apply fftlog for each lterm (non-radiation or other cases)
-
     lterm_back = p.lterm
-    for p.lterm in ['density', 'not_density']:
+    for p.lterm in ['density', 'pot_fnl', 'else']:
         processor = FFTLogProcessor(k, fctk, p)
         cp_dict[p.lterm] = processor.process_all_qterms()
     p.lterm = lterm_back

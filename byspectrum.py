@@ -344,7 +344,7 @@ def main(argv):
                     which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d', \
                                 'dv2', 'd2vd0d', 'd1vd2v', 'd1vd0d', 'd1vdod', 'davd1v',\
                                 'd0pd3v', 'd0pd1d', 'd1vd2p', 'kappa2',\
-                                'd0zd0z', 'd0zd0d', 'd0zd0p', 'd1zd1p']
+                                'd0zd0z', 'd0zd0d', 'd0zd0p', 'd1zd1p', 'dazdap']
             else:
                 which_list=[argv.which]
 

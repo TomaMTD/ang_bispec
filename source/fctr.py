@@ -18,7 +18,7 @@ import lincosmo
 COMPUTE_BS = True
 COMPUTE_B1 = True
 COMPUTE_C1_C2 = True # Set to False to disable GR bias corrections (c1 and c2)
-COMPUTE_FNL = True # Set to False to disable the delta_{2,fNL} scale-dependent bias term
+COMPUTE_FNL = True # Set to False to disable the b_zeta scale-dependent bias on the linear legs
 
 
 MAX_RELIABLE_DERIV = 6
@@ -433,7 +433,6 @@ def get_coefficients(p, time_dict, compute_c1_c2=''):
         If 'c1': returns GR bias correction coefficients proportional to c1 from eq 47-49
         If 'c2': returns GR bias correction coefficients proportional to c2 from eq 50-52
         If 'b2': returns GR bias correction coefficients proportional to b2 (δ_1^2 term)
-        If 'fnl': returns the delta_{2,fNL} scale-dependent bias coefficients (biases baked in)
 
     Returns:
     --------
@@ -444,8 +443,6 @@ def get_coefficients(p, time_dict, compute_c1_c2=''):
         - 'c1': corrections proportional to c1 = 1 - b1 from eq 47-49
         - 'c2': corrections proportional to c2 = -db1/dr + 3*H*b2 from eq 50-52
         - 'b2': corrections proportional to b2 (δ_1^2 term)
-        - 'fnl': delta_{2,fNL} term with b_phi, b_phidelta, b_phi2, b_n baked in
-                 (local fNL, f~NL=0; requires b1 and b2 in time_dict['data'])
     """
 
     # Extract cosmological variables for readability
@@ -585,57 +582,11 @@ def get_coefficients(p, time_dict, compute_c1_c2=''):
             beta = {0: zeros, 1: zeros, 2: zeros}
             gamma = {0: zeros, 1: zeros, 2: zeros}
 
-    elif compute_c1_c2=='fnl':
-        # Second-order scale-dependent bias, local fNL (\tilde fNL=0), 1/2 convention throughout
-        # (delta = delta_1 + delta_2 here vs delta_1 + delta_2/2 in the derivation). Dispatch
-        # on which: F2 -> density delta_{2,fNL}
-        if p.which == 'F2' and 'data' in time_dict and 'b2' in time_dict['data']:
-            # --- density delta_{2,fNL}: biases baked in (unlike c1/c2/b2 which factor out a data field) ---
-            g      = D/a
-            g_in   = g * 3./5.*(1. + 2./3.*f/Om)
-            deltac = 1.686
-            fnl    = p.fnl_local
-
-            # Lagrangian biases from the Eulerian b1, b2, splined onto the ra grid so they
-            # align with the cosmological arrays (data['r'] == ra for euclid, differs for ska): b^L = b - 1
-            b1L = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1']-1., k=5, s=0)(ra)
-            b2L = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b2'], k=5, s=0)(ra) - b1L*(2./3.-2.*va/7.)
-
-            b_phi    = -2.*fnl*g_in*deltac*b1L
-            b_phidel = -2.*fnl*g_in*(-b1L + deltac*b2L)
-            b_phi2   =  2.*fnl**2*g_in**2*deltac*(-2.*b1L + deltac*b2L)   # unchanged, O(fnl^2)
-            bn_ND    =  0.                                                 # b_n^L = 0
-
-            # b_phi^L' / H : conformal-time derivative of the Lagrangian b_phi,
-            # same convention as c2's -db1/dr (prime = d/dtau = -d/dr on the lightcone)
-            b_phiL_prime = -UnivariateSpline(ra, b_phi, k=5, s=0).derivative(1)(ra)
-            Dphi = b_phiL_prime / H                       # = b_phi^L' / H
-
-            pref = 3.*Om/g   # common 3 Omega_m / g factor
-
-            # index 1 -> H^2/k^2 bracket, index 2 -> H^4/k^4 bracket; overall factor 1/2
-            alpha = {
-                0: zeros,
-                1: 0.5*(-pref)*(2.*bn_ND + 2.*b_phi),
-                2: 0.5*( pref)*(2.*f*(2.*Dphi - 6.*b_phi) + 6.*(Om/g)*b_phi2)
-            }
-            beta = {
-                0: zeros,
-                1: 0.5*(-pref)*(4.*b_phi + 2.*b_phidel + 2.*bn_ND),
-                2: 0.5*( pref)*(4.*f*(2.*Dphi - 6.*b_phi) + 12.*(Om/g)*b_phi2)
-            }
-            gamma = {
-                0: zeros,
-                1: 0.5*(-pref/2.)*(b_phi + b_phidel),
-                2: 0.5*( pref/2.)*(f*(2.*Dphi - 6.*b_phi) + 3.*(Om/g)*b_phi2)
-            }
-        else:
-            alpha = {0: zeros, 1: zeros, 2: zeros}
-            beta = {0: zeros, 1: zeros, 2: zeros}
-            gamma = {0: zeros, 1: zeros, 2: zeros}
+    # the 'fnl' branch (delta_{2,fNL} with b_phi/g_in) lived here; it is now the d0zXX
+    # vertices, which use b_zeta on exact zeta legs. See git history if ever needed.
 
     else:
-        raise ValueError(f"Invalid compute_c1_c2 value: '{compute_c1_c2}'. Must be '', 'c1', 'c2', 'b2', or 'fnl'.")
+        raise ValueError(f"Invalid compute_c1_c2 value: '{compute_c1_c2}'. Must be '', 'c1', 'c2' or 'b2'.")
 
     return alpha, beta, gamma
 
@@ -1016,9 +967,8 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                             -time_dict['Da']/time_dict['a']*(2.-5.*s_r), k=5, s=0)
                 derive_start = 0
             elif lterm == 'pot_fnl': # scale dependent bias
-                gin = time_dict['Da']/time_dict['a'] * 3./5. * (1+2./3.*time_dict['fa']/time_dict['Oma'])
                 fctr = UnivariateSpline(time_dict['ra'], \
-                            -time_dict['Ha']/time_dict['a']*time_dict['Da']*2.*1.686*gin/time_dict['a'], k=5, s=0)
+                            -6./5.*time_dict['Ha']/time_dict['a']*1.686, k=5, s=0)
                 derive_start = 0
             else:
                 print('no code for {}'.format(lterm))
@@ -1189,7 +1139,6 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
         # ====================================================================
         use_b1 = False
         use_c1_c2 = False
-        use_fnl = False
         bs_terms_all = None  # Will be (n_ell, 3, n_r) if computed
 
         if COMPUTE_B1 and p.which == 'F2' and 'data' in time_dict and 'b1' in time_dict['data']:
@@ -1248,15 +1197,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
                 if not p.Newton:
                     print('     Warning: b1 found but b2 not found, skipping GR bias corrections')
 
-            # delta_{2,fNL}: own flag, needs b2 (for b2^L), computed in Newton mode too.
-            # Produces f0 (2 components: H^2, H^4) and f2 (1 component: H^2); no f4 (index 0 is zero).
-            if COMPUTE_FNL and p.fnl_local != 0 and 'b2' in time_dict['data']:
-                # print('     Adding delta_{2,fNL} scale-dependent bias term')
-                alpha_fnl, beta_fnl, gamma_fnl = get_coefficients(p, time_dict, compute_c1_c2='fnl')
-                f0_splines_fnl = compute_f_nm_unified(p, alpha_fnl, beta_fnl, gamma_fnl, time_dict, h_power=0)
-                f0_values_fnl = np.array([f0_spline(r_list) for f0_spline in f0_splines_fnl])
-                f2_splines_fnl = compute_f_nm_unified(p, alpha_fnl, beta_fnl, gamma_fnl, time_dict, h_power=2)
-                use_fnl = True
+            # delta_{2,fNL} used to be added here (b_phi/g_in form); it is now the d0zXX vertices.
 
             use_b1 = True
             if COMPUTE_BS:
@@ -1344,10 +1285,6 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
                 # No GR corrections, just multiply relativistic parts by b1
                 f0_values = b1_derivs[0] * f0_values
 
-            # delta_{2,fNL} is an additive second-order term (biases already baked in, not
-            # scaled by b1) and is independent of the c1/c2/b2 GR corrections above
-            if use_fnl:
-                f0_values[1:] = f0_values[1:] + f0_values_fnl
 
         # A2: f^(2) and its derivatives
         f2_derivs_list = []  # List of (max_deriv_inner+1, n_r) arrays
@@ -1363,14 +1300,6 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
                 fctr_derivs = compute_spline_derivatives(f2_spline, time_dict['ra'], r_list,
                                                         max_deriv=max_deriv_inner, smooth_s=0)
                 f2_derivs_list_c1.append(fctr_derivs)
-
-        # Compute f2 derivatives for the delta_{2,fNL} correction (1 component: H^2)
-        if use_fnl:
-            f2_derivs_list_fnl = []
-            for f2_spline in f2_splines_fnl:
-                fctr_derivs = compute_spline_derivatives(f2_spline, time_dict['ra'], r_list,
-                                                        max_deriv=max_deriv_inner, smooth_s=0)
-                f2_derivs_list_fnl.append(fctr_derivs)
 
         # A4: f^(4) and its derivatives
         f4_derivs= compute_spline_derivatives(f4_spline, time_dict['ra'], r_list,
@@ -1407,13 +1336,6 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
                         df = df - b1_c1[1] + fctr_W_c1[1]
                         d2f = d2f - b1_c1[2] + fctr_W_c1[2]
 
-                    # delta_{2,fNL}: additive H^2 correction (biases baked in, not scaled by b1),
-                    # independent of the c1 GR correction above
-                    if idx == 1 and use_fnl:
-                        fctr_W_fnl = [product_deriv(j, f2_derivs_list_fnl[0], W_derivs_list) for j in range(3)]
-                        f = f + fctr_W_fnl[0]
-                        df = df + fctr_W_fnl[1]
-                        d2f = d2f + fctr_W_fnl[2]
                 else:
                     f, df, d2f = fctr_W
                 f2_products_list.append((f, df, d2f))
@@ -1520,7 +1442,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             if 'v' in p.which:
                 cosmo_factor_ra *= time_dict['fa']
 
-        elif p.which in ['d0zd0z', 'd0zd0d', 'd0zd0p', 'd1zd1p']:
+        elif p.which in ['d0zd0z', 'd0zd0d', 'd0zd0p', 'd1zd1p', 'dazdap']:
             # scale-dependent bias vertices with zeta_G legs; b_zeta = b_phi(g_in -> 3/5), Lagrangian b1, b2
             if 'data' not in time_dict or 'b2' not in time_dict['data']:
                 raise ValueError(f"{p.which} requires b2 in time_dict['data']")
@@ -1546,7 +1468,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
                 b_z_prime = -UnivariateSpline(ra, b_z, k=5, s=0).derivative(1)(ra)   # delta_mC form is absorbed by
                 cosmo_factor_ra = N*H*D*f*(b_z_prime + 3.*H*b_zd)                    # delta_mC = delta_mP + 3NDfH^2 phi_0; ' = -d/dr
             else:                                         # d1zd1p: N D b_zeta d_r phi_0 d_r zeta
-                cosmo_factor_ra = N*D*b_z
+                cosmo_factor_ra = N*D*b_z                 # dazdap: same, with d_alpha/r instead of d_r
 
         else:
             # Default case: d2vd2v, d1vd2v, davd1v, etc.
@@ -1590,20 +1512,13 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             # Multiply by window
             A0_tab = cosmo_factor * Wr
 
-        if p.which in ['d2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v', 'd0zd0d']:
+        if p.which in ['d2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v', 'd0zd0d', 'dazdap']:
             A0_tab*=-1
 
-        # Apply r-power division (on r_list, not ra)
-        try:
-            A0_tab /= r_list**(int(p.which[1]) + int(p.which[4]))
-        except ValueError:
-            if p.which == 'davd1v':
-                A0_tab /= r_list**2
-
-            try:
-                A0_tab /= r_list**(int(p.which[1]))
-            except ValueError:
-                A0_tab /= r_list**(int(p.which[4]))
+        # Apply r-power division (on r_list, not ra): the derivative order of each leg, plus the
+        # 1/r^2 of the transverse gradient when either leg is angular ('a'), once for the pair.
+        orders = (p.which[1], p.which[4])
+        A0_tab /= r_list**(sum(int(c) for c in orders if c.isdigit()) + (2 if 'a' in orders else 0))
 
         # Reshape: add extra dimension and apply factor
         A0_tab = A0_tab[None, :]

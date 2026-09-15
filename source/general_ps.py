@@ -733,9 +733,20 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
     F12 = None
     nu_p_last = None
 
-    for cp_key in ['density', 'not_density']:
+    # zeta x zeta at lambda=0: fctk = -1, so int dk k^2 j_l(k chi) j_l(k r) = pi/2 delta(r-chi)/chi^2
+    # collapses the r integral. C_ell = -[fctr*W](chi)/chi^2, the same for every ell (white spectrum);
+    # no Poisson factor (n_T = 0). The Mellin machinery cannot represent the delta, hence the bypass.
+    if p.which[-1] == 'z' and p.lam == 0 and 'pot_fnl' in lterm_list:
+        B = UnivariateSpline(r_list, fctr_dict['pot_fnl'][0, 0, 0], s=0, k=5)(chi_list)
+        save_to_hdf5(f'{output_dir}Cls.h5', f'n_-2_m_0_lambda_0',
+                     {'pot_fnl': -np.tile(B/chi_list**2, (len(ell_list), 1)),
+                      'ell_list': ell_list, 'chi_list': chi_list},
+                     {'n': -2, 'm': 0, 'which': p.which, 'lterm': 'pot_fnl', 'lam': p.lam})
+        lterm_list = [lt for lt in lterm_list if lt != 'pot_fnl']
+
+    for cp_key in ['density', 'pot_fnl', 'else']:
         group_lterms = [lt for lt in lterm_list
-                        if (lt == 'density') == (cp_key == 'density')]
+                        if (lt if lt in ('density', 'pot_fnl') else 'else') == cp_key]
         if not group_lterms:
             continue
 
@@ -745,7 +756,6 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
 
         output_filename = f'{output_dir}Cls.h5'
         # Note: File creation/initialization is now handled by save_to_hdf5 with proper locking
-
 
         # Main computation loop
         nm_pairs = get_nm_values(p.which)

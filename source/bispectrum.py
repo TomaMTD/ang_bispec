@@ -19,147 +19,11 @@ import fctr
 ################################################################################ New efficient bispectrum computation
 
 
-def check_and_compute(cls_file, p, ell_list, chi_list, nm_pairs, which_for_cls,
-                      time_dict, window_args, lterm_list, tr=None, Pk=None, t_grid=None):
-    # Check if Cls.h5 exists and has required data
-    need_to_compute_cls = False
-    need_to_compute_am = False
-    need_to_compute_il = False
-    missing_cls_ells = []
-    missing_am_ells = []
-    missing_il_ells = []
-
-    if not os.path.exists(cls_file):
-        need_to_compute_cls = True
-        missing_cls_ells = list(ell_list)
-        if p.which in ['F2', 'G2', 'dv2']:
-            need_to_compute_am = True
-            missing_am_ells = list(ell_list)
-            if not p.Newton and p.rad:
-                need_to_compute_il = True
-                missing_il_ells = list(ell_list)
-    else:
-        # Check Cls, Am, and Il data separately
-        try:
-            with h5py.File(cls_file, 'r') as f:
-                # Check Cls
-                first_group_name = f'n_{nm_pairs[0][0]}_m_{nm_pairs[0][1]}'
-                if first_group_name in f:
-                    ell_list_file = f[first_group_name]['ell_list'][()]
-                    missing_cls_ells = [ell for ell in ell_list if ell not in ell_list_file]
-                else:
-                    missing_cls_ells = list(ell_list)
-
-                if missing_cls_ells:
-                    need_to_compute_cls = True
-
-                # Check Am data separately for F2/G2/dv2
-                if p.which in ['F2', 'G2', 'dv2']:
-                    if p.which in f:
-                        am_ell_list = f[p.which]['ell_list'][()]
-                        missing_am_ells = [ell for ell in ell_list if ell not in am_ell_list]
-
-                        # Check Il data for radiation (only if not Newton and rad)
-                        if not p.Newton and p.rad:
-                            # Check if fm2_rad and fm4_rad datasets exist
-                            group = f[p.which]
-                            if 'fm2_rad' in group and 'fm4_rad' in group:
-                                # Il uses same ell_list as Am
-                                missing_il_ells = [ell for ell in ell_list if ell not in am_ell_list]
-                            else:
-                                missing_il_ells = list(ell_list)
-                    else:
-                        missing_am_ells = list(ell_list)
-                        if not p.Newton and p.rad:
-                            missing_il_ells = list(ell_list)
-
-                    if missing_am_ells:
-                        need_to_compute_am = True
-                    if missing_il_ells:
-                        need_to_compute_il = True
-
-        except Exception as e:
-            need_to_compute_cls = True
-            missing_cls_ells = list(ell_list)
-            if p.which in ['F2', 'G2', 'dv2']:
-                need_to_compute_am = True
-                missing_am_ells = list(ell_list)
-                if not p.Newton and p.rad:
-                    need_to_compute_il = True
-                    missing_il_ells = list(ell_list)
-
-    # Compute only what's missing
-    if need_to_compute_cls or need_to_compute_am or need_to_compute_il:
-        print(f"\n{'='*70}")
-        if need_to_compute_cls:
-            print(f"  Missing Cls for ells: {missing_cls_ells}")
-        if need_to_compute_am:
-            print(f"  Missing Am/f-coefficients for ells: {missing_am_ells}")
-        if need_to_compute_il:
-            print(f"  Missing Il (radiation) for ells: {missing_il_ells}")
-        print(f"{'='*70}\n")
-
-        if tr is None or Pk is None or t_grid is None:
-            missing = missing_cls_ells if need_to_compute_cls else (missing_am_ells if need_to_compute_am else missing_il_ells)
-            raise ValueError(
-                f"Missing data for ells {missing}!\n"
-                f"Please run first with mode='cl' to compute power spectra,\n"
-                f"or ensure tr/Pk/t_grid parameters are passed to compute_all_bispectra_efficient()."
-            )
-
-        # r_list and chi_list are the same in this context
-        r_list = chi_list
-
-        # Temporarily set p.which to which_for_cls for Cls computation
-        original_which = p.which
-
-        # Step 1: Compute Cls if needed (using FG2)
-        if need_to_compute_cls:
-            if p.which in ['F2', 'G2', 'dv2']:
-                p.which = 'FG2'
-            else:
-                p.which = which_for_cls
-
-            print(f"  Computing Cls ({p.which})...")
-            p.rad = 0
-            fctr_dict = fctr.fct_of_r_analytical(p, missing_cls_ells, r_list, time_dict,
-                                                  window_args, lterm_list)
-            cp_dict = apply_fftlog_dict(tr['k'], Pk, p)
-            general_ps.compute_integral_generalized(p, missing_cls_ells, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
-            print(f"  Cls computed and saved")
-
-        # Step 2: Compute Am/f-coefficient terms if needed (only for F2/G2/dv2)
-        if need_to_compute_am:
-            p.which = original_which
-            print(f"  Computing Am/f-coefficients ({p.which})...")
-            p.rad = 0
-            fctr_dict = fctr.fct_of_r_analytical(p, missing_am_ells, r_list, time_dict,
-                                                  window_args, lterm_list)
-            cp_dict = apply_fftlog_dict(tr['k'], Pk, p)
-            general_ps.compute_integral_generalized(p, missing_am_ells, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
-            print(f"  Am/f-coefficients computed and saved")
-
-        # Step 3: Compute Il (radiation) terms if needed (only for F2/G2/dv2 with radiation)
-        if need_to_compute_il:
-            p.which = original_which
-            print(f"  Computing Il (radiation) ({p.which})...")
-            p.rad = 1
-            fctr_dict = fctr.fct_of_r_analytical(p, missing_il_ells, r_list, time_dict,
-                                                  window_args, lterm_list)
-            cp_dict = apply_fftlog_dict(tr['k'], tr['dTdk'], p)  # Always use dTdk for radiation
-            general_ps.compute_integral_generalized(p, missing_il_ells, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
-            print(f"  Il (radiation) computed and saved")
-
-        # Restore original which
-        p.which = original_which
-        print(f"\n  All required data computed and saved to {cls_file}\n")
-
-
-def get_nm_pairs_for_bispectrum(which, Newton=0, fnl=0):
+def get_nm_pairs_for_bispectrum(which, Newton=0):
     """
     Get nm_pairs needed for loading Cls in bispectrum (may include extra components for non-Newton)
     """
-    # fnl keeps the second pair alive in Newton mode: b_phi rides on it (Poisson, not GR)
+    # the second pair of d0d/d1d/dod is pure GR: b_zeta rides on its own zeta leg, not on it
     nm_mapping = {
         'FG2': [(-2, 0), (0, 0), (2, 0)],
         'cl': [(-2, 0), (0, 0)],  # For computing C_ℓ from eq. (36): needs C^(-2,0) and C^(0,0)
@@ -172,9 +36,11 @@ def get_nm_pairs_for_bispectrum(which, Newton=0, fnl=0):
         'd0z': [(-2, 0)],
         'd1z': [(-1, 1)],
         'dav': [(-2, 0)],
-        'd1d': [(1, 1), (-1, 1)] if (not Newton or fnl) else [(1, 1)],  # base + d1v for non-Newton
-        'd0d': [(0, 0), (-2, 0)] if (not Newton or fnl) else [(0, 0)],
-        'dod': [(0, 0), (-2, 0)] if (not Newton or fnl) else [(0, 0)],
+        'dap': [(-2, 0)],   # transverse-gradient legs: same groups as d0p/d0z, the angular
+        'daz': [(-2, 0)],   # derivatives sit in Al1l2l3 (as for dav)
+        'd1d': [(1, 1), (-1, 1)] if not Newton else [(1, 1)],  # base + d1v for non-Newton
+        'd0d': [(0, 0), (-2, 0)] if not Newton else [(0, 0)],
+        'dod': [(0, 0), (-2, 0)] if not Newton else [(0, 0)],
         'local': [(1, 0), (0, 0)],
         'equi':  [(1, 0), (1./3., 0), (2./3., 0)],  # Needs all three: λ=1, λ=1/3, λ=2/3
         'ortho': [(2./3., 0)]
@@ -223,7 +89,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
     # For F2, G2, dv2: use 'FG2' to get nm_pairs
     # For other quadratic terms: concatenate nm_pairs from both parts
     if p.which in ['F2', 'G2', 'dv2', 'kappa2']:
-        nm_pairs_list = [get_nm_pairs_for_bispectrum('FG2', p.Newton, p.fnl_local)]
+        nm_pairs_list = [get_nm_pairs_for_bispectrum('FG2', p.Newton)]
         which_for_cls_list = ['FG2']
         
         # Single Cl_array for all cases
@@ -236,7 +102,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
         Cl_array = np.zeros((n_ell, n_chi, len(nm_pairs_list[0])))
     else:
         # Quadratic term: concatenate nm_pairs from which[:3] and which[3:]
-        nm_pairs_list = [get_nm_pairs_for_bispectrum(p.which[:3], p.Newton, p.fnl_local), get_nm_pairs_for_bispectrum(p.which[3:], p.Newton, p.fnl_local)]
+        nm_pairs_list = [get_nm_pairs_for_bispectrum(p.which[:3], p.Newton), get_nm_pairs_for_bispectrum(p.which[3:], p.Newton)]
         which_for_cls_list = [p.which[:3], p.which[3:]]
 
         # Single Cl_array for all cases
@@ -245,14 +111,10 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
 
     kernels_array = np.zeros((n_ell, n_chi, 16))
     for idx, (nm_pairs, which_for_cls) in enumerate(zip(nm_pairs_list, which_for_cls_list)):
-        if which_for_cls in ['d2p', 'd1p', 'd0p']:
+        if which_for_cls in ['d2p', 'd1p', 'd0p', 'dap']:
             stuff = 2.0 / (3.0 * omega_m * H0**2)
         else:
             stuff=1
-
-        # Call check and compute function`
-        #check_and_compute(cls_file, p, ell_list, chi_list, nm_pairs, which_for_cls,
-        #                  time_dict, window_args, lterm_list, tr=tr, Pk=Pk, t_grid=t_grid)
 
         with h5py.File(cls_file, 'r') as f:
 
@@ -320,7 +182,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 # prime = d/dtau = -d/dr on the lightcone, as for c2 = -db1/dr + 3*H*b2 in fctr.py
                 b1_dot_cl = -b1_spline.derivative(1)(chi_list_file)
 
-            # Newton still needs the combination when fNL is on: it carries b_phi
+            # Newton still needs the combination when fNL is on: it carries b_zeta
             if which_for_cls not in ['d0d', 'd1d', 'dod'] \
                     or (p.Newton and not p.fnl_local and which_for_cls not in ['dod']):
                 # For each (n,m) pair, sum over lterms
@@ -379,19 +241,14 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 # print(f"    Applying non-Newton combination for {which_for_cls}")
 
                 # Load all nm_pairs for this part
-                Cl_nm_list = []
-                for cl_idx, (n, m) in enumerate(nm_pairs):
-                    group_name = f'n_{n}_m_{m}'
-
+                def load_group(group_name):
                     if group_name not in f:
                         print(f"  Warning: Group {group_name} not found, skipping")
-                        Cl_nm_list.append(np.zeros((len(ell_list_file), len(chi_list_file))))
-                        continue
+                        return np.zeros((len(ell_list_file), len(chi_list_file)))
 
                     group = f[group_name]
 
                     # Sum over requested lterms
-                    # NEW STRUCTURE: each lterm is a subgroup with ell_X datasets
                     Cl_nm_summed = np.zeros((len(ell_list_file), len(chi_list_file)))
 
                     for lt in lterm_list:
@@ -410,38 +267,39 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                         else:
                             print(f"  Warning: Subgroup {lt} not found in {group_name}")
 
-                    Cl_nm_list.append(Cl_nm_summed)
+                    return Cl_nm_summed
+
+                Cl_nm_list = [load_group(f'n_{n}_m_{m}') for n, m in nm_pairs]
 
                 # Apply the combination based on which_for_cls
 
-                # C_l^delta = C_l^(0,0) + [3 f H^2 - b_phi/(N D)] C_l^(-2,0), b_phi = -2 fNL g_in delta_c (b1-1)
-                # Sign matches get_coefficients (Phi = -phi): Delta_b1 > 0 for fNL>0, b1>1
-                # d0dd0d excluded as for b1: the b2/2*delta^2 vertex has matter legs
-                fnl_corr_on_ra = np.zeros_like(time_dict['ra'])      # arrays: Newton splines them alone
-                fnl_dot_corr_on_ra = np.zeros_like(time_dict['ra'])
+                # C_l^delta = C_l^(0,0) + 3 f H^2 C_l^(-2,0) + b_zeta * <Delta zeta>. The zeta piece
+                # is the exact leg (n_-2_m_0/n_-1_m_1, lambda=1).
+                # d0dd0d/d0zd0d excluded as for b1: those vertices have matter legs
+                Cl_zeta = None
                 if fctr.COMPUTE_FNL and p.fnl_local != 0 and p.which not in  ['d0dd0d', 'd0zd0d'] \
                         and 'data' in time_dict and 'b1' in time_dict['data']:
-                    deltac = 1.686
-                    g_in = time_dict['Da']/time_dict['a'] * 3./5.*(1. + 2./3.*time_dict['fa']/time_dict['Oma'])
                     b1L = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1']-1., s=0, k=5)(time_dict['ra'])
-                    b_phi = - 2.*p.fnl_local*g_in*deltac*b1L
-                    N = (2./3./omega_m/H0**2) # N * D
-                    fnl_corr_on_ra = -b_phi/ N / time_dict['Da']
-                    # dod carries D in its factors, so the object to differentiate is b_phi/N, not
-                    # b_phi/(ND). prime = d/dtau = -d/dr, the convention checked on the f-dot bracket.
-                    fnl_dot_corr_on_ra = -UnivariateSpline(time_dict['ra'], b_phi, s=0, k=5).derivative(1)(time_dict['ra']) / N
+                    b_z = -6./5.*p.fnl_local*1.686*b1L
+                    zcoef_on_ra = -b_z/time_dict['Da']
+                    zdot_coef_on_ra = UnivariateSpline(time_dict['ra'], b_z, s=0, k=5).derivative(1)(time_dict['ra'])
+                    Cl_zeta = load_group('n_-1_m_1_lambda_1' if which_for_cls == 'd1d' else 'n_-2_m_0_lambda_1')
 
                 # b1 multiplies the Newtonian density Cl_nm_list[0] only (see b1_cl above)
                 b1_0 = 1.0 if b1_cl is None else b1_cl
 
                 if which_for_cls in ['d0d', 'd1d']:
-                    # d0d: Cl = b1*Cl_F2(m=0) + [3*H²*f - b_phi/(N D)] * Cl_F2(m=-2)
-                    # d1d: Cl = b1*Cl_d1d + [3*H²*f - b_phi/(N D)] * Cl_d1v
-                    # 3*H^2*f is the GR piece, dropped in Newton; b_phi is not
-                    factor_on_ra = (0. if p.Newton else 3.0 * time_dict['Ha']**2 * time_dict['fa']) + fnl_corr_on_ra
-                    factor_spline = UnivariateSpline(time_dict['ra'], factor_on_ra, s=0, k=5)
-                    factor = factor_spline(chi_list_file)
-                    Cl_combined = b1_0 * Cl_nm_list[0] + factor[None, :] * Cl_nm_list[1]
+                    # d0d: Cl = b1*Cl_F2(m=0) + 3*H²*f * Cl_F2(m=-2) - b_z/D * Cl_d0z
+                    # d1d: Cl = b1*Cl_d1d + 3*H²*f * Cl_d1v      - b_z/D * Cl_d1z
+                    # 3*H^2*f is the GR piece: its (-2,0) pair is absent in Newton; b_z is not
+                    Cl_combined = b1_0 * Cl_nm_list[0]
+                    if len(Cl_nm_list) > 1:
+                        factor_on_ra = 3.0 * time_dict['Ha']**2 * time_dict['fa']
+                        factor = UnivariateSpline(time_dict['ra'], factor_on_ra, s=0, k=5)(chi_list_file)
+                        Cl_combined = Cl_combined + factor[None, :] * Cl_nm_list[1]
+                    if Cl_zeta is not None:
+                        zcoef = UnivariateSpline(time_dict['ra'], zcoef_on_ra, s=0, k=5)(chi_list_file)
+                        Cl_combined = Cl_combined + zcoef[None, :] * Cl_zeta
 
                 elif which_for_cls == 'dod':
                     # dod: Cl = H*D * (f * Cl_F2(m=0) + 3*(f*dotH + H²*(3/2*Om - f)) * Cl_F2(m=-2))
@@ -449,19 +307,14 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     # factor1 for Cl_F2(m=0): H*D*f
                     factor1_on_ra = time_dict['Ha'] * time_dict['Da'] * time_dict['fa']
 
-                    # factor2 for Cl_F2(m=-2): H*D * 3*(f*dotH + H²*(3/2*Om - f)) - d(b_phi/N)/dtau
-                    # the GR bracket drops in Newton, the b_phi one does not
-                    factor2_on_ra = -fnl_dot_corr_on_ra if p.Newton else (
-                        time_dict['Ha'] * time_dict['Da'] * 3.0 * (
-                        time_dict['fa'] * time_dict['dHa'] +
-                        time_dict['Ha']**2 * (1.5 * time_dict['Oma'] - time_dict['fa'])
-                    ) - fnl_dot_corr_on_ra)
-
-                    # Create splines and evaluate
-                    factor1_spline = UnivariateSpline(time_dict['ra'], factor1_on_ra, s=0, k=5)
-                    factor2_spline = UnivariateSpline(time_dict['ra'], factor2_on_ra, s=0, k=5)
-                    factor1 = factor1_spline(chi_list_file)
-                    factor2 = factor2_spline(chi_list_file)
+                    # factor2 for Cl_F2(m=-2): H*D * 3*(f*dotH + H²*(3/2*Om - f)). Pure GR: its pair
+                    # is absent in Newton; the b_z piece rides on Cl_zeta below, not on (-2,0).
+                    factor1 = UnivariateSpline(time_dict['ra'], factor1_on_ra, s=0, k=5)(chi_list_file)
+                    if len(Cl_nm_list) > 1:
+                        factor2_on_ra = time_dict['Ha'] * time_dict['Da'] * 3.0 * (
+                            time_dict['fa'] * time_dict['dHa'] +
+                            time_dict['Ha']**2 * (1.5 * time_dict['Oma'] - time_dict['fa']))
+                        factor2 = UnivariateSpline(time_dict['ra'], factor2_on_ra, s=0, k=5)(chi_list_file)
 
                     # ddot(delta_g) = b1*ddot(delta_N) + b1dot*delta_N + ddot(delta_GR): the
                     # product rule adds b1dot*D to factor1 (D because factor1 = H*D*f carries
@@ -470,10 +323,13 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                         Da_cl = UnivariateSpline(time_dict['ra'], time_dict['Da'], s=0, k=5)(chi_list_file)
                         factor1 = b1_cl * factor1 + b1_dot_cl * Da_cl
 
-                    if p.Newton and not p.fnl_local:
-                        Cl_combined = factor1[None, :] * Cl_nm_list[0]
-                    else:
-                        Cl_combined = factor1[None, :] * Cl_nm_list[0] + factor2[None, :] * Cl_nm_list[1]
+                    Cl_combined = factor1[None, :] * Cl_nm_list[0]
+                    if len(Cl_nm_list) > 1:
+                        Cl_combined = Cl_combined + factor2[None, :] * Cl_nm_list[1]
+
+                    if Cl_zeta is not None:
+                        zdot = UnivariateSpline(time_dict['ra'], zdot_coef_on_ra, s=0, k=5)(chi_list_file)
+                        Cl_combined = Cl_combined + zdot[None, :] * Cl_zeta
 
                 # Extract and interpolate the combined result
                 # Extract requested ells (they match indices now since we built ell_list_file by scanning)
@@ -1595,7 +1451,7 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
             Cl_array, coeffs,
             chi_list, triplet_array
         )
-    elif p.which == 'davd1v':
+    elif p.which in ('davd1v', 'dazdap'):
         # Use precomputed Al1l2l3 from ell_configurations (now parallelized and cached)
         bl_results = compute_bispectrum_quadratic_dav(
             Cl_array, coeffs,
@@ -1621,12 +1477,9 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
             bl_results = bl_results / 6.0
 
         # The integrator returns the Komatsu-Spergel templates in Phi (B_Phi = 2 fNL [...]) built
-        # with P_zeta legs. Two signs: (i) zeta = zeta_G - 3/5 fNL (zeta_G^2 - <zeta_G^2>) gives
-        # B_zeta = -(3/5) B_Phi for every shape (each term is quadratic in P); (ii) the zeta legs
-        # are -<Delta zeta> (the -T in fftlog with a positive observed-side L: delta = +N D k^2 T zeta),
-        # three of them per shape -> another -1. Net +3/5, per unit fNL. Local: -(6/5) fNL [PP+perms].
+        # with P_zeta legs. 
         if p.which in ('local', 'equi', 'ortho'):
-            bl_results = 3./5. * bl_results
+            bl_results = 3./5. * p.fnl_local * bl_results
 
     # print(f"Computation completed in {time.time()-start_time:.2f} seconds")
 
