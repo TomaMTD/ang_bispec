@@ -1442,7 +1442,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             if 'v' in p.which:
                 cosmo_factor_ra *= time_dict['fa']
 
-        elif p.which in ['d0zd0z', 'd0zd0d', 'd0zd0p', 'd1zd1p', 'dazdap']:
+        elif p.which in ['d0zd0z', 'd0zd0d', 'd0zd0p', 'd1zd1p', 'd0zd0p_a']:
             # scale-dependent bias vertices with zeta_G legs; b_zeta = b_phi(g_in -> 3/5), Lagrangian b1, b2
             if 'data' not in time_dict or 'b2' not in time_dict['data']:
                 raise ValueError(f"{p.which} requires b2 in time_dict['data']")
@@ -1468,15 +1468,34 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
                 b_z_prime = -UnivariateSpline(ra, b_z, k=5, s=0).derivative(1)(ra)   # delta_mC form is absorbed by
                 cosmo_factor_ra = N*H*D*f*(b_z_prime + 3.*H*b_zd)                    # delta_mC = delta_mP + 3NDfH^2 phi_0; ' = -d/dr
             else:                                         # d1zd1p: N D b_zeta d_r phi_0 d_r zeta
-                cosmo_factor_ra = N*D*b_z                 # dazdap: same, with d_alpha/r instead of d_r
+                cosmo_factor_ra = N*D*b_z                 # d0zd0p_a: same, transverse instead of radial
+
+        elif p.which in ['d0kd0L_a', 'd0dd0k', 'd0dd0L_a', 'd2vd0k', 'd2vd0L_a', 'd0kd0k']:
+            # Delta_2^L quadratic lensing terms. The kappa_1 / psi_lens legs carry no growth factor:
+            # D/a and 1/N are already inside the radial integral of compute_phiL.
+            s_r = (UnivariateSpline(time_dict['data']['r'], time_dict['data']['s'], k=5, s=0)(ra)
+                   if 'data' in time_dict and 's' in time_dict['data'] else 0.)
+            D, H, f = time_dict['Da'], time_dict['Ha'], time_dict['fa']
+            if p.which == 'd0kd0L_a':                     # -(2-5s) grad_b kappa_1 grad^b psi_lens
+                cosmo_factor_ra = -(2.-5.*s_r)*np.ones_like(ra)
+            elif p.which == 'd0dd0k':                     # -2 delta_g kappa_1
+                cosmo_factor_ra = -2.*D
+            elif p.which == 'd0dd0L_a':                   # grad_a delta_g grad^a psi_lens
+                cosmo_factor_ra = D
+            elif p.which == 'd2vd0k':                     # -(2-5s)/H d_r^2 v kappa_1
+                cosmo_factor_ra = -(2.-5.*s_r)*D*f/H
+            elif p.which == 'd2vd0L_a':                   # (1/H) grad_a d_r^2 v grad^a psi_lens
+                cosmo_factor_ra = D*f/H
+            else:                                         # d0kd0k: 2(1 - 5s + 25/4 s^2) kappa_1^2  (t dropped)
+                cosmo_factor_ra = 2.*(1. - 5.*s_r + 25./4.*s_r**2)*np.ones_like(ra)
 
         else:
-            # Default case: d2vd2v, d1vd2v, davd1v, etc.
+            # Default case: d2vd2v, d1vd2v, d0vd1v_a, etc.
             cosmo_factor_ra = time_dict['Da']**2 * time_dict['fa']**2
             if p.which in ['d1vd2v']:
                 cosmo_factor_ra *= time_dict['Ha'] * \
                         (1. + 3.*time_dict['dHa']/time_dict['Ha']**2 + 4./time_dict['Ha']/ra)
-            elif p.which in ['davd1v']:
+            elif p.which in ['d0vd1v_a']:
                 cosmo_factor_ra *= time_dict['Ha']
 
         # Get window function on r_list
@@ -1512,13 +1531,21 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             # Multiply by window
             A0_tab = cosmo_factor * Wr
 
-        if p.which in ['d2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'davd1v', 'd0zd0d', 'dazdap']:
+        # leg-sign flips (a leg stored as minus its physical correlator: zeta, psi, kappa_1, psi_lens)
+        if p.which in ['d2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'd0zd0d',
+                       'd0dd0k', 'd2vd0k', 'd0dd0L_a', 'd2vd0L_a']:
+            A0_tab*=-1
+
+        # Al123 is minus the standard gradient coupling (= -[L2+L3-L1], see _compute_Al123_single),
+        # so every transverse-gradient vertex carries one more -1
+        if p.which.endswith('_a'):
             A0_tab*=-1
 
         # Apply r-power division (on r_list, not ra): the derivative order of each leg, plus the
-        # 1/r^2 of the transverse gradient when either leg is angular ('a'), once for the pair.
-        orders = (p.which[1], p.which[4])
-        A0_tab /= r_list**(sum(int(c) for c in orders if c.isdigit()) + (2 if 'a' in orders else 0))
+        # 1/r^2 of the transverse gradient, once for the pair.
+        # (non-digit slots contribute nothing: the 'o' of dod)
+        A0_tab /= r_list**(sum(int(c) for c in (p.which[1], p.which[4]) if c.isdigit())
+                           + (2 if p.which.endswith('_a') else 0))
 
         # Reshape: add extra dimension and apply factor
         A0_tab = A0_tab[None, :]

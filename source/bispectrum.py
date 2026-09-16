@@ -35,9 +35,7 @@ def get_nm_pairs_for_bispectrum(which, Newton=0):
         'd2p': [(0, 2)],
         'd0z': [(-2, 0)],
         'd1z': [(-1, 1)],
-        'dav': [(-2, 0)],
-        'dap': [(-2, 0)],   # transverse-gradient legs: same groups as d0p/d0z, the angular
-        'daz': [(-2, 0)],   # derivatives sit in Al1l2l3 (as for dav)
+        'd0v': [(-2, 0)],   # v with no radial derivative (transverse-gradient vertices)
         'd1d': [(1, 1), (-1, 1)] if not Newton else [(1, 1)],  # base + d1v for non-Newton
         'd0d': [(0, 0), (-2, 0)] if not Newton else [(0, 0)],
         'dod': [(0, 0), (-2, 0)] if not Newton else [(0, 0)],
@@ -101,9 +99,11 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
         # Single Cl_array for all cases
         Cl_array = np.zeros((n_ell, n_chi, len(nm_pairs_list[0])))
     else:
-        # Quadratic term: concatenate nm_pairs from which[:3] and which[3:]
-        nm_pairs_list = [get_nm_pairs_for_bispectrum(p.which[:3], p.Newton), get_nm_pairs_for_bispectrum(p.which[3:], p.Newton)]
-        which_for_cls_list = [p.which[:3], p.which[3:]]
+        # Quadratic term: two 3-char legs, plus an optional '_a' marking a transverse-gradient
+        # vertex (grad_a X grad^a Y). The marker is a property of the vertex, not of a leg, so
+        # both legs keep their own radial order.
+        which_for_cls_list = [p.which[:3], p.which[3:6]]
+        nm_pairs_list = [get_nm_pairs_for_bispectrum(w, p.Newton) for w in which_for_cls_list]
 
         # Single Cl_array for all cases
         Cl_array = np.zeros((n_ell, n_chi, 2))
@@ -111,7 +111,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
 
     kernels_array = np.zeros((n_ell, n_chi, 16))
     for idx, (nm_pairs, which_for_cls) in enumerate(zip(nm_pairs_list, which_for_cls_list)):
-        if which_for_cls in ['d2p', 'd1p', 'd0p', 'dap']:
+        if which_for_cls in ['d2p', 'd1p', 'd0p']:
             stuff = 2.0 / (3.0 * omega_m * H0**2)
         else:
             stuff=1
@@ -123,7 +123,8 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 # They should be in each group, let's get from first group
                 n, m = nm_pairs[0][0], nm_pairs[0][1]
 
-                first_group_name = (f'n_-2_m_0_lambda_{n if isinstance(n, int) else f"{n:.2f}"}' if p.which in ('local', 'equi', 'ortho')
+                first_group_name = ('phiL' if which_for_cls in ('d0k', 'd0L')
+                                    else f'n_-2_m_0_lambda_{n if isinstance(n, int) else f"{n:.2f}"}' if p.which in ('local', 'equi', 'ortho')
                                     else f'n_{n}_m_{m}' + ('_lambda_1' if which_for_cls[-1] == 'z' else ''))
                 if first_group_name not in f:
                     raise ValueError(f"Group {first_group_name} not found in {cls_file}")
@@ -187,7 +188,9 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     or (p.Newton and not p.fnl_local and which_for_cls not in ['dod']):
                 # For each (n,m) pair, sum over lterms
                 for cl_idx, (n, m) in enumerate(nm_pairs):
-                    if p.which in ('local', 'equi', 'ortho'):   # shapes: pairs are (lambda, 0), every leg is d0z
+                    if which_for_cls in ('d0k', 'd0L'):         # lensing legs: not (n,m), see compute_phiL
+                        group_name = 'phiL'
+                    elif p.which in ('local', 'equi', 'ortho'): # shapes: pairs are (lambda, 0), every leg is d0z
                         group_name = f'n_-2_m_0_lambda_{n if isinstance(n, int) else f"{n:.2f}"}'
                     else:                                        # dXz legs are <Delta zeta_G>: lambda = 1
                         group_name = f'n_{n}_m_{m}' + ('_lambda_1' if which_for_cls[-1] == 'z' else '')
@@ -222,6 +225,10 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                     # Newton d0d/d1d land here: the single nm pair is the Newtonian density
                     if b1_cl is not None:
                         Cl_nm_summed = Cl_nm_summed * b1_cl[None, :]
+
+                    if which_for_cls == 'd0k':   # kappa_1 = l(l+1)/2 * psi_lens
+                        ll = np.array([ell*(ell+1.)/2. for ell in ell_list_file])
+                        Cl_nm_summed = Cl_nm_summed * ll[:, None]
 
                     # Extract requested ells (they match indices now since we built ell_list_file by scanning)
                     valid_ell_indices = [i for i, ell in enumerate(ell_list_file) if ell in ell_list]
@@ -919,7 +926,7 @@ def _init_wigner_worker(max_ell):
     with 2*ell arguments, so the largest two_j is 2*max(ell). BOTH the factorial table
     and the temp array must be sized for that. Undersizing the temp array does NOT
     raise -- pywigxjpf prints "More iterations than allocated" and returns a garbage
-    value -- so getting this wrong silently corrupts Al123 (and hence davd1v).
+    value -- so getting this wrong silently corrupts Al123 (and hence every '_a' vertex).
 
     The temp array must cover the full triangle slack (j1+j2-j3), which reaches
     ~max(ell) for configurations like 'squ2' where ell1 varies against a fixed large
@@ -1000,7 +1007,7 @@ def ell_configurations(p, ell_list):
     triplets : array of shape (n_triplets, 3) - indices into ell_list
     wigner_values : array of shape (n_triplets,)
     config_name : string
-    Al1l2l3_values : array of shape (n_triplets, 3) - Al123 coefficients for davd1v term
+    Al1l2l3_values : array of shape (n_triplets, 3) - Al123 coefficients for the '_a' transverse-gradient vertices
     """
     # Create ell to index mapping
     ell_to_idx = {ell: i for i, ell in enumerate(ell_list)}
@@ -1451,7 +1458,7 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
             Cl_array, coeffs,
             chi_list, triplet_array
         )
-    elif p.which in ('davd1v', 'dazdap'):
+    elif p.which.endswith('_a'):
         # Use precomputed Al1l2l3 from ell_configurations (now parallelized and cached)
         bl_results = compute_bispectrum_quadratic_dav(
             Cl_array, coeffs,
@@ -1459,7 +1466,7 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
             )
     else:
         # Quadratic terms: use simpler integration
-        is_symmetric = (p.which[:3] == p.which[3:] or p.which in ['local', 'ortho'])  # True for d2vd2v, False for d1vd1d, etc.
+        is_symmetric = (p.which[:3] == p.which[3:6] or p.which in ['local', 'ortho'])  # True for d2vd2v, False for d1vd1d, etc.
 
         if is_symmetric:
             bl_results = compute_bispectrum_quadratic_symmetric(
