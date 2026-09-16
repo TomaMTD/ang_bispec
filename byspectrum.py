@@ -260,6 +260,9 @@ def main(argv):
                 elif argv.which in ['F2', 'G2', 'dv2', 'kappa2']:
                     which_list=[argv.which]
 
+                elif argv.which=='phiL':   # a transform of (-2,0): FG2 first (skipped if already there)
+                    which_list=['FG2', 'phiL']
+
                 elif argv.which in ('local', 'equi', 'ortho', 'primordial'):   # shapes: their legs are d0z, all lambdas
                       p.rad = 0
                       p.Newton = 0
@@ -279,6 +282,11 @@ def main(argv):
                     print('='*70)
                     print('='*70)
                     print(f'Processing which={p.which} (rad={p.rad}, Newton={p.Newton})')
+
+                    if p.which == 'phiL':   # radial transform of n_-2_m_0: no fctr, no k integral
+                        general_ps.compute_phiL(p, ell_list, lterm_list, time_dict)
+                        continue
+
                     # Compute fctr and cp dicts organized by lterm
                     fctr_dict = fctr.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                                                          W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list)

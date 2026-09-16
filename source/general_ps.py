@@ -6,6 +6,7 @@ import h5py
 from scipy.interpolate import UnivariateSpline
 from scipy.integrate import quad
 from scipy.integrate import simpson
+from scipy.integrate import cumulative_trapezoid
 
 import fctr as fctr_module
 import bispectrum
@@ -844,6 +845,48 @@ def compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict,
                 if p.which[-1] == 'z': metadata['lam'] = p.lam
 
                 save_to_hdf5(output_filename, group_path, data_to_save, metadata)
+
+
+def compute_phiL(p, ell_list, lterm_list, time_dict):
+    """
+    Lensing potential leg, from the (-2,0) group -- no k integral, no fftlog.
+
+        C^psi_lens_l(chi) = -2 int_0^chi dr' (chi-r')/(chi r') C^psi_l(r'),  kappa_1 = l(l+1)/2 * it
+
+    (chi-r')/(chi r') = 1/r' - 1/chi, so it is two cumulative integrals instead of an O(n_chi^2)
+    double loop. D/a sits INSIDE the integral: the stored groups carry no growth, but each r' along
+    the line of sight contributes psi(r') = (D/a)(r') phi_0(r'). Stored as -<Delta psi_lens>, the
+    same convention as the other psi legs, and per lterm (the kernel is linear, so -l noproj/nolens
+    keep working).
+    """
+    filename = f'{output_dir}Cls.h5'
+    with h5py.File(filename, 'r') as f:
+        if 'n_-2_m_0' not in f:
+            raise ValueError("phiL needs the n_-2_m_0 group: run -w FG2 (or -w all) first")
+        g = f['n_-2_m_0']
+        chi = g['chi_list'][()]
+        Cl_dict = {}
+        for lterm in lterm_list:
+            if lterm not in g:
+                print(f'    Warning: {lterm} not found in n_-2_m_0, skipping')
+                continue
+            missing = [ell for ell in ell_list if f'ell_{ell}' not in g[lterm]]
+            if missing:
+                raise ValueError(f"n_-2_m_0/{lterm} is missing ells {missing}: rerun -w FG2 for them")
+            Cl_dict[lterm] = np.array([g[lterm][f'ell_{ell}'][()] for ell in ell_list])
+
+    N = 2./3./omega_m/H0**2
+    Dovera = UnivariateSpline(time_dict['ra'], time_dict['Da']/time_dict['a'], k=5, s=0)(chi)
+
+    out = {'ell_list': ell_list, 'chi_list': chi}
+    for lterm, Cl in Cl_dict.items():
+        Cpsi = Cl * (Dovera/N)[None, :]
+        I1 = cumulative_trapezoid(Cpsi/chi[None, :], chi, axis=1, initial=0)
+        I2 = cumulative_trapezoid(Cpsi, chi, axis=1, initial=0)
+        out[lterm] = -2.*(I1 - I2/chi[None, :])
+
+    print(f'    phiL: {len(Cl_dict)} lterms on chi = {chi[0]:.0f}..{chi[-1]:.0f}')
+    save_to_hdf5(filename, 'phiL', out, {'which': 'phiL'})
 
 
 def merge_fallback_files(output_dir):
