@@ -1467,8 +1467,10 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             elif p.which == 'd0zd0p':                     # N H D f (b_zeta' + 3 H b_zetadelta) phi_0 zeta: the -3H b_zeta of the
                 b_z_prime = -UnivariateSpline(ra, b_z, k=5, s=0).derivative(1)(ra)   # delta_mC form is absorbed by
                 cosmo_factor_ra = N*H*D*f*(b_z_prime + 3.*H*b_zd)                    # delta_mC = delta_mP + 3NDfH^2 phi_0; ' = -d/dr
-            else:                                         # d1zd1p: N D b_zeta d_r phi_0 d_r zeta
-                cosmo_factor_ra = N*D*b_z                 # d0zd0p_a: same, transverse instead of radial
+            elif p.which == 'd1zd1p':                     # N D b_zeta d_r phi_0 d_r zeta
+                cosmo_factor_ra = N*D*b_z
+            else:                                         # d0zd0p_a: (N D b_zeta/r^2) d_a phi_0 d^a zeta,
+                cosmo_factor_ra = N*D*b_z/ra**2           # 3D fields, so the transverse 1/r^2 is explicit
 
         elif p.which in ['d0kd0L_a', 'd0dd0k', 'd0dd0L_a', 'd2vd0k', 'd2vd0L_a', 'd0kd0k']:
             # Delta_2^L quadratic lensing terms. The kappa_1 / psi_lens legs carry no growth factor:
@@ -1482,10 +1484,10 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
                 cosmo_factor_ra = -2.*D
             elif p.which == 'd0dd0L_a':                   # grad_a delta_g grad^a psi_lens
                 cosmo_factor_ra = D
-            elif p.which == 'd2vd0k':                     # -(2-5s)/H d_r^2 v kappa_1
-                cosmo_factor_ra = -(2.-5.*s_r)*D*f/H
-            elif p.which == 'd2vd0L_a':                   # (1/H) grad_a d_r^2 v grad^a psi_lens
-                cosmo_factor_ra = D*f/H
+            elif p.which == 'd2vd0k':                     # -(2-5s) H^-1 d_r^2 v kappa_1: the term's
+                cosmo_factor_ra = -(2.-5.*s_r)*D*f        # H^-1 cancels the H of v = -N D H f phi_0
+            elif p.which == 'd2vd0L_a':                   # H^-1 grad_a d_r^2 v grad^a psi_lens
+                cosmo_factor_ra = D*f
             else:                                         # d0kd0k: 2(1 - 5s + 25/4 s^2) kappa_1^2  (t dropped)
                 cosmo_factor_ra = 2.*(1. - 5.*s_r + 25./4.*s_r**2)*np.ones_like(ra)
 
@@ -1495,8 +1497,8 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             if p.which in ['d1vd2v']:
                 cosmo_factor_ra *= time_dict['Ha'] * \
                         (1. + 3.*time_dict['dHa']/time_dict['Ha']**2 + 4./time_dict['Ha']/ra)
-            elif p.which in ['d0vd1v_a']:
-                cosmo_factor_ra *= time_dict['Ha']
+            elif p.which in ['d0vd1v_a']:                 # 3D fields: the transverse gradient pair
+                cosmo_factor_ra *= time_dict['Ha']/ra**2  # carries its own 1/r^2
 
         # Get window function on r_list
         if W_derivs_list is None:
@@ -1541,11 +1543,11 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
         if p.which.endswith('_a'):
             A0_tab*=-1
 
-        # Apply r-power division (on r_list, not ra): the derivative order of each leg, plus the
-        # 1/r^2 of the transverse gradient, once for the pair.
-        # (non-digit slots contribute nothing: the 'o' of dod)
-        A0_tab /= r_list**(sum(int(c) for c in (p.which[1], p.which[4]) if c.isdigit())
-                           + (2 if p.which.endswith('_a') else 0))
+        # Apply r-power division (on r_list, not ra): the radial derivative order of each leg
+        # (non-digit slots contribute nothing: the 'o' of dod). A transverse gradient on 3D fields
+        # brings its own 1/r^2, but that belongs to the term, so it lives in cosmo_factor_ra --
+        # the Delta_2^L vertices differentiate angular fields and carry none (grad_a dimensionless).
+        A0_tab /= r_list**sum(int(c) for c in (p.which[1], p.which[4]) if c.isdigit())
 
         # Reshape: add extra dimension and apply factor
         A0_tab = A0_tab[None, :]

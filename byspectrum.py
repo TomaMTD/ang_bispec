@@ -255,7 +255,7 @@ def main(argv):
                         which_list=['F2', 'G2', 'dv2', 'kappa2']
                     else:
                         which_list=['FG2', 'd1v', 'd2v', 'd3v', 'd1d', 'd0z', 'd1z'
-                                    ,'F2', 'G2', 'dv2', 'kappa2']
+                                    ,'F2', 'G2', 'dv2', 'kappa2', 'phiL']
 
                 elif argv.which in ['F2', 'G2', 'dv2', 'kappa2']:
                     which_list=[argv.which]
@@ -308,6 +308,10 @@ def main(argv):
                         general_ps.compute_integral_generalized(p, ell_list, chi_list, r_list, t_grid, cp_dict, fctr_dict, lterm_list)
 
     else:
+        Newtonian_terms = ['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d', 'd2vd0d']
+        Relativistic_terms = ['dv2', 'd2vd0d', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0vd1v_a', 'd0pd3v', 'd0pd1d', 'd1vd2p']
+        ScaleDependent_terms = ['d0zd0z', 'd0zd0d', 'd0zd0p', 'd1zd1p', 'd0zd0p_a']
+        Lensing_terms = ['kappa2', 'd0kd0L_a', 'd0dd0k', 'd0dd0L_a', 'd2vd0k', 'd2vd0L_a', 'd0kd0k']
 
         if argv.configuration=='esf':
             config_list = ['equi', 'squ', 'folded', 'squ2']
@@ -343,18 +347,11 @@ def main(argv):
                 if p.rad:
                     which_list=['F2', 'G2', 'dv2', 'kappa2']
                 elif p.lterm == 'noproj':
-                    which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d', 'd2vd0d', 'kappa2']
+                    which_list=Newtonian_terms+ScaleDependent_terms+Lensing_terms
                 elif p.lterm == 'nolens':
-                    which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d', \
-                                'dv2', 'd2vd0d', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0vd1v_a',\
-                                'd0pd3v', 'd0pd1d', 'd1vd2p']
+                    which_list=Newtonian_terms+Relativistic_terms+Lensing_terms
                 else:    
-                    which_list=['F2', 'G2', 'd2vd2v', 'd1vd3v', 'd1vd1d', 'd0dd0d', \
-                                'dv2', 'd2vd0d', 'd1vd2v', 'd1vd0d', 'd1vdod', 'd0vd1v_a',\
-                                'd0pd3v', 'd0pd1d', 'd1vd2p', \
-                                'kappa2', 'd0kd0L_a', 'd0dd0k', 'd0dd0L_a', 'd2vd0k', 'd2vd0L_a', 'd0kd0k',\
-                                'd0zd0z', 'd0zd0d', 'd0zd0p', 'd1zd1p', 'd0zd0p_a'
-                                ]
+                    which_list=Newtonian_terms+Relativistic_terms+ScaleDependent_terms+Lensing_terms
             else:
                 which_list=[argv.which]
 
@@ -364,7 +361,6 @@ def main(argv):
                     bispectrum.compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_args, lterm_list,
                                                        W_derivs_list=W_derivs_list, W_lens_derivs_list=W_lens_derivs_list, tr=tr, Pk=Pk, t_grid=t_grid)
                 print(f' ')
-
 
     return 0
 
