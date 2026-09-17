@@ -972,26 +972,9 @@ def merge_fallback_files(output_dir):
 def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_list,
                                  W_derivs_list=None, W_lens_derivs_list=None):
     """
-    Compute power spectrum using equation (36) from the PDF.
-
-    C_ℓ = ∫ dr [-D_r W̃_r C_ℓ^(0,0)(r) + kernel(r) C_ℓ^(-2,0)(r)]
-
-    Uses load_and_compute_all_terms from bispectrum.py to load C^(0,0) and C^(-2,0),
-    and fct_of_r_analytical to compute the kernel functions.
-
-    Parameters:
-    -----------
-    p : parameter object (with p.which = 'cl' to trigger correct loading)
-    ell_list : array - multipoles to compute
-    r_list : array - radial grid for integration
-    time_dict : dict - cosmological functions
-    window_args : tuple - window function arguments
-    lterm_list : list - linear terms to include
-    W_derivs_list : list, optional - precomputed window derivatives
-
-    Returns:
-    --------
-    dict with keys 'ell' and 'C_ell'
+    C_l = int dr [ fact_00 C^(0,0) + fact_m20 C^(-2,0) + fact_z C^zeta ], the linear number counts
+    squared. The kernels are the lterm fctr's from fct_of_r_analytical, the legs from Cls.h5.
+    Lensing rides on C^(-2,0) through the W_phi window; only zeta needs its own leg.
     """
     n_ell = len(ell_list)
     n_r = len(r_list)
@@ -999,11 +982,6 @@ def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_li
     print(f"\nComputing power spectrum from equation (36)")
     print(f"  ell range: {ell_list[0]} to {ell_list[-1]} ({n_ell} values)")
     print(f"  r range: {r_list[0]:.2f} to {r_list[-1]:.2f} ({n_r} points)")
-
-    # ========================================================================
-    # 1. Load C^(0,0) and C^(-2,0) using load_and_compute_all_terms
-    # ========================================================================
-    print("  Loading C^(0,0) and C^(-2,0) from Cls.h5...")
 
     # Load Cls (will return Cl_array with shape (n_ell, n_chi, 2) for [C^(-2,0), C^(0,0)])
     Cl_array = bispectrum.load_and_compute_all_terms(
@@ -1017,62 +995,53 @@ def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_li
 
     print(f"    Loaded C^(-2,0) and C^(0,0)")
 
-    # ========================================================================
-    # 2. Compute kernel functions using fct_of_r_analytical
-    # ========================================================================
-    # Get y_list from fct_of_r_analytical
-    # This computes all lterm contributions at level 0 (no D_ell operator)
+   # This computes all lterm contributions at level 0 (no D_ell operator)
     y_list = fctr_module.fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args,
                                       lterm_list, W_derivs_list=W_derivs_list,
                                       W_lens_derivs_list=W_lens_derivs_list)
 
-    # ========================================================================
-    # 3. Build kernels for equation (36)
-    # ========================================================================
-    print("  Building kernels for C^(0,0) and C^(-2,0)...")
-
-    # From equation (36):
-    # C_ℓ = ∫ dr [-D_r W̃_r C_ℓ^(0,0)(r) + fact(r) C_ℓ^(-2,0)(r)]
-    #
-    # where the first term involves sum over lterms at level 0 (y_list[lterm][0, ...])
-    # and the second term involves the derivative terms
-
-    # Initialize kernels
     fact_00 = np.zeros((n_ell, n_r))  # For C^(0,0)
     fact_m20 = np.zeros((n_ell, n_r))  # For C^(-2,0)
+    fact_z = np.zeros((n_ell, n_r))   # For C^zeta: b_zeta*zeta has one transfer function less
+
+    # multiplies the lambda=1 zeta group. Everything else integrates by parts onto (0,0)/(-2,0).
+    C_zeta = np.zeros((n_ell, n_r))
+    if 'pot_fnl' in lterm_list and p.fnl_local != 0:
+        with h5py.File(f'{output_dir}Cls.h5', 'r') as f:
+            if 'n_-2_m_0_lambda_1' not in f:
+                raise ValueError("the zeta leg n_-2_m_0_lambda_1 is missing: run -m cl -w d0z first")
+            g = f['n_-2_m_0_lambda_1']
+            chi_z = g['chi_list'][()]
+            same_grid = len(chi_z) == n_r and np.allclose(chi_z, r_list)
+            for lt in lterm_list:
+                if lt not in g:
+                    continue
+                w = p.fnl_local if lt == 'pot_fnl' else 1.0   # pot_fnl x b_zeta is the O(fNL^2) piece
+                for i_ell, ell in enumerate(ell_list):
+                    if f'ell_{ell}' in g[lt]:
+                        v = g[lt][f'ell_{ell}'][()]
+                        C_zeta[i_ell, :] += w * (v if same_grid else np.interp(r_list, chi_z, v))
 
     for i_ell, ell in enumerate(ell_list):
         # Sum contributions from all lterms at level 0 (no D_ell operator applied)
         for lterm in lterm_list:
             if lterm in y_list:
-                # For C^(-2,0), we need derivative contributions
-                # From eq. (36): includes RSD, doppler, potentials, etc.
-                # These come from higher derivative levels or specific lterm combinations
                 if lterm in ['rsd', 'doppler', 'pot', 'pot_gr', 'dpot', 'lensing']:
-                    # Use level 0 for these correction terms
                     if lterm in ['pot', 'dpot', 'lensing']:
                         fact_m20[i_ell, :] += y_list[lterm][0, 0, i_ell, :] / (2./3./omega_m/H0**2)
                     else:
                         fact_m20[i_ell, :] += y_list[lterm][0, 0, i_ell, :]
+                elif lterm == 'pot_fnl':
+                    fact_z[i_ell, :] += p.fnl_local * y_list[lterm][0, 0, i_ell, :]
                 else:
-                    # All lterms contribute to the C^(0,0) kernel at level 0
-                    # This is the -D_r W̃_r term (times the appropriate fctr for each lterm)
-                    # pot_fnl is stored PER UNIT fNL (see fctr.py), so apply the fNL amplitude
-                    # here -- same weighting as the bl-side Cl loading in bispectrum.py.
-                    lt_weight = p.fnl_local if lterm == 'pot_fnl' else 1.0
-                    fact_00[i_ell, :] += lt_weight * y_list[lterm][0, 0, i_ell, :]
+                    fact_00[i_ell, :] += y_list[lterm][0, 0, i_ell, :]
 
 
-
-    # ========================================================================
-    # 4. Integrate using spline + quad for accuracy
-    # ========================================================================
-    print("  Integrating over r to compute C_ℓ (using spline + quad)...")
 
     C_ell = np.zeros(n_ell)
-
     for i_ell in range(n_ell):
-        integrand = (fact_00[i_ell, :] * C_00[i_ell, :] + fact_m20[i_ell, :] * C_m20[i_ell, :]) # 
+        integrand = (fact_00[i_ell, :] * C_00[i_ell, :] + fact_m20[i_ell, :] * C_m20[i_ell, :]
+                     + fact_z[i_ell, :] * C_zeta[i_ell, :])
 
         # Create spline of integrand for accurate integration
         integrand_spline = UnivariateSpline(r_list, integrand, k=5, s=0, ext=0)
@@ -1085,9 +1054,6 @@ def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_li
 
     print("  Done!\n")
 
-    # ========================================================================
-    # 5. Save results to file
-    # ========================================================================
     # Create filename with lterm list
     output_file = os.path.join(p.output_dir, f'Cl_{p.lterm}.h5')
 
