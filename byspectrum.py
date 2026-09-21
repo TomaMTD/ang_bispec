@@ -203,18 +203,15 @@ def main(argv):
         ell_list=np.array([argv.ell])
     else:
         if ell_spacing=='log':
-            log_vals = np.logspace(np.log10(argv.ell), np.log10(argv.ellmax), num=argv.Nell)  # Adjust `num` as needed
-            # Round to nearest integer and remove duplicates
-            ell_list = np.unique(np.round(log_vals).astype(int))
+            x = np.round(np.logspace(np.log10(argv.ell), np.log10(argv.ellmax), argv.Nell)/2).astype(int)
+            x = np.maximum(x, x[0] + np.arange(argv.Nell))   # min step 2, log shape kept above the crossover
+            ell_list = 2*x
         else:
             ell_list = np.array(range(argv.ell, argv.ellmax, 1), dtype=np.int64)
 
-        # For specific configurations, ensure all ells are even
-        if argv.configuration in ['equi', 'squ', 'squ2', 'folded', 'esf']:
-            # Add 1 to odd ells to make them even
-            ell_list = np.array([ell if ell % 2 == 0 else ell + 1 for ell in ell_list])
-            # Remove duplicates again in case some became the same
-            ell_list = np.unique(ell_list)
+        ## these configurations need even ells; the log grid is even by construction
+        #if argv.configuration in ['equi', 'squ', 'squ2', 'folded', 'esf'] and ell_spacing != 'log':
+        #    ell_list = np.unique([ell if ell % 2 == 0 else ell + 1 for ell in ell_list])
 
     # t grid, per ell, concentrated on the support of I_ell (shape (n_t, n_ell))
     t_grid = mathematica.build_t_grid(ell_list, rmin, rmax, tr['k'])

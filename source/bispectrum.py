@@ -92,7 +92,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
         
         # Single Cl_array for all cases
         Cl_array = np.zeros((n_ell, n_chi, 3))
-    elif p.which in ('local', 'equi', 'ortho'):
+    elif p.which in ('local', 'equi', 'ortho', 'cl'):   # single which, several nm pairs
         nm_pairs_list = [get_nm_pairs_for_bispectrum(p.which)]
         which_for_cls_list = [p.which]
         

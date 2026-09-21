@@ -1000,11 +1000,8 @@ def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_li
                                       lterm_list, W_derivs_list=W_derivs_list,
                                       W_lens_derivs_list=W_lens_derivs_list)
 
-    fact_00 = np.zeros((n_ell, n_r))  # For C^(0,0)
-    fact_m20 = np.zeros((n_ell, n_r))  # For C^(-2,0)
-    fact_z = np.zeros((n_ell, n_r))   # For C^zeta: b_zeta*zeta has one transfer function less
-
-    # multiplies the lambda=1 zeta group. Everything else integrates by parts onto (0,0)/(-2,0).
+    # b_zeta*zeta has the k dependence of zeta (T_phi P_zeta), so it needs the lambda=1 group;
+    # everything else integrates by parts onto (0,0)/(-2,0)
     C_zeta = np.zeros((n_ell, n_r))
     if 'pot_fnl' in lterm_list and p.fnl_local != 0:
         with h5py.File(f'{output_dir}Cls.h5', 'r') as f:
@@ -1022,35 +1019,32 @@ def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_li
                         v = g[lt][f'ell_{ell}'][()]
                         C_zeta[i_ell, :] += w * (v if same_grid else np.interp(r_list, chi_z, v))
 
+    # each lterm lands on exactly one leg, so build its integrand directly
+    N = 2./3./omega_m/H0**2
+    todo = [lt for lt in lterm_list if lt in y_list]
+    integrand = {lt: np.zeros((n_ell, n_r)) for lt in todo}
     for i_ell, ell in enumerate(ell_list):
-        # Sum contributions from all lterms at level 0 (no D_ell operator applied)
-        for lterm in lterm_list:
-            if lterm in y_list:
-                if lterm in ['rsd', 'doppler', 'pot', 'pot_gr', 'dpot', 'lensing']:
-                    if lterm in ['pot', 'dpot', 'lensing']:
-                        fact_m20[i_ell, :] += y_list[lterm][0, 0, i_ell, :] / (2./3./omega_m/H0**2)
-                    else:
-                        fact_m20[i_ell, :] += y_list[lterm][0, 0, i_ell, :]
-                elif lterm == 'pot_fnl':
-                    fact_z[i_ell, :] += p.fnl_local * y_list[lterm][0, 0, i_ell, :]
-                else:
-                    fact_00[i_ell, :] += y_list[lterm][0, 0, i_ell, :]
-
-
+        for lterm in todo:
+            k = y_list[lterm][0, 0, i_ell, :]
+            if lterm in ['pot', 'dpot', 'lensing']:      # lensing carries l(l+1) and W_phi already
+                integrand[lterm][i_ell, :] = k/N * C_m20[i_ell, :]
+            elif lterm in ['rsd', 'doppler', 'pot_gr']:
+                integrand[lterm][i_ell, :] = k * C_m20[i_ell, :]
+            elif lterm == 'pot_fnl':   # the zeta leg is stored as -<Delta zeta>, hence the minus
+                integrand[lterm][i_ell, :] = -p.fnl_local * k * C_zeta[i_ell, :]
+            else:
+                integrand[lterm][i_ell, :] = k * C_00[i_ell, :]
 
     C_ell = np.zeros(n_ell)
+    C_ell_lterm = {lt: np.zeros(n_ell) for lt in todo}
     for i_ell in range(n_ell):
-        integrand = (fact_00[i_ell, :] * C_00[i_ell, :] + fact_m20[i_ell, :] * C_m20[i_ell, :]
-                     + fact_z[i_ell, :] * C_zeta[i_ell, :])
-
-        # Create spline of integrand for accurate integration
-        integrand_spline = UnivariateSpline(r_list, integrand, k=5, s=0, ext=0)
-
-        # Integrate using quad for high accuracy
-        C_ell[i_ell], err = quad(integrand_spline, r_list[0], r_list[-1], epsrel=1e-4, epsabs=0)
+        for lterm in todo:
+            spl = UnivariateSpline(r_list, integrand[lterm][i_ell, :], k=5, s=0, ext=0)
+            C_ell_lterm[lterm][i_ell] = quad(spl, r_list[0], r_list[-1], epsrel=1e-4, epsabs=0)[0]
+        C_ell[i_ell] = sum(C_ell_lterm[lt][i_ell] for lt in todo)
 
         if i_ell % 10 == 0 or i_ell == n_ell - 1:
-            print(f"    ell={ell_list[i_ell]}: C_ell={C_ell[i_ell]:.6e} (integration error: {err:.2e})")
+            print(f"    ell={ell_list[i_ell]}: C_ell={C_ell[i_ell]:.6e}")
 
     print("  Done!\n")
 
@@ -1064,6 +1058,8 @@ def compute_power_spectrum(p, ell_list, r_list, time_dict, window_args, lterm_li
     with h5py.File(output_file, 'w') as f:
         f.create_dataset('ell', data=ell_list)
         f.create_dataset('C_ell', data=C_ell)
+        for lt in todo:
+            f.create_dataset(f'C_ell_{lt}', data=C_ell_lterm[lt])
         f.attrs['lterms'] = lterm_list
         f.attrs['n_ell'] = n_ell
 
