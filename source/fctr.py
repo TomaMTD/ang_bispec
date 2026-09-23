@@ -515,18 +515,18 @@ def get_coefficients(p, time_dict, compute_c1_c2=''):
         if p.which == 'F2' and not p.Newton:
             alpha = {
                 0: zeros,
-                1: 0.5*(1.5*Om + 4.*f - 9.*w/7.),
-                2: 0.5*Om*f * (-9.*f + 4.5 - 12.*f/Om + 9./H - 6.*f/(H*Om))
+                1: (1.5*Om + 4.*f - 9.*w/7.),
+                2: Om*f * (-9.*f + 4.5 - 12.*f/Om + 9./H - 6.*f/(H*Om))
             }
             beta = {
                 0: zeros,
-                1: -0.5*4.5*Om,
-                2: -0.5*Om*f * (18.*f - 18. + 24.*f/Om - 18./H + 12.*f/(H*Om))
+                1: -4.5*Om,
+                2: -Om*f * (18.*f - 18. + 24.*f/Om - 18./H + 12.*f/(H*Om))
             }
             gamma = {
                 0: zeros,
-                1: 0.5*(-1.5*Om - f),
-                2: -0.5*Om*f * (2.25*f + 3.*f/Om - 2.25/H + 1.5*f/(H*Om))
+                1: (-1.5*Om - f),
+                2: -Om*f * (2.25*f + 3.*f/Om - 2.25/H + 1.5*f/(H*Om))
             }
         else:
             # No c1 corrections for G2/dv2 or Newton mode
@@ -540,17 +540,17 @@ def get_coefficients(p, time_dict, compute_c1_c2=''):
             alpha = {
                 0: zeros,
                 1: zeros,
-                2: -0.5*6.*f/(H*Om) 
+                2: -6.*f/(H*Om) 
             }
             beta = {
                 0: zeros,
-                1: -0.5*2.*f/H,
-                2: -0.5*12.*f/(H*Om)
+                1: -2.*f/H,
+                2: -12.*f/(H*Om)
             }
             gamma = {
                 0: zeros,
-                1: -0.5*f/(2.*H),
-                2: -0.5*3.*f/(2.*H*Om)
+                1: -f/(2.*H),
+                2: -3.*f/(2.*H*Om)
             }
         else:
             # No c2 corrections for G2/dv2 or Newton mode
@@ -1535,7 +1535,7 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
 
         # leg-sign flips (a leg stored as minus its physical correlator: zeta, psi, kappa_1, psi_lens)
         if p.which in ['d2vd0d', 'd1vd1d', 'd1vd2v', 'd1vdod', 'd0pd3v', 'd0zd0d',
-                       'd0dd0k', 'd2vd0k', 'd0dd0L_a', 'd2vd0L_a']:
+                       'd0dd0k', 'd0dd0L_a']:
             A0_tab*=-1
 
         # Al123 is minus the standard gradient coupling (= -[L2+L3-L1], see _compute_Al123_single),
