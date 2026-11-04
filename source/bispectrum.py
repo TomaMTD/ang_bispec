@@ -1186,8 +1186,11 @@ def ell_configurations(p, ell_list):
         # print(f'  Generated {len(candidates)} candidate triplets, computing Wigner 3j and Al123...')
 
         # Compute Wigner 3j and Al123 in parallel
-        from multiprocessing import Pool, cpu_count
-        n_cores = min(cpu_count(), 16)
+        #from multiprocessing import Pool, cpu_count
+        #n_cores = min(cpu_count(), 16)
+        from multiprocessing import Pool
+        from numba import get_num_threads
+        n_cores = get_num_threads()   # same count as numba, set by NUMBA_NUM_THREADS
 
         # print(f'  Using {n_cores} cores for parallel computation...')
         # Prepare arguments: each candidate needs access to ell_list
