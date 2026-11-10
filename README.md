@@ -81,7 +81,7 @@ invocation. It works in both `cl` and `bl` modes.
 | `-r`, `--rad` | `0` | Early-radiation contribution |
 | `-f`, `--force` | — | `1` = recompute and overwrite, `0` = skip anything already in the output |
 | `-config` | `esf` | Triangle configuration(s): `equi`, `squ`, `squ2`, `folded`, `es`, `esf`, `all` |
-| `-fnl_local` | `0` | Amplitude of local primordial non-Gaussianity |
+| `-fnl_local` | `0` | Amplitude of local primordial non-Gaussianity, Planck sign: $\zeta = \zeta_G + \frac35 f_{\rm NL}\zeta_G^2$ |
 | `-ell`, `-ellmax`, `-Nell` | `4`, `1024`, `32` | Multipole grid (log-spaced; rounded to even $\ell$ for `-config equi/squ/squ2/folded/esf`) |
 | `-Nchi` | `501` | Points on the radial grid (must stay uniform) |
 | `-o`, `--output_dir` | `output_euclid_bin4/` | Output directory |

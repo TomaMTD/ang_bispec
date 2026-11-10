@@ -966,9 +966,9 @@ def fct_of_r_analytical(p, ell_list, r_list, time_dict, window_args, lterm_list,
                 fctr = UnivariateSpline(time_dict['ra'],
                             -time_dict['Da']/time_dict['a']*(2.-5.*s_r), k=5, s=0)
                 derive_start = 0
-            elif lterm == 'pot_fnl': # scale dependent bias
+            elif lterm == 'pot_fnl': # scale dependent bias, b_zeta = +6/5 fNL dc b1L (Planck sign)
                 fctr = UnivariateSpline(time_dict['ra'], \
-                            -6./5.*time_dict['Ha']/time_dict['a']*1.686, k=5, s=0)
+                            6./5.*time_dict['Ha']/time_dict['a']*1.686, k=5, s=0)
                 derive_start = 0
             else:
                 print('no code for {}'.format(lterm))
@@ -1456,8 +1456,9 @@ def get_bispectrum_kernels_analytical(p, ell_list, r_list, time_dict, window_arg
             # The relation b2 = 2b1L + b2L + 4/3 + 2v/7 is b1*<delta_2,N/delta^2> + b2^E, i.e. the F2
             # vertex folded in -- using it here double counts F2.
             b2L = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b2'], k=5, s=0)(ra) - b1L*(2./3.-2.*time_dict['va']/7.)
-            b_z  = -6./5.*fnl*deltac*b1L
-            b_zd =  6./5.*fnl*(b1L - deltac*b2L)
+            # Planck/LSS sign: zeta = zeta_G + 3/5 fNL (zeta_G^2 - <zeta_G^2>)
+            b_z  =  6./5.*fnl*deltac*b1L
+            b_zd = -6./5.*fnl*(b1L - deltac*b2L)
             b_z2 = 18./25.*fnl**2*deltac*(-2.*b1L + deltac*b2L)
             N, D, H, f = 2./3./omega_m/H0**2, time_dict['Da'], time_dict['Ha'], time_dict['fa']
             if p.which == 'd0zd0z':                       # b_zeta2 zeta^2

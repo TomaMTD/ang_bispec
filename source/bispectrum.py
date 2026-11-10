@@ -287,7 +287,7 @@ def load_and_compute_all_terms(p, ell_list, chi_list, time_dict, window_args, lt
                 if fctr.COMPUTE_FNL and p.fnl_local != 0 and p.which not in  ['d0dd0d', 'd0zd0d'] \
                         and 'data' in time_dict and 'b1' in time_dict['data']:
                     b1L = UnivariateSpline(time_dict['data']['r'], time_dict['data']['b1']-1., s=0, k=5)(time_dict['ra'])
-                    b_z = -6./5.*p.fnl_local*1.686*b1L
+                    b_z = 6./5.*p.fnl_local*1.686*b1L   # Planck sign, as fctr.py
                     zcoef_on_ra = -b_z/time_dict['Da']
                     zdot_coef_on_ra = UnivariateSpline(time_dict['ra'], b_z, s=0, k=5).derivative(1)(time_dict['ra'])
                     Cl_zeta = load_group('n_-1_m_1_lambda_1' if which_for_cls == 'd1d' else 'n_-2_m_0_lambda_1')
@@ -1486,10 +1486,8 @@ def compute_all_bispectra_efficient(p, ell_list, chi_list, time_dict, window_arg
         if p.which == 'ortho':
             bl_results = bl_results / 6.0
 
-        # The integrator returns the Komatsu-Spergel templates in Phi (B_Phi = 2 fNL [...]) built
-        # with P_zeta legs. 
         if p.which in ('local', 'equi', 'ortho'):
-            bl_results = 3./5. * p.fnl_local * bl_results
+            bl_results = -3./5. * p.fnl_local * bl_results
 
     # print(f"Computation completed in {time.time()-start_time:.2f} seconds")
 
