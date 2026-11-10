@@ -207,7 +207,7 @@ def main(argv):
             x = np.maximum(x, x[0] + np.arange(argv.Nell))   # min step 2, log shape kept above the crossover
             ell_list = 2*x
         else:
-            ell_list = np.array(range(argv.ell, argv.ellmax, 1), dtype=np.int64)
+            ell_list = np.array(range(argv.ell, argv.ellmax+1, 1), dtype=np.int64)
 
         ## these configurations need even ells; the log grid is even by construction
         #if argv.configuration in ['equi', 'squ', 'squ2', 'folded', 'esf'] and ell_spacing != 'log':
